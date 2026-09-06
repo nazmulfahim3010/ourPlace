@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:chatbox/database/app_database.dart';
 import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/message.dart';
+import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/main.dart';
 
 void main() {
@@ -95,6 +96,47 @@ void main() {
       final remaining = await localDb.getMessagesForPartner('Twilight');
       expect(remaining.length, 1);
       expect(remaining.first.id, 'test_004');
+    });
+  });
+
+  group('ChatRepository Layer Tests', () {
+    late AppDatabase inMemoryDb;
+    late LocalDatabase localDb;
+    late ChatRepository chatRepository;
+
+    setUp(() {
+      inMemoryDb = AppDatabase(NativeDatabase.memory());
+      localDb = LocalDatabase(database: inMemoryDb);
+      chatRepository = LocalChatRepository(database: localDb);
+    });
+
+    tearDown(() async {
+      await localDb.close();
+    });
+
+    test('ChatRepository delegates message sending and retrieval', () async {
+      final msg = ChatMessage(
+        id: 'repo_001',
+        senderId: 'current_user',
+        recipientId: 'Twilight',
+        text: 'Hello via ChatRepository',
+        timestamp: DateTime.now(),
+        type: MessageType.text,
+        status: MessageStatus.sending,
+      );
+
+      await chatRepository.sendMessage(msg);
+      final messages = await chatRepository.getMessages('Twilight');
+
+      expect(messages.length, 1);
+      expect(messages.first.text, 'Hello via ChatRepository');
+
+      await chatRepository.updateMessageStatus(
+        'repo_001',
+        MessageStatus.delivered,
+      );
+      final updated = await chatRepository.getMessages('Twilight');
+      expect(updated.first.status, MessageStatus.delivered);
     });
   });
 

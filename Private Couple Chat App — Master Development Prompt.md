@@ -233,7 +233,7 @@ Firebase should NOT become the permanent chat-history database.
 
 # PHASE 5 — Application Architecture
 
-STATUS: NOT STARTED
+STATUS: COMPLETED
 
 Refactor the project into a maintainable architecture.
 
@@ -680,20 +680,20 @@ If a design decision creates a security problem, explicitly explain it.
 
 We are currently at:
 
-PHASE 5 — Application Architecture
+PHASE 6 — Firebase Authentication
 
 The immediate task is:
 
-1. Refactor the project structure into clean architecture layers (core, models, screens, widgets, services, database, repositories).
-2. Create repository layer (ChatRepository, AuthRepository) separating UI from database/services.
-3. Ensure state management decouples widget tree from raw database queries.
-4. Keep the existing visual design and SQLite persistence intact.
-5. Do NOT add Firebase yet.
-6. Do NOT add encryption yet.
+1. Configure Firebase project and FlutterFire dependencies (firebase_core, firebase_auth).
+2. Restrict authentication strictly to the two authorized couple accounts.
+3. Build auth flow: login screen, auth gate, session persistence, and logout.
+4. Integrate AuthRepository to supply the active authenticated user ID to the chat layer.
+5. Provide a clear test checklist.
+6. Do NOT add public registration or social logins (app is strictly for two users).
 
 Once this works, move to:
 
-PHASE 6 — Firebase Authentication.
+PHASE 7 — Security Model.
 
 Then proceed through the roadmap sequentially.
 

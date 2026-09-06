@@ -29,10 +29,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 5 — Application Architecture & Repositories** |
-| **Current Status** | Clean architecture refactoring & repository abstraction |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database with Drift / SQLite) |
-| **Next Phase** | **Phase 6 — Firebase Authentication** |
+| **Current Phase** | **Phase 6 — Firebase Authentication** |
+| **Current Status** | Ready for Firebase Auth & restricted couple accounts |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture) |
+| **Next Phase** | **Phase 7 — Security Model** |
 
 ---
 
@@ -44,7 +44,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           │
                                                                           ▼
 [Phase 6: Firebase Auth] ◄──  [Phase 5: Clean Arch]     ◄──  [Phase 4: Local DB]
-       (PLANNED)                       (CURRENT)                       (COMPLETED)
+       (CURRENT)                       (COMPLETED)                     (COMPLETED)
           │
           ▼
 [Phase 7: Security Rules]──►  [Phase 8: E2EE Layer]     ──►  [Phase 9: Temp Relay]
@@ -101,12 +101,14 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Initial seed history persists on first run, remaining available across app restarts
   - [x] Added in-memory SQLite unit test suite verifying persistence and query operations
 
-- [ ] **Phase 5 — Application Architecture Refactoring**
-  - [x] Separate `models/`, `widgets/`, `screens/`, `services/`, `database/`
-  - [ ] Establish `core/` (constants, theme, error handling, utils)
-  - [ ] Establish `repositories/` (`ChatRepository`, `AuthRepository`)
-  - [ ] Integrate formal state management (e.g., Riverpod or Bloc)
-  - [ ] Decouple UI directly from services/database
+- [x] **Phase 5 — Application Architecture Refactoring**
+  - [x] Created `core/theme/app_theme.dart`, `core/constants/app_constants.dart`, `core/errors/app_exception.dart`
+  - [x] Created `models/user.dart` and `models/conversation.dart` domain models
+  - [x] Implemented `repositories/chat_repository.dart` (`LocalChatRepository`) and `repositories/auth_repository.dart`
+  - [x] Established service layer contracts (`auth_service.dart`, `encryption_service.dart`, `notification_service.dart`)
+  - [x] Decoupled `ChatScreen` to interact strictly with `ChatRepository` instead of raw database queries
+  - [x] Wired `main.dart` with `AppTheme.darkTheme` and centralized constants
+  - [x] 100% test coverage for `ChatRepository` and `ChatScreen` (5/5 tests passing, 0 analyzer issues)
 
 - [ ] **Phase 6 — Firebase Authentication**
   - [ ] Configure Firebase CLI & `firebase_core` for Flutter

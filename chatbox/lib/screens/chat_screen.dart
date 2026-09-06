@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:chatbox/database/local_database.dart';
+import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/models/message.dart';
+import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/widgets/chat_header.dart';
 import 'package:chatbox/widgets/date_divider.dart';
 import 'package:chatbox/widgets/message_bubble.dart';
 import 'package:chatbox/widgets/chat_input_field.dart';
 
-/// Main Chat Screen Widget (Phase 4 - Persistent Local Database with Drift)
+/// Main Chat Screen Widget (Phase 5 - Decoupled with ChatRepository)
 class ChatScreen extends StatefulWidget {
   final String partnerName;
   final String partnerId;
+  final ChatRepository? repository;
 
   const ChatScreen({
     super.key,
-    this.partnerName = "Twilight",
-    this.partnerId = "partner_user_id",
+    this.partnerName = AppConstants.defaultPartnerName,
+    this.partnerId = AppConstants.defaultPartnerId,
+    this.repository,
   });
 
   @override
@@ -24,7 +27,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   late final TextEditingController _messageController;
   late final ScrollController _scrollController;
-  final LocalDatabase _localDb = LocalDatabase();
+  late final ChatRepository _chatRepository;
 
   List<ChatMessage> _messages = [];
   bool _isLoading = true;
@@ -32,9 +35,10 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _chatRepository = widget.repository ?? LocalChatRepository();
     _messageController = TextEditingController();
     _scrollController = ScrollController();
-    _loadMessagesFromDatabase();
+    _loadMessagesFromRepository();
   }
 
   @override
@@ -44,16 +48,15 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  /// Load persisted messages from Drift / SQLite database
-  Future<void> _loadMessagesFromDatabase() async {
+  /// Load persisted messages via ChatRepository
+  Future<void> _loadMessagesFromRepository() async {
     try {
       final storedMessages =
-          await _localDb.getMessagesForPartner(widget.partnerId);
+          await _chatRepository.getMessages(widget.partnerId);
 
       if (storedMessages.isEmpty) {
-        // Seed initial history into the permanent database on first launch
         final seedMessages = _generateInitialSeedMessages();
-        await _localDb.saveMessages(seedMessages);
+        await _chatRepository.seedInitialMessages(seedMessages);
         if (mounted) {
           setState(() {
             _messages = seedMessages;
@@ -69,7 +72,6 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
     } catch (e) {
-      // Fallback to memory list if database read encounters an issue
       if (mounted) {
         setState(() {
           _messages = _generateInitialSeedMessages();
@@ -88,7 +90,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ChatMessage(
         id: 'seed_005',
         senderId: widget.partnerId,
-        recipientId: 'current_user',
+        recipientId: AppConstants.currentUserId,
         text: "Let's get dinner together soon! 🍕",
         timestamp: now.subtract(const Duration(minutes: 1, seconds: 30)),
         type: MessageType.text,
@@ -97,7 +99,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ChatMessage(
         id: 'seed_004',
         senderId: widget.partnerId,
-        recipientId: 'current_user',
+        recipientId: AppConstants.currentUserId,
         text: "Pretty good! Can't wait to celebrate with you 🎉",
         timestamp: now.subtract(const Duration(minutes: 2)),
         type: MessageType.text,
@@ -105,7 +107,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       ChatMessage(
         id: 'seed_003',
-        senderId: 'current_user',
+        senderId: AppConstants.currentUserId,
         recipientId: widget.partnerId,
         text: 'How about yours?',
         timestamp: now.subtract(const Duration(minutes: 3, seconds: 30)),
@@ -114,7 +116,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       ChatMessage(
         id: 'seed_002',
-        senderId: 'current_user',
+        senderId: AppConstants.currentUserId,
         recipientId: widget.partnerId,
         text: 'It was great! Just finished the project.',
         timestamp: now.subtract(const Duration(minutes: 4)),
@@ -124,7 +126,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ChatMessage(
         id: 'seed_001',
         senderId: widget.partnerId,
-        recipientId: 'current_user',
+        recipientId: AppConstants.currentUserId,
         text: 'Hey! How was your day? 😊',
         timestamp: now.subtract(const Duration(minutes: 5)),
         type: MessageType.text,
@@ -133,7 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ChatMessage(
         id: 'seed_000',
         senderId: widget.partnerId,
-        recipientId: 'current_user',
+        recipientId: AppConstants.currentUserId,
         text: 'Good night, sleep well! ❤️',
         timestamp: yesterday,
         type: MessageType.text,
@@ -142,14 +144,14 @@ class _ChatScreenState extends State<ChatScreen> {
     ];
   }
 
-  /// Handle sending a message: save to SQLite, update UI, and auto-scroll
+  /// Send message: update UI, delegate persistence and dispatch to ChatRepository
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
     final newMessage = ChatMessage(
       id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
-      senderId: 'current_user',
+      senderId: AppConstants.currentUserId,
       recipientId: widget.partnerId,
       text: text,
       timestamp: DateTime.now(),
@@ -157,14 +159,14 @@ class _ChatScreenState extends State<ChatScreen> {
       status: MessageStatus.sending,
     );
 
-    // Optimistically update UI
+    // Optimistic UI update
     setState(() {
       _messages.insert(0, newMessage);
     });
 
     _messageController.clear();
 
-    // Auto-scroll to newest message
+    // Auto-scroll to bottom
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         0.0,
@@ -173,10 +175,10 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    // Persist to local SQLite database
-    await _localDb.saveMessage(newMessage);
+    // Save and dispatch through ChatRepository
+    await _chatRepository.sendMessage(newMessage);
 
-    // Transition status to 'sent' and update local database
+    // Simulate transition to 'sent'
     Future.delayed(const Duration(milliseconds: 600), () async {
       if (!mounted) return;
       final index = _messages.indexWhere((m) => m.id == newMessage.id);
@@ -184,12 +186,12 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _messages[index] = _messages[index].copyWithStatus(MessageStatus.sent);
         });
-        await _localDb.updateMessageStatus(newMessage.id, MessageStatus.sent);
+        await _chatRepository.updateMessageStatus(
+          newMessage.id,
+          MessageStatus.sent,
+        );
       }
     });
-
-    // TODO: Phase 9 - Temporary Firebase Relay dispatch
-    // TODO: Phase 8 - End-to-end payload encryption
   }
 
   /// Handle "Send luv" quick action
