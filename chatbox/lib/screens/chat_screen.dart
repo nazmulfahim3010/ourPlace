@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/widgets/chat_header.dart';
 import 'package:chatbox/widgets/date_divider.dart';
 import 'package:chatbox/widgets/message_bubble.dart';
 import 'package:chatbox/widgets/chat_input_field.dart';
 
-/// Main Chat Screen Widget (Phase 3 - Functional Local Chat)
+/// Main Chat Screen Widget (Phase 4 - Persistent Local Database with Drift)
 class ChatScreen extends StatefulWidget {
   final String partnerName;
   final String partnerId;
@@ -23,14 +24,17 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   late final TextEditingController _messageController;
   late final ScrollController _scrollController;
-  late List<ChatMessage> _messages;
+  final LocalDatabase _localDb = LocalDatabase();
+
+  List<ChatMessage> _messages = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _messageController = TextEditingController();
     _scrollController = ScrollController();
-    _messages = _generateMockMessages();
+    _loadMessagesFromDatabase();
   }
 
   @override
@@ -40,15 +44,49 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  /// Generate mock messages for preview with varied timestamps and statuses
-  List<ChatMessage> _generateMockMessages() {
+  /// Load persisted messages from Drift / SQLite database
+  Future<void> _loadMessagesFromDatabase() async {
+    try {
+      final storedMessages =
+          await _localDb.getMessagesForPartner(widget.partnerId);
+
+      if (storedMessages.isEmpty) {
+        // Seed initial history into the permanent database on first launch
+        final seedMessages = _generateInitialSeedMessages();
+        await _localDb.saveMessages(seedMessages);
+        if (mounted) {
+          setState(() {
+            _messages = seedMessages;
+            _isLoading = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _messages = storedMessages;
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      // Fallback to memory list if database read encounters an issue
+      if (mounted) {
+        setState(() {
+          _messages = _generateInitialSeedMessages();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Initial seed messages to populate on first run
+  List<ChatMessage> _generateInitialSeedMessages() {
     final now = DateTime.now();
     final yesterday = now.subtract(const Duration(days: 1));
 
     return [
-      // Today's messages (newest first for reverse list)
       ChatMessage(
-        id: 'msg_005',
+        id: 'seed_005',
         senderId: widget.partnerId,
         recipientId: 'current_user',
         text: "Let's get dinner together soon! 🍕",
@@ -57,7 +95,7 @@ class _ChatScreenState extends State<ChatScreen> {
         status: MessageStatus.read,
       ),
       ChatMessage(
-        id: 'msg_004',
+        id: 'seed_004',
         senderId: widget.partnerId,
         recipientId: 'current_user',
         text: "Pretty good! Can't wait to celebrate with you 🎉",
@@ -66,7 +104,7 @@ class _ChatScreenState extends State<ChatScreen> {
         status: MessageStatus.read,
       ),
       ChatMessage(
-        id: 'msg_003',
+        id: 'seed_003',
         senderId: 'current_user',
         recipientId: widget.partnerId,
         text: 'How about yours?',
@@ -75,7 +113,7 @@ class _ChatScreenState extends State<ChatScreen> {
         status: MessageStatus.read,
       ),
       ChatMessage(
-        id: 'msg_002',
+        id: 'seed_002',
         senderId: 'current_user',
         recipientId: widget.partnerId,
         text: 'It was great! Just finished the project.',
@@ -84,7 +122,7 @@ class _ChatScreenState extends State<ChatScreen> {
         status: MessageStatus.read,
       ),
       ChatMessage(
-        id: 'msg_001',
+        id: 'seed_001',
         senderId: widget.partnerId,
         recipientId: 'current_user',
         text: 'Hey! How was your day? 😊',
@@ -92,9 +130,8 @@ class _ChatScreenState extends State<ChatScreen> {
         type: MessageType.text,
         status: MessageStatus.read,
       ),
-      // Yesterday's message to showcase date grouping
       ChatMessage(
-        id: 'msg_000',
+        id: 'seed_000',
         senderId: widget.partnerId,
         recipientId: 'current_user',
         text: 'Good night, sleep well! ❤️',
@@ -105,8 +142,8 @@ class _ChatScreenState extends State<ChatScreen> {
     ];
   }
 
-  /// Handle sending a message with local state update and auto-scroll
-  void _sendMessage() {
+  /// Handle sending a message: save to SQLite, update UI, and auto-scroll
+  Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
@@ -120,13 +157,14 @@ class _ChatScreenState extends State<ChatScreen> {
       status: MessageStatus.sending,
     );
 
+    // Optimistically update UI
     setState(() {
       _messages.insert(0, newMessage);
     });
 
     _messageController.clear();
 
-    // Auto-scroll to the newest message at the bottom
+    // Auto-scroll to newest message
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         0.0,
@@ -135,20 +173,23 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    // Simulate message transitioning from sending -> sent
-    Future.delayed(const Duration(milliseconds: 600), () {
+    // Persist to local SQLite database
+    await _localDb.saveMessage(newMessage);
+
+    // Transition status to 'sent' and update local database
+    Future.delayed(const Duration(milliseconds: 600), () async {
       if (!mounted) return;
       final index = _messages.indexWhere((m) => m.id == newMessage.id);
       if (index != -1) {
         setState(() {
           _messages[index] = _messages[index].copyWithStatus(MessageStatus.sent);
         });
+        await _localDb.updateMessageStatus(newMessage.id, MessageStatus.sent);
       }
     });
 
-    // TODO: Phase 4 - Save to Drift/SQLite local database
-    // TODO: Phase 9 - Dispatch to Firebase temporary relay
-    // TODO: Phase 8 - End-to-end encrypt payload before transmission
+    // TODO: Phase 9 - Temporary Firebase Relay dispatch
+    // TODO: Phase 8 - End-to-end payload encryption
   }
 
   /// Handle "Send luv" quick action
@@ -174,16 +215,22 @@ class _ChatScreenState extends State<ChatScreen> {
             onSendLuv: _sendLuv,
           ),
 
-          /// Chat Messages Area with dismiss-on-tap gesture
+          /// Chat Messages Area
           Expanded(
-            child: GestureDetector(
-              onTap: () => FocusScope.of(context).unfocus(),
-              behavior: HitTestBehavior.translucent,
-              child: _ChatMessageArea(
-                messages: _messages,
-                scrollController: _scrollController,
-              ),
-            ),
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white38,
+                    ),
+                  )
+                : GestureDetector(
+                    onTap: () => FocusScope.of(context).unfocus(),
+                    behavior: HitTestBehavior.translucent,
+                    child: _ChatMessageArea(
+                      messages: _messages,
+                      scrollController: _scrollController,
+                    ),
+                  ),
           ),
 
           /// Bottom Input Bar
@@ -221,8 +268,6 @@ class _ChatMessageArea extends StatelessWidget {
       itemBuilder: (context, index) {
         final message = messages[index];
 
-        // In a reversed list:
-        // index + 1 is the previous message chronologically (older)
         final isOldestOverall = index == messages.length - 1;
         final hasPrecedingMessage = index + 1 < messages.length;
         final isFirstMessageOfDay = isOldestOverall ||
@@ -230,7 +275,6 @@ class _ChatMessageArea extends StatelessWidget {
                 !_isSameDay(
                     message.timestamp, messages[index + 1].timestamp));
 
-        // Grouping: hide redundant timestamp if sent by the same user within 2 minutes
         bool showTimestamp = true;
         if (!isFirstMessageOfDay && hasPrecedingMessage) {
           final prevMessage = messages[index + 1];
@@ -247,7 +291,6 @@ class _ChatMessageArea extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Date Divider appears above the first message of each day
             if (isFirstMessageOfDay) DateDivider(dateTime: message.timestamp),
             Padding(
               padding: EdgeInsets.only(

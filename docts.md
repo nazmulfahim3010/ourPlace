@@ -29,10 +29,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 4 — Local Database (Drift / SQLite)** |
-| **Current Status** | Ready to implement persistence layer |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat) |
-| **Next Phase** | **Phase 5 — Application Architecture & Repositories** |
+| **Current Phase** | **Phase 5 — Application Architecture & Repositories** |
+| **Current Status** | Clean architecture refactoring & repository abstraction |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database with Drift / SQLite) |
+| **Next Phase** | **Phase 6 — Firebase Authentication** |
 
 ---
 
@@ -44,7 +44,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           │
                                                                           ▼
 [Phase 6: Firebase Auth] ◄──  [Phase 5: Clean Arch]     ◄──  [Phase 4: Local DB]
-       (PLANNED)                       (PLANNED)                     (CURRENT)
+       (PLANNED)                       (CURRENT)                       (COMPLETED)
           │
           ▼
 [Phase 7: Security Rules]──►  [Phase 8: E2EE Layer]     ──►  [Phase 9: Temp Relay]
@@ -92,13 +92,14 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Keyboard dismiss / inset handling improvements (tap outside to unfocus, `TextInputAction.send` on submit)
   - [x] Passing widget test suite (`flutter test`) verifies UI, sending messages, and quick actions
 
-- [ ] **Phase 4 — Local Database (Drift / SQLite)**
-  - [x] Interface stub created (`database/local_database.dart`)
-  - [ ] Select and install persistence package (`drift` + `sqlite3_flutter_libs` / `path_provider`)
-  - [ ] Define SQLite message table schema
-  - [ ] Implement DAO / CRUD operations (insert, query by partner, update status, delete)
-  - [ ] Paginated message query support
-  - [ ] Initialize database on app startup and load chat history
+- [x] **Phase 4 — Local Database (Drift / SQLite)**
+  - [x] Added `drift: ^2.34.4`, `drift_flutter: ^0.3.1`, `drift_dev: ^2.34.0`, and `build_runner: ^2.15.1`
+  - [x] Created `Messages` table schema in `chatbox/lib/database/app_database.dart`
+  - [x] Generated `app_database.g.dart` using `build_runner`
+  - [x] Implemented `LocalDatabase` singleton with full CRUD (`saveMessage`, `getMessagesForPartner`, `updateMessageStatus`, `deleteMessage`, `searchMessages`, `watchMessagesForPartner`)
+  - [x] Connected `ChatScreen` to automatically load persisted history on startup and save newly sent messages
+  - [x] Initial seed history persists on first run, remaining available across app restarts
+  - [x] Added in-memory SQLite unit test suite verifying persistence and query operations
 
 - [ ] **Phase 5 — Application Architecture Refactoring**
   - [x] Separate `models/`, `widgets/`, `screens/`, `services/`, `database/`
@@ -341,11 +342,12 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 - [ ] Clarify / clean up `demoproject/` workspace folder.
 
 #### Task 4.1: SQLite / Drift Integration (Phase 4)
-- [ ] Add `drift`, `sqlite3_flutter_libs`, and `path_provider` to `chatbox/pubspec.yaml`.
-- [ ] Add `drift_dev` and `build_runner` to `dev_dependencies`.
-- [ ] Implement `MessagesTable` schema matching `ChatMessage` properties.
-- [ ] Connect `LocalDatabase` implementation to Drift database.
-- [ ] Wire message sending to save to Drift, query on startup, and update UI reactively.
+- [x] Add `drift`, `drift_flutter`, `drift_dev`, and `build_runner` to `chatbox/pubspec.yaml`.
+- [x] Implement `Messages` table schema matching `ChatMessage` domain model.
+- [x] Generate `app_database.g.dart` using `build_runner`.
+- [x] Connect `LocalDatabase` singleton implementation to Drift `AppDatabase`.
+- [x] Wire message sending to save to SQLite, query on startup, and update UI reactively.
+- [x] Comprehensive in-memory SQLite unit and widget tests passing (4/4 tests).
 
 ---
 

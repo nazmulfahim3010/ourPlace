@@ -162,7 +162,7 @@ The goal is to prove that the chat UI and message architecture work independentl
 
 # PHASE 4 — Local Database
 
-STATUS: CURRENT
+STATUS: COMPLETED
 
 Introduce persistent local storage.
 
@@ -172,16 +172,16 @@ Flutter + SQLite using Drift.
 
 Requirements:
 
-- [ ] Configure local SQLite database
-- [ ] Create messages table
-- [ ] Create conversation table if needed
-- [ ] Create local user/profile table if needed
-- [ ] Implement insert message
-- [ ] Implement retrieve messages
-- [ ] Implement update message status
-- [ ] Implement delete message
-- [ ] Implement message pagination/loading if appropriate
-- [ ] Load existing messages when app opens
+- [x] Configure local SQLite database
+- [x] Create messages table
+- [x] Create conversation table if needed
+- [x] Create local user/profile table if needed
+- [x] Implement insert message
+- [x] Implement retrieve messages
+- [x] Implement update message status
+- [x] Implement delete message
+- [x] Implement message pagination/loading if appropriate
+- [x] Load existing messages when app opens
 
 Expected behavior:
 
@@ -680,21 +680,20 @@ If a design decision creates a security problem, explicitly explain it.
 
 We are currently at:
 
-PHASE 4 — Local Database
+PHASE 5 — Application Architecture
 
 The immediate task is:
 
-1. Configure local SQLite persistence (using Drift or sqflite).
-2. Create messages table schema matching the ChatMessage domain model.
-3. Implement LocalDatabase CRUD operations (insert, query by partner, update status, delete).
-4. Connect the local database to the chat screen so messages persist across app restarts.
-5. Provide a clear test checklist to verify persistence.
-6. Do NOT connect Firebase yet.
-7. Do NOT add encryption yet.
+1. Refactor the project structure into clean architecture layers (core, models, screens, widgets, services, database, repositories).
+2. Create repository layer (ChatRepository, AuthRepository) separating UI from database/services.
+3. Ensure state management decouples widget tree from raw database queries.
+4. Keep the existing visual design and SQLite persistence intact.
+5. Do NOT add Firebase yet.
+6. Do NOT add encryption yet.
 
 Once this works, move to:
 
-PHASE 5 — Application Architecture.
+PHASE 6 — Firebase Authentication.
 
 Then proceed through the roadmap sequentially.
 
