@@ -6,10 +6,10 @@ class ChatInputField extends StatelessWidget {
   final VoidCallback onSendPressed;
 
   const ChatInputField({
-    Key? key,
+    super.key,
     required this.controller,
     required this.onSendPressed,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -30,14 +30,17 @@ class ChatInputField extends StatelessWidget {
                   controller: controller,
                   style: const TextStyle(color: Colors.white, fontSize: 15),
                   cursorColor: Colors.white,
-                  decoration: InputDecoration(
+                  textInputAction: TextInputAction.send,
+                  textCapitalization: TextCapitalization.sentences,
+                  onSubmitted: (_) => onSendPressed(),
+                  decoration: const InputDecoration(
                     hintText: 'Type a message...',
-                    hintStyle: const TextStyle(
+                    hintStyle: TextStyle(
                       color: Color(0xFFAAAAAA),
                       fontSize: 15,
                     ),
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
+                    contentPadding: EdgeInsets.symmetric(
                       vertical: 14,
                       horizontal: 20,
                     ),

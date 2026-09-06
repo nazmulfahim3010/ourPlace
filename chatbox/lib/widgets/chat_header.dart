@@ -6,10 +6,10 @@ class ChatHeader extends StatelessWidget {
   final VoidCallback onSendLuv;
 
   const ChatHeader({
-    Key? key,
+    super.key,
     required this.partnerName,
     required this.onSendLuv,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

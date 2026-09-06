@@ -43,8 +43,8 @@ class ChatMessage {
       senderId == 'current_user'; // TODO: Use actual currentUserId from auth
 
   /// Get sender display name (for UI compatibility)
-  String getSenderName() {
-    return senderId == 'current_user' ? 'You' : 'Alex';
+  String getSenderName([String partnerName = 'Twilight']) {
+    return senderId == 'current_user' ? 'You' : partnerName;
   }
 
   /// Get message content (for UI compatibility)

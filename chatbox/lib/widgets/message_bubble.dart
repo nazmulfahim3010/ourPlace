@@ -5,8 +5,13 @@ import 'package:chatbox/widgets/timestamp_indicator.dart';
 /// Individual message bubble widget
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
+  final bool showTimestamp;
 
-  const MessageBubble({Key? key, required this.message}) : super(key: key);
+  const MessageBubble({
+    super.key,
+    required this.message,
+    this.showTimestamp = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -15,14 +20,17 @@ class MessageBubble extends StatelessWidget {
           ? CrossAxisAlignment.end
           : CrossAxisAlignment.start,
       children: [
-        /// Timestamp indicator above message
-        TimestampIndicator(
-          timestamp: message.timestamp,
-          isSent: message.isSent,
-        ),
-        const SizedBox(height: 4),
+        /// Timestamp and delivery status indicator above message
+        if (showTimestamp) ...[
+          TimestampIndicator(
+            timestamp: message.timestamp,
+            isSent: message.isSent,
+            status: message.isSent ? message.status : null,
+          ),
+          const SizedBox(height: 4),
+        ],
 
-        /// Message bubble
+        /// Message bubble container
         Align(
           alignment: message.isSent
               ? Alignment.centerRight

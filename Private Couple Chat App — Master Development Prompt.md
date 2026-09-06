@@ -84,22 +84,22 @@ Do not redo this phase.
 
 # PHASE 2 — Message Architecture
 
-STATUS: CURRENT
+STATUS: COMPLETED
 
 Build a proper message architecture.
 
 Tasks:
 
-- [ ] Create Message model
-- [ ] Add unique message ID
-- [ ] Add sender ID
-- [ ] Add recipient ID
-- [ ] Add message text
-- [ ] Add timestamp
-- [ ] Add message type
-- [ ] Add message status
-- [ ] Replace mock string messages with Message objects
-- [ ] Create clean message repository/service architecture
+- [x] Create Message model
+- [x] Add unique message ID
+- [x] Add sender ID
+- [x] Add recipient ID
+- [x] Add message text
+- [x] Add timestamp
+- [x] Add message type
+- [x] Add message status
+- [x] Replace mock string messages with Message objects
+- [x] Create clean message repository/service architecture
 
 Recommended conceptual model:
 
@@ -135,22 +135,22 @@ Do not implement media yet unless required by the architecture.
 
 # PHASE 3 — Functional Local Chat
 
-STATUS: NOT STARTED
+STATUS: COMPLETED
 
 Make the existing UI functional without Firebase.
 
 Requirements:
 
-- [ ] User can type a message
-- [ ] Pressing Send creates a Message object
-- [ ] Message appears immediately in the UI
-- [ ] Input field clears after sending
-- [ ] Empty messages cannot be sent
-- [ ] Messages maintain timestamps
-- [ ] Sent/received alignment works
-- [ ] Message grouping works
-- [ ] Scrolling works correctly
-- [ ] Keyboard behavior is handled properly
+- [x] User can type a message
+- [x] Pressing Send creates a Message object
+- [x] Message appears immediately in the UI
+- [x] Input field clears after sending
+- [x] Empty messages cannot be sent
+- [x] Messages maintain timestamps
+- [x] Sent/received alignment works
+- [x] Message grouping works
+- [x] Scrolling works correctly
+- [x] Keyboard behavior is handled properly
 
 Use local in-memory state initially.
 
@@ -162,7 +162,7 @@ The goal is to prove that the chat UI and message architecture work independentl
 
 # PHASE 4 — Local Database
 
-STATUS: NOT STARTED
+STATUS: CURRENT
 
 Introduce persistent local storage.
 
@@ -680,24 +680,21 @@ If a design decision creates a security problem, explicitly explain it.
 
 We are currently at:
 
-PHASE 2 — Message Architecture
+PHASE 4 — Local Database
 
 The immediate task is:
 
-1. Inspect the existing Chat Screen.
-2. Create a proper Message model.
-3. Replace mock message strings with Message objects.
-4. Connect the existing input field to message creation.
-5. Make the Send button add a new local Message.
-6. Update the UI automatically.
-7. Keep the existing visual design.
-8. Do NOT add Firebase yet.
-9. Do NOT add encryption yet.
-10. Do NOT implement media yet.
+1. Configure local SQLite persistence (using Drift or sqflite).
+2. Create messages table schema matching the ChatMessage domain model.
+3. Implement LocalDatabase CRUD operations (insert, query by partner, update status, delete).
+4. Connect the local database to the chat screen so messages persist across app restarts.
+5. Provide a clear test checklist to verify persistence.
+6. Do NOT connect Firebase yet.
+7. Do NOT add encryption yet.
 
 Once this works, move to:
 
-PHASE 3 — Functional Local Chat.
+PHASE 5 — Application Architecture.
 
 Then proceed through the roadmap sequentially.
 

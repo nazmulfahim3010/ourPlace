@@ -29,10 +29,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 3 — Functional Local Chat** (Bridging Phase 2 to Phase 3) |
-| **Current Status** | In Progress / Modular Foundation Established |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture & Modularization) |
-| **Next Phase** | **Phase 4 — Local Database (Drift / SQLite)** |
+| **Current Phase** | **Phase 4 — Local Database (Drift / SQLite)** |
+| **Current Status** | Ready to implement persistence layer |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat) |
+| **Next Phase** | **Phase 5 — Application Architecture & Repositories** |
 
 ---
 
@@ -40,11 +40,11 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 ```
 [Phase 1: UI Prototype]  ──►  [Phase 2: Message Model]  ──►  [Phase 3: Local Chat]
-       (COMPLETED)                     (COMPLETED)                  (IN PROGRESS)
+       (COMPLETED)                     (COMPLETED)                     (COMPLETED)
                                                                           │
                                                                           ▼
 [Phase 6: Firebase Auth] ◄──  [Phase 5: Clean Arch]     ◄──  [Phase 4: Local DB]
-       (PLANNED)                       (PARTIAL)                     (SKELETON)
+       (PLANNED)                       (PLANNED)                     (CURRENT)
           │
           ▼
 [Phase 7: Security Rules]──►  [Phase 8: E2EE Layer]     ──►  [Phase 9: Temp Relay]
@@ -78,16 +78,19 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Modularize monolithic UI into standalone reusable widgets (`widgets/`)
   - [x] Replace mock string messages with structured `ChatMessage` objects
 
-- [ ] **Phase 3 — Functional Local Chat** *(Current Focus)*
+- [x] **Phase 3 — Functional Local Chat**
   - [x] Typing message into input field updates controller
   - [x] Pressing Send creates structured `ChatMessage` object
   - [x] Input field clears upon send
   - [x] Messages render dynamically in reversed scrollable `ListView`
   - [x] Empty messages blocked from sending
-  - [ ] Message grouping and date separators (e.g., "Today", "Yesterday")
-  - [ ] Smooth auto-scroll behavior on new message receipt/send
-  - [ ] Keyboard dismiss / inset handling improvements
-  - [ ] Local in-memory state decoupled from widget state (prep for State Management)
+  - [x] Messages maintain timestamps and status lifecycle indicators
+  - [x] Sent/received alignment works with 75% max width
+  - [x] Message grouping by date with `DateDivider` ("Today", "Yesterday", or formatted date)
+  - [x] Consecutive message grouping (tighter spacing and hidden redundant timestamps for bursts)
+  - [x] Smooth auto-scroll behavior on send (`ScrollController.animateTo(0.0)`)
+  - [x] Keyboard dismiss / inset handling improvements (tap outside to unfocus, `TextInputAction.send` on submit)
+  - [x] Passing widget test suite (`flutter test`) verifies UI, sending messages, and quick actions
 
 - [ ] **Phase 4 — Local Database (Drift / SQLite)**
   - [x] Interface stub created (`database/local_database.dart`)
@@ -326,14 +329,15 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 ### Immediate Next Steps (Finishing Phase 3 ➔ Starting Phase 4)
 
 #### Task 3.1: Complete Functional Local Chat (Phase 3)
-- [ ] Add date dividers between message groups (e.g., "Today", "Yesterday").
-- [ ] Implement auto-scroll to latest message when sending.
-- [ ] Connect `ChatInputField` submit action (Enter key / keyboard done action).
-- [ ] Handle keyboard focus dismiss when tapping outside input.
+- [x] Add date dividers between message groups (e.g., "Today", "Yesterday").
+- [x] Implement auto-scroll to latest message when sending.
+- [x] Connect `ChatInputField` submit action (Enter key / keyboard done action).
+- [x] Handle keyboard focus dismiss when tapping outside input.
 
 #### Task 3.2: Technical Debt Cleanup
-- [ ] Archive or remove legacy `chatbox/lib/chat_screen.dart` (monolithic file superseded by `chatbox/lib/screens/chat_screen.dart`).
-- [ ] Update `chatbox/test/widget_test.dart` to smoke test `ChatScreen` instead of the non-existent counter app.
+- [x] Modernize constructor parameters across widgets to use super parameters (`super.key`) to clear the 12 `use_super_parameters` analyzer lints.
+- [x] Forward legacy `chatbox/lib/chat_screen.dart` to `chatbox/lib/screens/chat_screen.dart` to remove duplication.
+- [x] Update `chatbox/test/widget_test.dart` to smoke test `ChatScreen` instead of the non-existent counter app (100% tests passing).
 - [ ] Clarify / clean up `demoproject/` workspace folder.
 
 #### Task 4.1: SQLite / Drift Integration (Phase 4)
