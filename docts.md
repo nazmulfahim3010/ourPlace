@@ -199,6 +199,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 e:\ourPlace\
 ├── .git/                                    # Git repository
 ├── Private Couple Chat App — Master...md    # Master specification & rules prompt
+├── diagram.md                               # Architectural & technical diagrams (Mermaid)
 ├── docts.md                                 # Master project documentation & task tracker (this file)
 ├── README.md                                # Root repository readme
 └── chatbox/                                 # PRIMARY FLUTTER APPLICATION

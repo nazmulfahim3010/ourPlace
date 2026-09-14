@@ -1,0 +1,488 @@
+# ourPlace — Architectural & Technical Diagrams Specification
+> **Document Version:** 1.0.0  
+> **Last Updated:** 2026-09-15  
+> **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
+> **Companion Document:** [`docts.md`](file:///e:/ourPlace/docts.md)
+
+---
+
+## Table of Contents
+1. [High-Level System Topology & Privacy Boundary](#1-high-level-system-topology--privacy-boundary)
+2. [Three-Tier Credential Separation Model](#2-three-tier-credential-separation-model)
+3. [App Launch & Authentication Gate State Machine](#3-app-launch--authentication-gate-state-machine)
+4. [App Lifecycle & Background Auto-Lock Flow](#4-app-lifecycle--background-auto-lock-flow)
+5. [Clean Architecture Layer Dependencies](#5-clean-architecture-layer-dependencies)
+6. [End-to-End Encryption & Ephemeral Relay Protocol](#6-end-to-end-encryption--ephemeral-relay-protocol)
+7. [Multi-User Navigation & Screen Hierarchy](#7-multi-user-navigation--screen-hierarchy)
+8. [Love Connection & One-Time Love Code Sharing Flow](#8-love-connection--one-time-love-code-sharing-flow)
+9. [Local Database Schema & Entity Relationships](#9-local-database-schema--entity-relationships)
+10. [Security Enclave & Cryptographic Trust Boundaries](#10-security-enclave--cryptographic-trust-boundaries)
+
+---
+
+## 1. High-Level System Topology & Privacy Boundary
+
+The core philosophy of `ourPlace` is:
+> *"The phones own the conversation. The server only helps the phones communicate."*
+
+```mermaid
+flowchart TB
+    subgraph DeviceA["User Device A (Local Sandbox)"]
+        UI_A["Flutter UI (Inbox & Chat)"]
+        Auth_A["Auth & AppLock Service"]
+        DB_A[("Local SQLite Database (Permanent Messages)")]
+        KeyStore_A[("Hardware Keystore / Keychain (Local PIN Verifier)")]
+        E2EE_A["E2EE Cryptographic Engine (Signal Protocol / Ratchet)"]
+    end
+
+    subgraph FirebaseCloud["Untrusted Ephemeral Cloud (Firebase)"]
+        AuthRelay["Identity & Signaling Routing"]
+        CiphertextRelay["Ephemeral Ciphertext Queue (Purged immediately upon delivery)"]
+        FCM["Push Notifications (No message content)"]
+    end
+
+    subgraph DeviceB["User Device B (Local Sandbox)"]
+        UI_B["Flutter UI (Inbox & Chat)"]
+        Auth_B["Auth & AppLock Service"]
+        DB_B[("Local SQLite Database (Permanent Messages)")]
+        KeyStore_B[("Hardware Keystore / Keychain (Local PIN Verifier)")]
+        E2EE_B["E2EE Cryptographic Engine (Signal Protocol / Ratchet)"]
+    end
+
+    UI_A <--> Auth_A
+    Auth_A <--> KeyStore_A
+    UI_A <--> DB_A
+    UI_A <--> E2EE_A
+
+    UI_B <--> Auth_B
+    Auth_B <--> KeyStore_B
+    UI_B <--> DB_B
+    UI_B <--> E2EE_B
+
+    E2EE_A -- "1. Dispatch Encrypted Ciphertext" --> CiphertextRelay
+    Auth_A -- "Signaling & User Directory" --> AuthRelay
+    AuthRelay -- "Signaling & User Directory" --> Auth_B
+    CiphertextRelay -- "Silent Wakeup Signal" --> FCM
+    FCM -- "FCM Ping" --> DeviceB
+    CiphertextRelay -- "2. Pull Ciphertext & Ack Delivery" --> E2EE_B
+    E2EE_B -- "3. Purge Request" --> CiphertextRelay
+```
+
+---
+
+## 2. Three-Tier Credential Separation Model
+
+`ourPlace` enforces strict isolation between account authentication, local device security, and ephemeral love sharing:
+
+```mermaid
+classDiagram
+    class AccountPassword {
+        +String candidatePassword
+        +String randomSalt (32 bytes)
+        +String saltedSha256Hash
+        +verifyPassword(candidate)
+        -- Scope --
+        Remote Account Verification
+        Never plaintext
+        Never used for device lock
+    }
+
+    class LocalAppPasscode {
+        +String numericPin (4 digits)
+        +String hardwareSalt (32 bytes)
+        +String secureKeystoreHash
+        +bool biometricsEnabled
+        +verifyPasscode(candidate)
+        -- Scope --
+        Device-Local Unlock Only
+        Stored in Android Keystore / iOS Keychain
+        Never sent to Firebase or server
+    }
+
+    class OneTimeLoveCode {
+        +String ephemeralCode (6 digits)
+        +DateTime createdAt
+        +Duration validDuration (60 seconds)
+        +bool isUsed
+        +validateCode(candidate)
+        -- Scope --
+        Phase 17 Love Sharing Authorization
+        Single-use, expires in 60s
+        Never used as encryption key
+    }
+
+    AccountPassword <.. LocalAppPasscode : "Strict Isolation (Separate Verifiers)"
+    LocalAppPasscode <.. OneTimeLoveCode : "Strict Isolation (Ephemeral Authorization)"
+```
+
+---
+
+## 3. App Launch & Authentication Gate State Machine
+
+Upon launch, [`AuthGate`](file:///e:/ourPlace/chatbox/lib/screens/auth/auth_gate.dart) evaluates account session and local device security state:
+
+```mermaid
+stateDiagram-v2
+    [*] --> AppLaunch: Application Cold Start
+
+    state AppLaunch {
+        CheckSession: Check Active Account Session
+    }
+
+    CheckSession --> Unauthenticated: No User Logged In
+    CheckSession --> Authenticated: Valid Session Found
+
+    state Unauthenticated {
+        AuthScreen: AuthScreen (Sign In / Register)
+        AccountCreation: Validate @username & Hash Password
+        AuthScreen --> AccountCreation: Submit Form
+        AccountCreation --> Authenticated: Account Created / Signed In
+    }
+
+    state Authenticated {
+        CheckPasscode: Check isPasscodeConfigured()
+    }
+
+    CheckPasscode --> PasscodeSetup: Passcode Not Configured
+    CheckPasscode --> CheckLockState: Passcode Configured
+
+    state PasscodeSetup {
+        EnterPin: Enter 4-Digit Passcode
+        ConfirmPin: Confirm 4-Digit Passcode
+        EnrollBiometrics: Optional Biometric Prompt
+        EnterPin --> ConfirmPin: 4 Digits
+        ConfirmPin --> EnterPin: Mismatch (Shake & Reset)
+        ConfirmPin --> EnrollBiometrics: Match
+        EnrollBiometrics --> Unlocked: Passcode Saved to Keystore
+    }
+
+    state CheckLockState {
+        EvaluateUnlock: isAppUnlocked == true?
+    }
+
+    EvaluateUnlock --> AppLockScreen: Locked (false)
+    EvaluateUnlock --> Unlocked: Unlocked (true)
+
+    state AppLockScreen {
+        PromptBiometric: Auto-Prompt Biometrics (if enabled)
+        NumericKeypad: Charcoal Keypad PIN Entry
+        FallbackLogin: Log in with Account Password
+        PromptBiometric --> Unlocked: Biometric Success
+        NumericKeypad --> Unlocked: PIN Matches Keystore Hash
+        NumericKeypad --> AppLockScreen: PIN Mismatch (Shake Dots)
+        FallbackLogin --> Unauthenticated: Session Cleared
+    }
+
+    state Unlocked {
+        HomeScreen: HomeScreen (Inbox & Profile)
+    }
+```
+
+---
+
+## 4. App Lifecycle & Background Auto-Lock Flow
+
+When the user leaves or backgrounds `ourPlace`, [`AuthGate`](file:///e:/ourPlace/chatbox/lib/screens/auth/auth_gate.dart) automatically locks the app to protect conversations from physical access:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant OS as Mobile OS (Android / iOS)
+    participant AuthGate as AuthGate (WidgetsBindingObserver)
+    participant AppLockService as AppLockService
+    participant Keystore as SecureStorageService
+    participant UI as Screen Presentation
+
+    Note over User,UI: App is currently active in Foreground (HomeScreen)
+    User->>OS: Press Home / Switch Apps / Lock Screen
+    OS->>AuthGate: didChangeAppLifecycleState(AppLifecycleState.paused / hidden)
+    AuthGate->>AppLockService: lockApp()
+    AppLockService->>AppLockService: _isAppUnlocked = false
+    AppLockService-->>AuthGate: lockStateChanges.add(false)
+    AuthGate->>UI: Trigger Rebuild (Swap HomeScreen with AppLockScreen)
+
+    Note over User,UI: Device is later reopened
+    User->>OS: Tap ourPlace App Icon
+    OS->>AuthGate: didChangeAppLifecycleState(AppLifecycleState.resumed)
+    UI->>User: Render AppLockScreen (Conversations Hidden)
+    
+    alt Biometrics Enabled
+        AppLockService->>OS: LocalAuthentication.authenticate()
+        OS-->>User: Display Fingerprint / Face Prompt
+        User->>OS: Provide Valid Biometric
+        OS-->>AppLockService: Authentication Result: Success
+        AppLockService->>AppLockService: _isAppUnlocked = true
+        AppLockService-->>AuthGate: lockStateChanges.add(true)
+        AuthGate->>UI: Swap to HomeScreen (Inbox)
+    else Numeric PIN Entry
+        User->>UI: Enter 4-digit PIN on NumericKeypad
+        UI->>AppLockService: verifyPasscode(candidatePin)
+        AppLockService->>Keystore: Read stored hash & salt
+        AppLockService->>AppLockService: Hash candidate with salt & compare
+        alt Correct PIN
+            AppLockService->>AppLockService: _isAppUnlocked = true
+            AppLockService-->>AuthGate: lockStateChanges.add(true)
+            AuthGate->>UI: Swap to HomeScreen (Inbox)
+        else Incorrect PIN
+            AppLockService-->>UI: Return false
+            UI->>UI: Shake PasscodeDots & Flash Red
+        end
+    end
+```
+
+---
+
+## 5. Clean Architecture Layer Dependencies
+
+The codebase follows Clean Architecture with unidirectional dependencies:
+
+```mermaid
+flowchart TD
+    subgraph PresentationLayer["Presentation Layer (Flutter Widgets & Screens)"]
+        Screens["Screens\n- HomeScreen\n- InboxScreen\n- ChatScreen\n- ProfileScreen\n- AuthScreen\n- AppLockScreen\n- PasscodeSetupScreen"]
+        Widgets["Reusable Widgets\n- ConversationTile\n- ChatHeader\n- MessageBubble\n- ChatInputField\n- NumericKeypad\n- PasscodeDots\n- DateDivider"]
+    end
+
+    subgraph ServiceRepositoryLayer["Service & Repository Layer (Business Orchestration)"]
+        AuthRepo["AuthRepository / AuthService\n- User Registration\n- Salted SHA-256 Auth\n- Session Stream"]
+        ChatRepo["ChatRepository / LocalChatRepository\n- Message Delegation\n- Status Lifecycle"]
+        ConvRepo["ConversationRepository\n- Love Connection Seed\n- Inbox Unread Tracking"]
+        AppLockServ["AppLockService\n- Passcode Keystore Verification\n- Local Biometrics\n- Auto-Lock Broadcast"]
+    end
+
+    subgraph DomainLayer["Domain & Core Layer (Pure Dart Business Rules)"]
+        Models["Domain Models\n- User\n- UserAccount\n- Conversation\n- ChatMessage"]
+        CryptoCore["Cryptographic & Core Utils\n- HashUtils (Salt + SHA-256)\n- AppTheme (Pure Black & Charcoal)\n- AppConstants & Exceptions"]
+    end
+
+    subgraph DataStorageLayer["Data & Hardware Layer (Infrastructure)"]
+        DriftDB["Drift SQLite Database\n- Messages Table\n- UserAccounts Table"]
+        SecStore["flutter_secure_storage\n- Android Keystore\n- iOS Keychain\n- Windows DPAPI"]
+        LocalAuth["local_auth\n- Platform OS Biometrics"]
+    end
+
+    Screens --> Widgets
+    Screens --> AuthRepo
+    Screens --> ChatRepo
+    Screens --> ConvRepo
+    Screens --> AppLockServ
+
+    AuthRepo --> Models
+    ChatRepo --> Models
+    ConvRepo --> Models
+    AppLockServ --> CryptoCore
+
+    AuthRepo --> DriftDB
+    ChatRepo --> DriftDB
+    AppLockServ --> SecStore
+    AppLockServ --> LocalAuth
+    DriftDB --> Models
+```
+
+---
+
+## 6. End-to-End Encryption & Ephemeral Relay Protocol
+
+Planned for **Phases 10–12**, this protocol guarantees zero-knowledge message delivery with no permanent server footprint:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Sender (Alice)
+    participant AliceE2EE as Alice Device Engine
+    participant Relay as Firebase Ephemeral Relay
+    participant FCM as Push Notification Service
+    participant BobE2EE as Bob Device Engine
+    actor Bob as Recipient (Bob)
+
+    Note over Alice,Bob: Active E2EE Session established via Ratchet Keys
+    Alice->>AliceE2EE: Write message: "Hey, are you free tonight?"
+    AliceE2EE->>AliceE2EE: Generate message key via Double Ratchet
+    AliceE2EE->>AliceE2EE: Encrypt plaintext payload with AES-GCM
+    AliceE2EE->>Relay: POST /relay/messages { recipient: "@bob", ciphertext: "0x8f3a..." }
+    Relay->>Relay: Enqueue ephemeral payload in volatile queue
+
+    Relay->>FCM: Trigger silent background wakeup ping to Bob
+    FCM->>BobE2EE: Silent Push (No message payload)
+
+    BobE2EE->>Relay: GET /relay/messages/pending?recipient="@bob"
+    Relay-->>BobE2EE: Return ciphertext payload: "0x8f3a..."
+    
+    BobE2EE->>BobE2EE: Decrypt payload using Bob Private Ratchet Key
+    BobE2EE->>BobE2EE: Verify HMAC & integrity
+    BobE2EE->>BobE2EE: Save decrypted message into Local SQLite DB
+    
+    BobE2EE->>Relay: DELETE /relay/messages/0x8f3a (Delivery ACK)
+    Relay->>Relay: Permanently purge ciphertext from Cloud Relay
+    
+    BobE2EE->>Bob: Display message in UI & show notification
+```
+
+---
+
+## 7. Multi-User Navigation & Screen Hierarchy
+
+The application navigation routes between multiple conversation partners while elevating the Love Connection:
+
+```mermaid
+graph TD
+    AuthGate["AuthGate\n(Lifecycle Auto-Lock Coordinator)"]
+
+    AuthGate -->|Not Logged In| AuthScreen["AuthScreen\n(Sign In / Register)"]
+    AuthGate -->|Passcode Not Set| PasscodeSetupScreen["PasscodeSetupScreen\n(4-Digit PIN Creation & Biometrics)"]
+    AuthGate -->|Session Locked| AppLockScreen["AppLockScreen\n(Tactile Keypad / Biometrics Prompt)"]
+    AuthGate -->|Session Active & Unlocked| HomeScreen["HomeScreen\n(Main Scaffold)"]
+
+    HomeScreen --> InboxScreen["InboxScreen\n(Primary View)"]
+    HomeScreen --> ProfileScreen["ProfileScreen\n(Identity & Settings)"]
+
+    subgraph InboxLayout["Inbox Components"]
+        SearchBar["Instant Search Filter"]
+        LoveSection["❤️ LOVE CONNECTION (0 or 1 Partner)\n- Special Romantic Tint (#2E2428)\n- Heart Badge\n- Pinned Top Position"]
+        ConvList["CONVERSATIONS (Multi-User)\n- User A, User B, User C\n- Unread Badge Counter\n- Relative Timestamps"]
+    end
+
+    InboxScreen --> SearchBar
+    InboxScreen --> LoveSection
+    InboxScreen --> ConvList
+
+    LoveSection -->|Tap Partner| ChatScreenLove["ChatScreen (@twilight)\n- Floating Header with 'Send luv'\n- SQLite History\n- Back Button to Inbox"]
+    ConvList -->|Tap User| ChatScreenRegular["ChatScreen (@sarah / @rahim)\n- Standard Header\n- SQLite History\n- Back Button to Inbox"]
+
+    subgraph ProfileLayout["Profile Components"]
+        UserId["Anonymous Identity Card (@alex)"]
+        SecurityCard["Security & App Lock\n- Passcode Active Status\n- Biometrics Switch\n- Change Passcode\n- 'Lock App Now' Button"]
+        LoveToggle["Love Connection Visibility Toggle"]
+        SignOut["Sign Out Button"]
+    end
+
+    ProfileScreen --> UserId
+    ProfileScreen --> SecurityCard
+    ProfileScreen --> LoveToggle
+    ProfileScreen --> SignOut
+```
+
+---
+
+## 8. Love Connection & One-Time Love Code Sharing Flow
+
+In **Phase 17**, users can selectively grant their partner access to view a specific conversation thread using an ephemeral 60-second authorization code:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alex as User (Alex)
+    actor Twilight as Love Partner (Twilight)
+    participant AlexDevice as Alex's Device
+    participant CloudRelay as Temporary Relay
+    participant TwilightDevice as Twilight's Device
+
+    Twilight->>Alex: Requests to view conversation with @sarah
+    Alex->>AlexDevice: Tap "Share Conversation" -> Select @sarah
+    AlexDevice->>AlexDevice: Generate 6-digit random code (e.g. "849201")
+    AlexDevice->>AlexDevice: Set 60-second expiration timer
+    AlexDevice->>Alex: Display One-Time Love Code on screen
+
+    Alex-->>Twilight: Tells code "849201" (In person / out of band)
+    Twilight->>TwilightDevice: Enter Code "849201" on Love Connection screen
+    TwilightDevice->>CloudRelay: POST /love-share/claim { code: "849201", partner: "@twilight" }
+    
+    CloudRelay->>AlexDevice: Relay claim request
+    AlexDevice->>AlexDevice: Verify code == "849201" AND now < expiresAt AND !isUsed
+    
+    alt Code Valid
+        AlexDevice->>AlexDevice: Mark code as USED
+        AlexDevice->>AlexDevice: Package & encrypt @sarah's messages with Twilight's key
+        AlexDevice->>CloudRelay: Push encrypted conversation bundle
+        CloudRelay->>TwilightDevice: Transmit encrypted bundle
+        CloudRelay->>CloudRelay: Purge bundle immediately
+        TwilightDevice->>TwilightDevice: Decrypt and render temporary view
+        TwilightDevice->>Twilight: Display conversation preview
+    else Code Expired or Incorrect
+        AlexDevice-->>CloudRelay: Reject authorization
+        CloudRelay-->>TwilightDevice: Return "Invalid or Expired Code"
+        TwilightDevice->>Twilight: Show error: "Code expired or invalid"
+    end
+```
+
+---
+
+## 9. Local Database Schema & Entity Relationships
+
+The local Drift SQLite database enforces local persistence for accounts and chat messages:
+
+```mermaid
+erDiagram
+    USER_ACCOUNTS {
+        TEXT account_id PK "UUID"
+        TEXT username UK "Unique normalized lowercase username"
+        TEXT password_hash "Salted SHA-256 verifier"
+        TEXT salt "32-byte cryptographically random salt"
+        DATETIME created_at "Account creation timestamp"
+        TEXT public_identity_key "Nullable E2EE identity key"
+    }
+
+    MESSAGES {
+        TEXT id PK "Unique message UUID"
+        TEXT sender_id "Sender identifier (@user or 'current_user')"
+        TEXT recipient_id "Recipient identifier"
+        TEXT partner "Partner username indexing conversation"
+        TEXT text "Message text content"
+        INTEGER type "MessageType enum (0:text, 1:image, 2:audio, 3:video, 4:system)"
+        INTEGER status "MessageStatus enum (0:sending, 1:sent, 2:delivered, 3:read, 4:failed)"
+        DATETIME timestamp "UTC timestamp"
+    }
+
+    CONVERSATION_DOMAIN {
+        TEXT id PK
+        TEXT partner_username
+        TEXT last_message_id FK
+        INTEGER unread_count
+        BOOLEAN is_love_connection
+        DATETIME last_message_at
+    }
+
+    USER_DOMAIN {
+        TEXT id PK
+        TEXT username
+        TEXT display_name
+        DATETIME created_at
+        TEXT love_connection_id
+        BOOLEAN love_connection_visibility
+    }
+
+    USER_ACCOUNTS ||--o{ USER_DOMAIN : "Hydrates"
+    MESSAGES }o--|| CONVERSATION_DOMAIN : "Aggregated into"
+    USER_DOMAIN ||--o{ CONVERSATION_DOMAIN : "Partner of"
+```
+
+---
+
+## 10. Security Enclave & Cryptographic Trust Boundaries
+
+Physical and network security boundaries ensure zero data leakage:
+
+```mermaid
+flowchart LR
+    subgraph NetworkSpace["Untrusted Network Space"]
+        PublicInternet["Public Internet"]
+        FirebaseServers["Firebase Ephemeral Relay\n- No permanent message storage\n- No plaintext passwords\n- Zero telemetry"]
+    end
+
+    subgraph AppSandbox["Device Application Sandbox (Flutter App)"]
+        RAM["Application Volatile Memory\n- Ephemeral state\n- Plaintext only during active viewing\n- Wiped upon app lock"]
+        LocalSQLite["SQLite Database File\n- Drift Encrypted/Protected Local Store\n- Permanent conversation history"]
+    end
+
+    subgraph HardwareEnclave["Hardware Security Enclave (OS Protected)"]
+        Keystore["Android Keystore / iOS Keychain\n- 4-digit Passcode SHA-256 Hash + Salt\n- E2EE Identity Private Keys\n- Hardware-backed protection"]
+        BiometricSensor["Platform Biometric Sensor\n- Fingerprint / Face ID\n- Auth handled strictly by OS\n- App receives only boolean result"]
+    end
+
+    PublicInternet <-->|TLS 1.3 + E2EE Ciphertext Only| FirebaseServers
+    FirebaseServers <-->|Ephemeral E2EE Ciphertext| RAM
+    RAM <-->|CRUD Operations| LocalSQLite
+    RAM <-->|Protected Key-Value Operations| Keystore
+    RAM <-->|LocalAuthentication Prompt| BiometricSensor
+```
