@@ -37,14 +37,16 @@ class ChatMessage {
     this.status = MessageStatus.sent,
   });
 
-  /// Convenience getter: Check if message was sent by current user
-  /// Note: This will be enhanced in Phase 6 with actual user authentication
-  bool get isSent =>
-      senderId == 'current_user'; // TODO: Use actual currentUserId from auth
+  /// Convenience getter: Check if message was sent by default current user
+  bool get isSent => senderId == 'current_user';
+
+  /// Check if message was sent by a specific user ID
+  bool isSentBy(String currentUserId) =>
+      senderId == currentUserId || (senderId == 'current_user' && currentUserId.isNotEmpty);
 
   /// Get sender display name (for UI compatibility)
-  String getSenderName([String partnerName = 'Twilight']) {
-    return senderId == 'current_user' ? 'You' : partnerName;
+  String getSenderName([String partnerName = '@twilight', String currentUserName = 'You']) {
+    return isSent ? currentUserName : partnerName;
   }
 
   /// Get message content (for UI compatibility)

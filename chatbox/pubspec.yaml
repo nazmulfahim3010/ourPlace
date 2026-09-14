@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   drift: ^2.34.4
   drift_flutter: ^0.3.1
+  crypto: ^3.0.6
 
 dev_dependencies:
   flutter_test:

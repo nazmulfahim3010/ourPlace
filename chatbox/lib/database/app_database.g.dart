@@ -469,15 +469,452 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   }
 }
 
+class $UserAccountsTable extends UserAccounts
+    with TableInfo<$UserAccountsTable, DbUserAccount> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $UserAccountsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _accountIdMeta = const VerificationMeta(
+    'accountId',
+  );
+  @override
+  late final GeneratedColumn<String> accountId = GeneratedColumn<String>(
+    'account_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _usernameMeta = const VerificationMeta(
+    'username',
+  );
+  @override
+  late final GeneratedColumn<String> username = GeneratedColumn<String>(
+    'username',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  static const VerificationMeta _passwordHashMeta = const VerificationMeta(
+    'passwordHash',
+  );
+  @override
+  late final GeneratedColumn<String> passwordHash = GeneratedColumn<String>(
+    'password_hash',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _saltMeta = const VerificationMeta('salt');
+  @override
+  late final GeneratedColumn<String> salt = GeneratedColumn<String>(
+    'salt',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _publicIdentityKeyMeta = const VerificationMeta(
+    'publicIdentityKey',
+  );
+  @override
+  late final GeneratedColumn<String> publicIdentityKey =
+      GeneratedColumn<String>(
+        'public_identity_key',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  @override
+  List<GeneratedColumn> get $columns => [
+    accountId,
+    username,
+    passwordHash,
+    salt,
+    createdAt,
+    publicIdentityKey,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'user_accounts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DbUserAccount> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('account_id')) {
+      context.handle(
+        _accountIdMeta,
+        accountId.isAcceptableOrUnknown(data['account_id']!, _accountIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_accountIdMeta);
+    }
+    if (data.containsKey('username')) {
+      context.handle(
+        _usernameMeta,
+        username.isAcceptableOrUnknown(data['username']!, _usernameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_usernameMeta);
+    }
+    if (data.containsKey('password_hash')) {
+      context.handle(
+        _passwordHashMeta,
+        passwordHash.isAcceptableOrUnknown(
+          data['password_hash']!,
+          _passwordHashMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_passwordHashMeta);
+    }
+    if (data.containsKey('salt')) {
+      context.handle(
+        _saltMeta,
+        salt.isAcceptableOrUnknown(data['salt']!, _saltMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_saltMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('public_identity_key')) {
+      context.handle(
+        _publicIdentityKeyMeta,
+        publicIdentityKey.isAcceptableOrUnknown(
+          data['public_identity_key']!,
+          _publicIdentityKeyMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {accountId};
+  @override
+  DbUserAccount map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DbUserAccount(
+      accountId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}account_id'],
+      )!,
+      username: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}username'],
+      )!,
+      passwordHash: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}password_hash'],
+      )!,
+      salt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}salt'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      publicIdentityKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}public_identity_key'],
+      ),
+    );
+  }
+
+  @override
+  $UserAccountsTable createAlias(String alias) {
+    return $UserAccountsTable(attachedDatabase, alias);
+  }
+}
+
+class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
+  final String accountId;
+  final String username;
+  final String passwordHash;
+  final String salt;
+  final DateTime createdAt;
+  final String? publicIdentityKey;
+  const DbUserAccount({
+    required this.accountId,
+    required this.username,
+    required this.passwordHash,
+    required this.salt,
+    required this.createdAt,
+    this.publicIdentityKey,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['account_id'] = Variable<String>(accountId);
+    map['username'] = Variable<String>(username);
+    map['password_hash'] = Variable<String>(passwordHash);
+    map['salt'] = Variable<String>(salt);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || publicIdentityKey != null) {
+      map['public_identity_key'] = Variable<String>(publicIdentityKey);
+    }
+    return map;
+  }
+
+  UserAccountsCompanion toCompanion(bool nullToAbsent) {
+    return UserAccountsCompanion(
+      accountId: Value(accountId),
+      username: Value(username),
+      passwordHash: Value(passwordHash),
+      salt: Value(salt),
+      createdAt: Value(createdAt),
+      publicIdentityKey: publicIdentityKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(publicIdentityKey),
+    );
+  }
+
+  factory DbUserAccount.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DbUserAccount(
+      accountId: serializer.fromJson<String>(json['accountId']),
+      username: serializer.fromJson<String>(json['username']),
+      passwordHash: serializer.fromJson<String>(json['passwordHash']),
+      salt: serializer.fromJson<String>(json['salt']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      publicIdentityKey: serializer.fromJson<String?>(
+        json['publicIdentityKey'],
+      ),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'accountId': serializer.toJson<String>(accountId),
+      'username': serializer.toJson<String>(username),
+      'passwordHash': serializer.toJson<String>(passwordHash),
+      'salt': serializer.toJson<String>(salt),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'publicIdentityKey': serializer.toJson<String?>(publicIdentityKey),
+    };
+  }
+
+  DbUserAccount copyWith({
+    String? accountId,
+    String? username,
+    String? passwordHash,
+    String? salt,
+    DateTime? createdAt,
+    Value<String?> publicIdentityKey = const Value.absent(),
+  }) => DbUserAccount(
+    accountId: accountId ?? this.accountId,
+    username: username ?? this.username,
+    passwordHash: passwordHash ?? this.passwordHash,
+    salt: salt ?? this.salt,
+    createdAt: createdAt ?? this.createdAt,
+    publicIdentityKey: publicIdentityKey.present
+        ? publicIdentityKey.value
+        : this.publicIdentityKey,
+  );
+  DbUserAccount copyWithCompanion(UserAccountsCompanion data) {
+    return DbUserAccount(
+      accountId: data.accountId.present ? data.accountId.value : this.accountId,
+      username: data.username.present ? data.username.value : this.username,
+      passwordHash: data.passwordHash.present
+          ? data.passwordHash.value
+          : this.passwordHash,
+      salt: data.salt.present ? data.salt.value : this.salt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      publicIdentityKey: data.publicIdentityKey.present
+          ? data.publicIdentityKey.value
+          : this.publicIdentityKey,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbUserAccount(')
+          ..write('accountId: $accountId, ')
+          ..write('username: $username, ')
+          ..write('passwordHash: $passwordHash, ')
+          ..write('salt: $salt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('publicIdentityKey: $publicIdentityKey')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    accountId,
+    username,
+    passwordHash,
+    salt,
+    createdAt,
+    publicIdentityKey,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DbUserAccount &&
+          other.accountId == this.accountId &&
+          other.username == this.username &&
+          other.passwordHash == this.passwordHash &&
+          other.salt == this.salt &&
+          other.createdAt == this.createdAt &&
+          other.publicIdentityKey == this.publicIdentityKey);
+}
+
+class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
+  final Value<String> accountId;
+  final Value<String> username;
+  final Value<String> passwordHash;
+  final Value<String> salt;
+  final Value<DateTime> createdAt;
+  final Value<String?> publicIdentityKey;
+  final Value<int> rowid;
+  const UserAccountsCompanion({
+    this.accountId = const Value.absent(),
+    this.username = const Value.absent(),
+    this.passwordHash = const Value.absent(),
+    this.salt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.publicIdentityKey = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  UserAccountsCompanion.insert({
+    required String accountId,
+    required String username,
+    required String passwordHash,
+    required String salt,
+    required DateTime createdAt,
+    this.publicIdentityKey = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : accountId = Value(accountId),
+       username = Value(username),
+       passwordHash = Value(passwordHash),
+       salt = Value(salt),
+       createdAt = Value(createdAt);
+  static Insertable<DbUserAccount> custom({
+    Expression<String>? accountId,
+    Expression<String>? username,
+    Expression<String>? passwordHash,
+    Expression<String>? salt,
+    Expression<DateTime>? createdAt,
+    Expression<String>? publicIdentityKey,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (accountId != null) 'account_id': accountId,
+      if (username != null) 'username': username,
+      if (passwordHash != null) 'password_hash': passwordHash,
+      if (salt != null) 'salt': salt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (publicIdentityKey != null) 'public_identity_key': publicIdentityKey,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  UserAccountsCompanion copyWith({
+    Value<String>? accountId,
+    Value<String>? username,
+    Value<String>? passwordHash,
+    Value<String>? salt,
+    Value<DateTime>? createdAt,
+    Value<String?>? publicIdentityKey,
+    Value<int>? rowid,
+  }) {
+    return UserAccountsCompanion(
+      accountId: accountId ?? this.accountId,
+      username: username ?? this.username,
+      passwordHash: passwordHash ?? this.passwordHash,
+      salt: salt ?? this.salt,
+      createdAt: createdAt ?? this.createdAt,
+      publicIdentityKey: publicIdentityKey ?? this.publicIdentityKey,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (accountId.present) {
+      map['account_id'] = Variable<String>(accountId.value);
+    }
+    if (username.present) {
+      map['username'] = Variable<String>(username.value);
+    }
+    if (passwordHash.present) {
+      map['password_hash'] = Variable<String>(passwordHash.value);
+    }
+    if (salt.present) {
+      map['salt'] = Variable<String>(salt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (publicIdentityKey.present) {
+      map['public_identity_key'] = Variable<String>(publicIdentityKey.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserAccountsCompanion(')
+          ..write('accountId: $accountId, ')
+          ..write('username: $username, ')
+          ..write('passwordHash: $passwordHash, ')
+          ..write('salt: $salt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('publicIdentityKey: $publicIdentityKey, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $MessagesTable messages = $MessagesTable(this);
+  late final $UserAccountsTable userAccounts = $UserAccountsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [messages];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [messages, userAccounts];
 }
 
 typedef $$MessagesTableCreateCompanionBuilder =
@@ -716,10 +1153,235 @@ typedef $$MessagesTableProcessedTableManager =
       Message,
       PrefetchHooks Function()
     >;
+typedef $$UserAccountsTableCreateCompanionBuilder =
+    UserAccountsCompanion Function({
+      required String accountId,
+      required String username,
+      required String passwordHash,
+      required String salt,
+      required DateTime createdAt,
+      Value<String?> publicIdentityKey,
+      Value<int> rowid,
+    });
+typedef $$UserAccountsTableUpdateCompanionBuilder =
+    UserAccountsCompanion Function({
+      Value<String> accountId,
+      Value<String> username,
+      Value<String> passwordHash,
+      Value<String> salt,
+      Value<DateTime> createdAt,
+      Value<String?> publicIdentityKey,
+      Value<int> rowid,
+    });
+
+class $$UserAccountsTableFilterComposer
+    extends Composer<_$AppDatabase, $UserAccountsTable> {
+  $$UserAccountsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get accountId => $composableBuilder(
+    column: $table.accountId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get username => $composableBuilder(
+    column: $table.username,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get passwordHash => $composableBuilder(
+    column: $table.passwordHash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get salt => $composableBuilder(
+    column: $table.salt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get publicIdentityKey => $composableBuilder(
+    column: $table.publicIdentityKey,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$UserAccountsTableOrderingComposer
+    extends Composer<_$AppDatabase, $UserAccountsTable> {
+  $$UserAccountsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get accountId => $composableBuilder(
+    column: $table.accountId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get username => $composableBuilder(
+    column: $table.username,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get passwordHash => $composableBuilder(
+    column: $table.passwordHash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get salt => $composableBuilder(
+    column: $table.salt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get publicIdentityKey => $composableBuilder(
+    column: $table.publicIdentityKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$UserAccountsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $UserAccountsTable> {
+  $$UserAccountsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get accountId =>
+      $composableBuilder(column: $table.accountId, builder: (column) => column);
+
+  GeneratedColumn<String> get username =>
+      $composableBuilder(column: $table.username, builder: (column) => column);
+
+  GeneratedColumn<String> get passwordHash => $composableBuilder(
+    column: $table.passwordHash,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get salt =>
+      $composableBuilder(column: $table.salt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get publicIdentityKey => $composableBuilder(
+    column: $table.publicIdentityKey,
+    builder: (column) => column,
+  );
+}
+
+class $$UserAccountsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $UserAccountsTable,
+          DbUserAccount,
+          $$UserAccountsTableFilterComposer,
+          $$UserAccountsTableOrderingComposer,
+          $$UserAccountsTableAnnotationComposer,
+          $$UserAccountsTableCreateCompanionBuilder,
+          $$UserAccountsTableUpdateCompanionBuilder,
+          (
+            DbUserAccount,
+            BaseReferences<_$AppDatabase, $UserAccountsTable, DbUserAccount>,
+          ),
+          DbUserAccount,
+          PrefetchHooks Function()
+        > {
+  $$UserAccountsTableTableManager(_$AppDatabase db, $UserAccountsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$UserAccountsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$UserAccountsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$UserAccountsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> accountId = const Value.absent(),
+                Value<String> username = const Value.absent(),
+                Value<String> passwordHash = const Value.absent(),
+                Value<String> salt = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<String?> publicIdentityKey = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UserAccountsCompanion(
+                accountId: accountId,
+                username: username,
+                passwordHash: passwordHash,
+                salt: salt,
+                createdAt: createdAt,
+                publicIdentityKey: publicIdentityKey,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String accountId,
+                required String username,
+                required String passwordHash,
+                required String salt,
+                required DateTime createdAt,
+                Value<String?> publicIdentityKey = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UserAccountsCompanion.insert(
+                accountId: accountId,
+                username: username,
+                passwordHash: passwordHash,
+                salt: salt,
+                createdAt: createdAt,
+                publicIdentityKey: publicIdentityKey,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$UserAccountsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $UserAccountsTable,
+      DbUserAccount,
+      $$UserAccountsTableFilterComposer,
+      $$UserAccountsTableOrderingComposer,
+      $$UserAccountsTableAnnotationComposer,
+      $$UserAccountsTableCreateCompanionBuilder,
+      $$UserAccountsTableUpdateCompanionBuilder,
+      (
+        DbUserAccount,
+        BaseReferences<_$AppDatabase, $UserAccountsTable, DbUserAccount>,
+      ),
+      DbUserAccount,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
   $AppDatabaseManager(this._db);
   $$MessagesTableTableManager get messages =>
       $$MessagesTableTableManager(_db, _db.messages);
+  $$UserAccountsTableTableManager get userAccounts =>
+      $$UserAccountsTableTableManager(_db, _db.userAccounts);
 }

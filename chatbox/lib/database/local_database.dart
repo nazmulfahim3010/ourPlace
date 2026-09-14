@@ -1,8 +1,9 @@
 import 'package:drift/drift.dart';
 import 'package:chatbox/database/app_database.dart';
 import 'package:chatbox/models/message.dart';
+import 'package:chatbox/models/user_account.dart';
 
-/// Local database service for persisting chat messages using Drift / SQLite
+/// Local database service for persisting chat messages and anonymous accounts using Drift / SQLite
 class LocalDatabase {
   /// Singleton instance
   static final LocalDatabase _instance = LocalDatabase._internal();
@@ -29,6 +30,8 @@ class LocalDatabase {
     // Accessing db ensures initialization
     final _ = db;
   }
+
+  // ==================== MESSAGE CONVERSIONS & CRUD ====================
 
   /// Convert a Drift database Message row to domain ChatMessage
   ChatMessage _rowToMessage(Message row) {
@@ -80,12 +83,15 @@ class LocalDatabase {
   }
 
   /// Retrieve all messages for a partner, newest first (matching reverse list)
-  Future<List<ChatMessage>> getMessagesForPartner(String partnerId) async {
+  Future<List<ChatMessage>> getMessagesForPartner(
+    String partnerId, {
+    String currentUserId = 'current_user',
+  }) async {
     final query = db.select(db.messages)
       ..where((tbl) =>
           (tbl.senderId.equals(partnerId) &
-              tbl.recipientId.equals('current_user')) |
-          (tbl.senderId.equals('current_user') &
+              tbl.recipientId.equals(currentUserId)) |
+          (tbl.senderId.equals(currentUserId) &
               tbl.recipientId.equals(partnerId)))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
 
@@ -96,14 +102,15 @@ class LocalDatabase {
   /// Retrieve messages with pagination
   Future<List<ChatMessage>> getMessagesForPartnerPaginated(
     String partnerId, {
+    String currentUserId = 'current_user',
     required int offset,
     required int limit,
   }) async {
     final query = db.select(db.messages)
       ..where((tbl) =>
           (tbl.senderId.equals(partnerId) &
-              tbl.recipientId.equals('current_user')) |
-          (tbl.senderId.equals('current_user') &
+              tbl.recipientId.equals(currentUserId)) |
+          (tbl.senderId.equals(currentUserId) &
               tbl.recipientId.equals(partnerId)))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)])
       ..limit(limit, offset: offset);
@@ -113,12 +120,15 @@ class LocalDatabase {
   }
 
   /// Reactive stream of messages for a partner (updates UI automatically)
-  Stream<List<ChatMessage>> watchMessagesForPartner(String partnerId) {
+  Stream<List<ChatMessage>> watchMessagesForPartner(
+    String partnerId, {
+    String currentUserId = 'current_user',
+  }) {
     final query = db.select(db.messages)
       ..where((tbl) =>
           (tbl.senderId.equals(partnerId) &
-              tbl.recipientId.equals('current_user')) |
-          (tbl.senderId.equals('current_user') &
+              tbl.recipientId.equals(currentUserId)) |
+          (tbl.senderId.equals(currentUserId) &
               tbl.recipientId.equals(partnerId)))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
 
@@ -129,12 +139,13 @@ class LocalDatabase {
   Future<List<ChatMessage>> searchMessages({
     required String partnerId,
     required String query,
+    String currentUserId = 'current_user',
   }) async {
     final q = db.select(db.messages)
       ..where((tbl) =>
           ((tbl.senderId.equals(partnerId) &
-                  tbl.recipientId.equals('current_user')) |
-              (tbl.senderId.equals('current_user') &
+                  tbl.recipientId.equals(currentUserId)) |
+              (tbl.senderId.equals(currentUserId) &
                   tbl.recipientId.equals(partnerId))) &
           tbl.messageText.contains(query))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
@@ -168,28 +179,97 @@ class LocalDatabase {
   }
 
   /// Clear all messages for a partner
-  Future<void> clearMessagesForPartner(String partnerId) async {
+  Future<void> clearMessagesForPartner(
+    String partnerId, {
+    String currentUserId = 'current_user',
+  }) async {
     await (db.delete(db.messages)
           ..where((tbl) =>
               (tbl.senderId.equals(partnerId) &
-                  tbl.recipientId.equals('current_user')) |
-              (tbl.senderId.equals('current_user') &
+                  tbl.recipientId.equals(currentUserId)) |
+              (tbl.senderId.equals(currentUserId) &
                   tbl.recipientId.equals(partnerId))))
         .go();
   }
 
   /// Get total message count for a partner
-  Future<int> getMessageCountForPartner(String partnerId) async {
+  Future<int> getMessageCountForPartner(
+    String partnerId, {
+    String currentUserId = 'current_user',
+  }) async {
     final countExp = db.messages.id.count();
     final query = db.selectOnly(db.messages)
       ..addColumns([countExp])
       ..where((db.messages.senderId.equals(partnerId) &
-              db.messages.recipientId.equals('current_user')) |
-          (db.messages.senderId.equals('current_user') &
+              db.messages.recipientId.equals(currentUserId)) |
+          (db.messages.senderId.equals(currentUserId) &
               db.messages.recipientId.equals(partnerId)));
 
     final result = await query.map((row) => row.read(countExp)).getSingle();
     return result ?? 0;
+  }
+
+  // ==================== USER ACCOUNT CONVERSIONS & CRUD ====================
+
+  /// Convert Drift DbUserAccount row to domain UserAccount
+  UserAccount _rowToAccount(DbUserAccount row) {
+    return UserAccount(
+      accountId: row.accountId,
+      username: row.username,
+      passwordHash: row.passwordHash,
+      salt: row.salt,
+      createdAt: row.createdAt,
+      publicIdentityKey: row.publicIdentityKey,
+    );
+  }
+
+  /// Convert domain UserAccount to Drift UserAccountsCompanion
+  UserAccountsCompanion _accountToCompanion(UserAccount account) {
+    return UserAccountsCompanion(
+      accountId: Value(account.accountId),
+      username: Value(account.username),
+      passwordHash: Value(account.passwordHash),
+      salt: Value(account.salt),
+      createdAt: Value(account.createdAt),
+      publicIdentityKey: Value(account.publicIdentityKey),
+    );
+  }
+
+  /// Save or update an anonymous user account
+  Future<void> saveAccount(UserAccount account) async {
+    await db.into(db.userAccounts).insertOnConflictUpdate(
+          _accountToCompanion(account),
+        );
+  }
+
+  /// Retrieve an account by username (normalizing with or without '@')
+  Future<UserAccount?> getAccountByUsername(String username) async {
+    final clean = username.trim().replaceAll('@', '').toLowerCase();
+    final normalized = '@$clean';
+    final query = db.select(db.userAccounts)
+      ..where((tbl) => tbl.username.equals(normalized));
+    final row = await query.getSingleOrNull();
+    return row != null ? _rowToAccount(row) : null;
+  }
+
+  /// Retrieve an account by account ID
+  Future<UserAccount?> getAccountById(String accountId) async {
+    final query = db.select(db.userAccounts)
+      ..where((tbl) => tbl.accountId.equals(accountId));
+    final row = await query.getSingleOrNull();
+    return row != null ? _rowToAccount(row) : null;
+  }
+
+  /// Check if a username is already taken
+  Future<bool> isUsernameTaken(String username) async {
+    final account = await getAccountByUsername(username);
+    return account != null;
+  }
+
+  /// Get all registered accounts on device
+  Future<List<UserAccount>> getAllAccounts() async {
+    final rows = await db.select(db.userAccounts).get();
+    return rows.map(_rowToAccount).toList();
   }
 
   /// Check if database is initialized

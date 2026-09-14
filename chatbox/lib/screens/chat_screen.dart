@@ -1,23 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/models/message.dart';
+import 'package:chatbox/models/user.dart';
+import 'package:chatbox/repositories/auth_repository.dart';
 import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/widgets/chat_header.dart';
 import 'package:chatbox/widgets/date_divider.dart';
 import 'package:chatbox/widgets/message_bubble.dart';
 import 'package:chatbox/widgets/chat_input_field.dart';
 
-/// Main Chat Screen Widget (Phase 5 - Decoupled with ChatRepository)
+/// Main Chat Screen Widget (Phase 6 - Supporting Anonymous User Context & Sign Out)
 class ChatScreen extends StatefulWidget {
   final String partnerName;
   final String partnerId;
+  final User? currentUser;
   final ChatRepository? repository;
+  final AuthRepository? authRepository;
 
   const ChatScreen({
     super.key,
     this.partnerName = AppConstants.defaultPartnerName,
     this.partnerId = AppConstants.defaultPartnerId,
+    this.currentUser,
     this.repository,
+    this.authRepository,
   });
 
   @override
@@ -31,6 +37,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   List<ChatMessage> _messages = [];
   bool _isLoading = true;
+
+  String get _currentUserId => widget.currentUser?.id ?? AppConstants.currentUserId;
+  String get _currentUsername => widget.currentUser?.username ?? 'You';
 
   @override
   void initState() {
@@ -90,7 +99,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ChatMessage(
         id: 'seed_005',
         senderId: widget.partnerId,
-        recipientId: AppConstants.currentUserId,
+        recipientId: _currentUserId,
         text: "Let's get dinner together soon! 🍕",
         timestamp: now.subtract(const Duration(minutes: 1, seconds: 30)),
         type: MessageType.text,
@@ -99,7 +108,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ChatMessage(
         id: 'seed_004',
         senderId: widget.partnerId,
-        recipientId: AppConstants.currentUserId,
+        recipientId: _currentUserId,
         text: "Pretty good! Can't wait to celebrate with you 🎉",
         timestamp: now.subtract(const Duration(minutes: 2)),
         type: MessageType.text,
@@ -107,7 +116,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       ChatMessage(
         id: 'seed_003',
-        senderId: AppConstants.currentUserId,
+        senderId: _currentUserId,
         recipientId: widget.partnerId,
         text: 'How about yours?',
         timestamp: now.subtract(const Duration(minutes: 3, seconds: 30)),
@@ -116,7 +125,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       ChatMessage(
         id: 'seed_002',
-        senderId: AppConstants.currentUserId,
+        senderId: _currentUserId,
         recipientId: widget.partnerId,
         text: 'It was great! Just finished the project.',
         timestamp: now.subtract(const Duration(minutes: 4)),
@@ -126,7 +135,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ChatMessage(
         id: 'seed_001',
         senderId: widget.partnerId,
-        recipientId: AppConstants.currentUserId,
+        recipientId: _currentUserId,
         text: 'Hey! How was your day? 😊',
         timestamp: now.subtract(const Duration(minutes: 5)),
         type: MessageType.text,
@@ -135,7 +144,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ChatMessage(
         id: 'seed_000',
         senderId: widget.partnerId,
-        recipientId: AppConstants.currentUserId,
+        recipientId: _currentUserId,
         text: 'Good night, sleep well! ❤️',
         timestamp: yesterday,
         type: MessageType.text,
@@ -151,7 +160,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final newMessage = ChatMessage(
       id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
-      senderId: AppConstants.currentUserId,
+      senderId: _currentUserId,
       recipientId: widget.partnerId,
       text: text,
       timestamp: DateTime.now(),
@@ -214,7 +223,13 @@ class _ChatScreenState extends State<ChatScreen> {
           /// Floating Pill-Shaped Header
           ChatHeader(
             partnerName: widget.partnerName,
+            currentUsername: _currentUsername,
             onSendLuv: _sendLuv,
+            onSignOut: widget.authRepository != null
+                ? () async {
+                    await widget.authRepository!.signOut();
+                  }
+                : null,
           ),
 
           /// Chat Messages Area
@@ -231,6 +246,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: _ChatMessageArea(
                       messages: _messages,
                       scrollController: _scrollController,
+                      currentUserId: _currentUserId,
                     ),
                   ),
           ),
@@ -250,10 +266,12 @@ class _ChatScreenState extends State<ChatScreen> {
 class _ChatMessageArea extends StatelessWidget {
   final List<ChatMessage> messages;
   final ScrollController scrollController;
+  final String currentUserId;
 
   const _ChatMessageArea({
     required this.messages,
     required this.scrollController,
+    this.currentUserId = AppConstants.currentUserId,
   });
 
   bool _isSameDay(DateTime a, DateTime b) {
@@ -301,6 +319,7 @@ class _ChatMessageArea extends StatelessWidget {
               ),
               child: MessageBubble(
                 message: message,
+                isSent: message.isSentBy(currentUserId),
                 showTimestamp: showTimestamp,
               ),
             ),

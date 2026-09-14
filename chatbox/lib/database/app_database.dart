@@ -17,11 +17,37 @@ class Messages extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Messages])
+/// Table schema for storing anonymous user accounts and salted verifiers locally
+@DataClassName('DbUserAccount')
+class UserAccounts extends Table {
+  TextColumn get accountId => text()();
+  TextColumn get username => text().unique()();
+  TextColumn get passwordHash => text()();
+  TextColumn get salt => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  TextColumn get publicIdentityKey => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {accountId};
+}
+
+@DriftDatabase(tables: [Messages, UserAccounts])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? e])
       : super(e ?? driftDatabase(name: 'ourplace_chat'));
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) async {
+          await m.createAll();
+        },
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.createTable(userAccounts);
+          }
+        },
+      );
 }
