@@ -1,61 +1,71 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 1.0.0  
-> **Last Updated:** 2026-09-06  
-> **Target Application:** Private Couple Chat Application (`ourPlace`)  
+> **Document Version:** 2.0.0  
+> **Last Updated:** 2026-09-14  
+> **Target Application:** Privacy-First Anonymous Messaging Application (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
 
 ---
 
 ## 1. Executive Summary & Vision
 
-**`ourPlace`** is an ultra-private, modern mobile messaging application designed exclusively for two authorized people (a couple).
+**`ourPlace`** is a privacy-first messaging application designed around anonymous identities, local-first storage, end-to-end encryption (E2EE), and user-controlled sharing.
 
 ### Core Philosophy
-> *"Firebase helps the two phones communicate. The phones own the conversation."*
+> *"The phones own the conversation. The server only helps the phones communicate."*
 
-Unlike conventional messaging platforms that persist conversation history indefinitely on remote cloud servers, `ourPlace` enforces a **local-first, privacy-centric architecture**:
-- **Permanent Chat History:** Resides exclusively in the local database (SQLite/Drift) on the two users' physical devices.
-- **Remote Infrastructure (Firebase):** Functions strictly as an identity provider (Authentication) and an ephemeral transport relay.
-- **End-to-End Encryption (E2EE):** Plaintext never leaves the device unencrypted; Firebase and network intermediaries only see encrypted ciphertexts. Ephemeral relay messages are destroyed upon successful delivery receipt.
+Unlike conventional messaging platforms that harvest user metadata and persist conversations on remote cloud servers, `ourPlace` enforces an **uncompromising privacy architecture**:
+
+- **Zero Personally Identifiable Information (PII):** Users never provide Gmail/email, phone numbers, real names, contact lists, or location data.
+- **Three-Pillar Identity System:**
+  1. **Unique Username (`@username`):** The user's public identity for discovery and chat routing.
+  2. **Account Password:** Salted cryptographic verifier for account authentication. Passwords are never stored in plaintext and never logged.
+  3. **Local App Passcode:** Protects access to the application on the local physical device. (Strictly decoupled from account password; never sent to servers).
+- **Multi-User Foundation with Couple Focus:** Supports multiple one-to-one conversations with a specialized **Love Connection** subsystem (0 or 1 active couple connection) featuring explicit, temporary 60-second One-Time Love Code sharing.
+- **Permanent Chat History:** Resides exclusively in the local database (SQLite/Drift) on physical user devices.
+- **Remote Infrastructure (Firebase):** Restricted to identity routing, signaling, push notifications, and ephemeral ciphertext relays (purged immediately upon delivery).
 - **Aesthetic:** Minimalist, sleek, high-contrast dark theme (pure black `#000000` with dark charcoal `#383838` containers and white typography).
 
 ---
 
 ## 2. Project Development Status & Roadmap Tracker
 
-In accordance with the **Master Development Rules**, progress is tracked strictly against the 14 defined phases. Phases must be completed sequentially without skipping ahead.
+In accordance with the **Master Development Rules**, progress is tracked strictly against the 17 defined phases. Phases must be completed sequentially without skipping ahead.
 
 ### Current Status Dashboard
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 6 — Firebase Authentication** |
-| **Current Status** | Ready for Firebase Auth & restricted couple accounts |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture) |
-| **Next Phase** | **Phase 7 — Security Model** |
+| **Current Phase** | **Phase 6 — Anonymous Identity System** |
+| **Current Status** | **COMPLETED** (Ready for Phase 7: Local App Passcode & Device Security) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Anonymous Identity System) |
+| **Next Phase** | **Phase 7 — Local App Passcode & Device Security** |
 
 ---
 
-### Phase-by-Phase Roadmap Matrix
+### Phase-by-Phase Roadmap Matrix (17 Phases)
 
 ```
 [Phase 1: UI Prototype]  ──►  [Phase 2: Message Model]  ──►  [Phase 3: Local Chat]
        (COMPLETED)                     (COMPLETED)                     (COMPLETED)
                                                                           │
                                                                           ▼
-[Phase 6: Firebase Auth] ◄──  [Phase 5: Clean Arch]     ◄──  [Phase 4: Local DB]
-       (CURRENT)                       (COMPLETED)                     (COMPLETED)
+[Phase 6: Anon Identity] ◄──  [Phase 5: Clean Arch]     ◄──  [Phase 4: Local DB]
+       (COMPLETED)                     (COMPLETED)                     (COMPLETED)
           │
           ▼
-[Phase 7: Security Rules]──►  [Phase 8: E2EE Layer]     ──►  [Phase 9: Temp Relay]
+[Phase 7: App Passcode]  ──►  [Phase 8: Access Security]──►  [Phase 9: E2EE Layer]
+        (NEXT)                         (PLANNED)                     (PLANNED)
+                                                                          │
+                                                                          ▼
+[Phase 12: Real-Time]    ◄──  [Phase 11: Message Sync]  ◄──  [Phase 10: Temp Relay]
+       (PLANNED)                       (PLANNED)                     (PLANNED)
+          │
+          ▼
+[Phase 13: Push Notifs]  ──►  [Phase 14: Media]         ──►  [Phase 15: Love Connection]
        (PLANNED)                       (PLANNED)                     (PLANNED)
                                                                           │
                                                                           ▼
-[Phase 12: Push Notifs]  ◄──  [Phase 11: Real-Time]     ◄──  [Phase 10: Message Sync]
-       (PLANNED)                       (PLANNED)                     (PLANNED)
-          │
-          ▼
-[Phase 13: Media Messages]──► [Phase 14: Couple Features]
+[Phase 17: Couple Feat.] ◄──  [Phase 16: Love Code / Share]
        (PLANNED)                       (PLANNED)
 ```
 
@@ -74,7 +84,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Define `MessageStatus` enum (`sending`, `sent`, `delivered`, `read`, `failed`)
   - [x] Implement immutable `ChatMessage` class (`id`, `senderId`, `recipientId`, `text`, `timestamp`, `type`, `status`)
   - [x] JSON serialization & deserialization (`toJson`, `ChatMessage.fromJson`)
-  - [x] Model utilities (`copyWith`, `copyWithStatus`, `isSent`, UI compatibility getters)
+  - [x] Model utilities (`copyWith`, `copyWithStatus`, `isSent`, `isSentBy`, UI compatibility getters)
   - [x] Modularize monolithic UI into standalone reusable widgets (`widgets/`)
   - [x] Replace mock string messages with structured `ChatMessage` objects
 
@@ -108,64 +118,71 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Established service layer contracts (`auth_service.dart`, `encryption_service.dart`, `notification_service.dart`)
   - [x] Decoupled `ChatScreen` to interact strictly with `ChatRepository` instead of raw database queries
   - [x] Wired `main.dart` with `AppTheme.darkTheme` and centralized constants
-  - [x] 100% test coverage for `ChatRepository` and `ChatScreen` (5/5 tests passing, 0 analyzer issues)
+  - [x] 100% test coverage for `ChatRepository` and `ChatScreen`
 
-- [ ] **Phase 6 — Firebase Authentication**
-  - [ ] Configure Firebase CLI & `firebase_core` for Flutter
-  - [ ] Setup Firebase Auth for exactly two whitelisted user accounts
-  - [ ] Build login / splash view
-  - [ ] Persist auth tokens securely with auto-login and session validation
-  - [ ] Restrict access: strictly two authorized UIDs
+- [x] **Phase 6 — Anonymous Identity System**
+  - [x] Purged legacy Firebase email/password whitelist assumptions
+  - [x] Implemented `HashUtils` with cryptographic SHA-256 salted password hashing and secure random salts
+  - [x] Created `UserAccount` entity encapsulating account credentials and salted verification
+  - [x] Upgraded `User` domain model with `@username`, `createdAt`, `publicIdentityKey`, and privacy attributes
+  - [x] Added `UserAccounts` table to Drift SQLite database (`schemaVersion: 2`) with unique username constraints
+  - [x] Implemented `AuthService` and `LocalAuthService` managing registration, password verification, and auth state
+  - [x] Implemented `AuthRepository` and `DefaultAuthRepository` delegating to identity service
+  - [x] Built minimalist dark-themed `AuthScreen` with "Sign In" and "Create Account" tabs, validation, and error banners
+  - [x] Created reactive `AuthGate` dynamically routing between `AuthScreen` and `ChatScreen`
+  - [x] Integrated sign out and current user `@username` indicator into `ChatHeader`
+  - [x] Comprehensive automated test suite passing with 14/14 tests and 0 analyzer issues
 
-- [ ] **Phase 7 — Security Model**
-  - [ ] Firestore / Realtime Database security rules strictly locking down read/write to the two authorized UIDs
-  - [ ] Client verification preventing unauthorized user spoofing
-  - [ ] Secure storage (`flutter_secure_storage`) for sensitive tokens and device keys
-  - [ ] Zero sensitive credentials hardcoded in the codebase
+- [ ] **Phase 7 — Local App Passcode & Device Security**
+  - [ ] Local 4- or 6-digit app passcode setup and verification (completely separate from account password)
+  - [ ] App Lock view triggered on app launch or background resume
+  - [ ] Secure local storage for device passcode verifier (never sent to server)
+  - [ ] Rate-limiting and retry backoff on failed passcode attempts
 
-- [ ] **Phase 8 — End-to-End Encryption (E2EE)**
-  - [ ] Cryptographic design document (Signal protocol or X25519 + AES-GCM / ChaCha20-Poly1305)
-  - [ ] Key generation, storage in hardware Keystore/Keychain, and public key exchange
+- [ ] **Phase 8 — Account & Access Security**
+  - [ ] Remote verification protocols without exposing passwords
+  - [ ] Rate-limiting and brute-force protection
+  - [ ] Privacy-preserving recovery key architecture
+
+- [ ] **Phase 9 — End-to-End Encryption (E2EE) Architecture**
+  - [ ] Cryptographic design (identity keys, prekeys, ratchet session establishment)
+  - [ ] Key generation and local secure storage
   - [ ] Encrypt plaintext message payloads before dispatching to relay
-  - [ ] Decrypt ciphertext payloads locally on the recipient device
+  - [ ] Decrypt ciphertext payloads locally on recipient device
 
-- [ ] **Phase 9 — Firebase Ephemeral Relay**
-  - [ ] Outgoing messages published as ciphertext to temporary relay queue
-  - [ ] Recipient listener ingests incoming ciphertext and acknowledges delivery
-  - [ ] Sender/server purges temporary relay records upon confirmed delivery
-  - [ ] Offline queue handling (messages wait on relay only until recipient comes online)
+- [ ] **Phase 10 — Temporary Firebase Relay**
+  - [ ] Ephemeral ciphertext queue (no permanent history on server)
+  - [ ] Delivery acknowledgement and purge protocol
 
-- [ ] **Phase 10 — Message Synchronization & Status Lifecycle**
-  - [ ] State transitions: `sending` ➔ `sent` ➔ `delivered` ➔ `read` (or `failed`)
-  - [ ] Message retry queue for network drops / offline reconnects
-  - [ ] Duplicate message deduplication via unique UUIDs
-  - [ ] Bi-directional sync between local SQLite and remote acknowledgements
+- [ ] **Phase 11 — Message Synchronization**
+  - [ ] State transitions (`sending` ➔ `sent` ➔ `delivered` ➔ `read` / `failed`)
+  - [ ] Offline queue handling and reconciliation
 
-- [ ] **Phase 11 — Real-Time Features**
+- [ ] **Phase 12 — Real-Time Features**
   - [ ] Real-time typing indicators with debounce
-  - [ ] Ephemeral presence (online / offline / last active timestamp)
-  - [ ] Real-time read receipt updates
-  - [ ] Battery- and quota-efficient socket / stream listeners
+  - [ ] Ephemeral presence (online / last seen)
+  - [ ] Real-time read receipts
 
-- [ ] **Phase 12 — Push Notifications**
-  - [ ] Firebase Cloud Messaging (FCM) integration
-  - [ ] Background message handlers
-  - [ ] Privacy-preserving notification payloads (no plaintext leaks in OS banners)
-  - [ ] Tap notification deep-linking directly into chat
+- [ ] **Phase 13 — Push Notifications**
+  - [ ] Privacy-preserving notification payloads (no plaintext leaks)
+  - [ ] Background notification routing
 
-- [ ] **Phase 13 — Media Messaging**
-  - [ ] Image, voice note, and video attachment capture/picker
-  - [ ] Client-side encryption of media files prior to upload
-  - [ ] Temporary signed cloud storage upload/download
-  - [ ] Local caching and decryption of media assets
-  - [ ] Automatic remote media purge after retrieval
+- [ ] **Phase 14 — Media Messaging**
+  - [ ] Encrypted images, voice notes, and video attachments
+  - [ ] Ephemeral transfer and local storage
 
-- [ ] **Phase 14 — Couple-Specific Features**
-  - [ ] Interactive "Send luv" animated micro-interaction & haptics
-  - [ ] Floating heart animations & reactions
-  - [ ] "Open When..." time-locked or location-locked notes
-  - [ ] Relationship timeline & anniversary countdown
-  - [ ] Shared photo memory gallery
+- [ ] **Phase 15 — Love Connection**
+  - [ ] Mutually accepted 1-to-1 couple connection (0 or 1 active connection)
+  - [ ] Search username, send request, accept/decline
+  - [ ] Hide/show Love Connection on profile
+
+- [ ] **Phase 16 — One-Time Love Code & Conversation Sharing**
+  - [ ] Generate 60-second single-use Love Code for explicit sharing authorization
+  - [ ] E2EE conversation data transfer to partner device
+
+- [ ] **Phase 17 — Couple-Specific Features**
+  - [ ] "Send luv" animated micro-interactions and reactions
+  - [ ] Shared memory gallery, relationship timeline, love letters
 
 ---
 
@@ -177,53 +194,73 @@ The workspace contains the primary Flutter application under the `chatbox/` dire
 e:\ourPlace\
 ├── .git/                                    # Git repository
 ├── Private Couple Chat App — Master...md    # Master specification & rules prompt
-├── docts.md                                 # Full project documentation & task tracker (this file)
+├── docts.md                                 # Master project documentation & task tracker (this file)
 ├── README.md                                # Root repository readme
-├── demoproject/                             # Standalone scaffold (experimental / scratch)
 └── chatbox/                                 # PRIMARY FLUTTER APPLICATION
-    ├── pubspec.yaml                         # Dependencies and assets configuration
+    ├── pubspec.yaml                         # Dependencies (drift, crypto, cupertino_icons)
     ├── analysis_options.yaml                # Linter rules configuration
     ├── lib/
-    │   ├── main.dart                        # Application entry point
-    │   ├── chat_screen.dart                 # [LEGACY] Original monolithic UI (Phase 1)
+    │   ├── main.dart                        # Application entry point with AuthGate
+    │   ├── core/
+    │   │   ├── constants/app_constants.dart # App constants & username/password rules
+    │   │   ├── errors/app_exception.dart    # Centralized exception hierarchy
+    │   │   ├── theme/app_theme.dart         # Design tokens & dark theme
+    │   │   └── utils/hash_utils.dart        # Cryptographic salt & SHA-256 verifiers
     │   ├── database/
-    │   │   └── local_database.dart          # Database service interface stub
+    │   │   ├── app_database.dart            # Drift database (Messages & UserAccounts tables)
+    │   │   ├── app_database.g.dart          # Drift generated code
+    │   │   └── local_database.dart          # Local database singleton & CRUD methods
     │   ├── models/
-    │   │   └── message.dart                 # ChatMessage model & enums (Phase 2)
+    │   │   ├── conversation.dart            # Conversation model
+    │   │   ├── message.dart                 # ChatMessage domain model & enums
+    │   │   ├── user.dart                    # Anonymous User domain model
+    │   │   └── user_account.dart            # UserAccount credentials & verification
+    │   ├── repositories/
+    │   │   ├── auth_repository.dart         # AuthRepository contract & default implementation
+    │   │   └── chat_repository.dart         # ChatRepository contract & LocalChatRepository
     │   ├── screens/
-    │   │   └── chat_screen.dart             # Modularized ChatScreen widget (Phases 2-3)
+    │   │   ├── auth/
+    │   │   │   ├── auth_gate.dart           # Reactive session gate
+    │   │   │   └── auth_screen.dart         # Dark-themed login & registration UI
+    │   │   └── chat_screen.dart             # Modular ChatScreen widget with active user context
     │   ├── services/
-    │   │   └── chat_service.dart            # Chat business logic service stub
+    │   │   ├── auth_service.dart            # AuthService contract & LocalAuthService
+    │   │   ├── chat_service.dart            # Chat transport service contract
+    │   │   ├── encryption_service.dart      # E2EE contract & NoOp implementation
+    │   │   └── notification_service.dart    # Push notifications contract & stub
     │   └── widgets/
-    │       ├── chat_header.dart             # Floating pill header with partner info
+    │       ├── chat_header.dart             # Floating pill header with @username & sign-out
     │       ├── chat_input_field.dart        # Message input bar and send button
+    │       ├── date_divider.dart            # Date group divider ("Today", "Yesterday")
     │       ├── message_bubble.dart          # Chat message bubble container
     │       └── timestamp_indicator.dart     # Timestamp indicator widget
     └── test/
-        └── widget_test.dart                 # Flutter widget test suite
+        └── widget_test.dart                 # Automated test suite (14/14 tests passing)
 ```
 
 ---
 
 ## 4. Deep Dive: What Has Been Built So Far
 
-### 4.1. Core Data Model (`chatbox/lib/models/message.dart`)
-The core domain model encapsulates complete metadata for chat messages:
+### 4.1. Core Data Models
 
+#### `ChatMessage` (`chatbox/lib/models/message.dart`)
 ```dart
 enum MessageType { text, image, audio, video, system }
 enum MessageStatus { sending, sent, delivered, read, failed }
 
 class ChatMessage {
-  final String id;              // Unique identifier (UUID or timestamp-based)
-  final String senderId;        // Sender user ID ('current_user' or partnerId)
-  final String recipientId;     // Target recipient user ID
-  final String text;            // Message text payload
-  final DateTime timestamp;     // UTC creation timestamp
-  final MessageType type;       // Payload type enum
-  final MessageStatus status;   // Delivery status lifecycle enum
+  final String id;
+  final String senderId;
+  final String recipientId;
+  final String text;
+  final DateTime timestamp;
+  final MessageType type;
+  final MessageStatus status;
 
   bool get isSent => senderId == 'current_user';
+  bool isSentBy(String currentUserId) => senderId == currentUserId || (senderId == 'current_user' && currentUserId.isNotEmpty);
+  String getSenderName([String partnerName = '@twilight', String currentUserName = 'You']);
   Map<String, dynamic> toJson();
   factory ChatMessage.fromJson(Map<String, dynamic> json);
   ChatMessage copyWith(...);
@@ -231,69 +268,59 @@ class ChatMessage {
 }
 ```
 
-### 4.2. UI Design System & Component Library (`chatbox/lib/widgets/`)
-All UI components strictly adhere to the minimalist dark aesthetic:
-- **`ChatHeader` (`chat_header.dart`):**  
-  A floating pill-shaped container (`BoxDecoration(color: Color(0xFF383838), borderRadius: BorderRadius.circular(24))`) anchored inside a `SafeArea`. Displays partner's avatar, partner name, and a "💕 Send luv" button.
-- **`ChatInputField` (`chat_input_field.dart`):**  
-  Custom bottom text field encased in a `0xFF383838` rounded capsule (`borderRadius: BorderRadius.circular(28)`) with white cursor and `#AAAAAA` placeholder, paired with a matching circular send button.
-- **`MessageBubble` (`message_bubble.dart`):**  
-  Constrained to 75% max viewport width. Sent messages align right; received messages align left. Encased in dark charcoal with `BorderRadius.circular(20)`.
-- **`TimestampIndicator` (`timestamp_indicator.dart`):**  
-  Renders formatted time strings (`HH:mm`) in `Colors.white54` above each message bubble, aligned to match the sender orientation.
+#### `User` & `UserAccount` (`chatbox/lib/models/`)
+- **`User` (`user.dart`):** Public domain representation containing `id`, `username` (`@username`), `displayName`, `createdAt`, `publicIdentityKey`, `loveConnectionId`, `loveConnectionVisibility`, and `isCurrentUser`.
+- **`UserAccount` (`user_account.dart`):** Internal entity storing `accountId`, normalized `username`, `passwordHash`, `salt`, `createdAt`, and `publicIdentityKey`. Exposes `verifyPassword(candidate)` to match against salted hashes without exposing credentials.
 
-### 4.3. Main Screen & Interaction Flow (`chatbox/lib/screens/chat_screen.dart`)
-- Hosts the message state `List<ChatMessage> _messages`.
-- Pre-populated with structured mock messages demonstrating both received and sent messages across different statuses (`read`, `delivered`).
-- Implements `_sendMessage()`: validates input, creates a new `ChatMessage` with `MessageStatus.sending`, prepends it to the reversed `ListView`, and clears the text controller.
-- Displays feedback on "Send luv" taps using `ScaffoldMessenger` snackbars.
+### 4.2. Cryptographic Security (`chatbox/lib/core/utils/hash_utils.dart`)
+- **`generateSalt([int length = 16])`:** Uses `Random.secure()` to create unique per-account hexadecimal salts.
+- **`hashPassword(password, salt)`:** Performs salted SHA-256 hashing (`sha256.convert(utf8.encode('$salt:$password'))`).
+- **`normalizeUsername(input)`:** Lowercases, trims, and formats handles with a leading `@` (`@alex`).
+- **Validation:** Enforces 3–20 character limits, regex `^[a-zA-Z0-9_]+$`, and minimum 6-character passwords.
 
-### 4.4. Service & Persistence Skeletons
-- **`ChatService` (`chatbox/lib/services/chat_service.dart`):**  
-  Singleton pattern stubbed out with asynchronous methods (`sendMessage`, `fetchMessages`, `sendLuv`, `markMessagesAsRead`, `deleteMessage`, `editMessage`).
-- **`LocalDatabase` (`chatbox/lib/database/local_database.dart`):**  
-  Singleton service stub with contracts for database initialization, saving, paginated queries, searching, updates, deletions, and connection lifecycle.
+### 4.3. Local Database & Persistence (`chatbox/lib/database/`)
+- Drift SQLite database (`app_database.dart`) with `schemaVersion: 2`.
+- **`Messages` Table:** Stores message ID, sender ID, recipient ID, text payload, timestamp, type, and status.
+- **`UserAccounts` Table:** Stores account ID (PK), unique `username`, `passwordHash`, `salt`, `createdAt`, and `publicIdentityKey`.
+- **`LocalDatabase` Singleton:** Exposes complete CRUD operations for messages and anonymous accounts.
+
+### 4.4. Authentication Flow & UI (`chatbox/lib/screens/auth/`)
+- **`AuthGate` (`auth_gate.dart`):** StreamBuilder listening to `authRepository.authStateChanges`. Dynamically renders `ChatScreen` if authenticated, or `AuthScreen` if unauthenticated.
+- **`AuthScreen` (`auth_screen.dart`):** High-contrast dark theme screen (`#000000`/`#383838`) with tabs for **Sign In** and **Create Account**, inline validation, password visibility toggles, loading spinners, and error banners.
+- **`ChatHeader` Integration:** Displays the logged-in user handle (`as @username`) alongside the partner name, and includes a quick sign-out action to revoke session state.
 
 ---
 
 ## 5. Target Architecture & End-to-End Flow
 
 ```
-+-------------------------------------------------------------------------+
-|                              USER 1 DEVICE                              |
-|                                                                         |
-|  +--------------------+       +--------------------------------------+  |
-|  |    Flutter UI      | <---> |   Local Database (Drift / SQLite)    |  |
-|  +--------------------+       +--------------------------------------+  |
-|            |                                     |                      |
-|            v                                     v                      |
-|  +--------------------+       +--------------------------------------+  |
-|  | State / Repository | ----> | E2EE Encryption Engine (AES / Curve) |  |
-|  +--------------------+       +--------------------------------------+  |
-+--------------------------------------------------|----------------------+
-                                                   | Encrypted Payload
-                                                   v
-                     +-------------------------------------------+
-                     |         FIREBASE TEMPORARY RELAY          |
-                     |  - Cloud Firestore / Realtime DB Queue    |
-                     |  - Holds ephemeral ciphertext ONLY        |
-                     |  - Purged immediately upon receipt ack    |
-                     +-------------------------------------------+
-                                                   |
-                                                   | Encrypted Payload
-                                                   v
-+--------------------------------------------------|----------------------+
-|                              USER 2 DEVICE                              |
-|                                                                         |
-|  +--------------------+       +--------------------------------------+  |
-|  |    Flutter UI      | <---> |   Local Database (Drift / SQLite)    |  |
-|  +--------------------+       +--------------------------------------+  |
-|            ^                                     ^                      |
-|            |                                     |                      |
-|  +--------------------+       +--------------------------------------+  |
-|  | State / Repository | <---- | E2EE Decryption Engine (AES / Curve) |  |
-|  +--------------------+       +--------------------------------------+  |
-+-------------------------------------------------------------------------+
+                 ourPlace
+                    │
+        ┌───────────┴───────────┐
+        │                       │
+     Username                Password (Salted Verifier)
+  (@public_id)                  │
+        │                       │
+        └───────────┬───────────┘
+                    │
+               Account ID
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+     Multiple Chats      Love Connection (Phase 15)
+          │                   │
+          │             0 or 1 Active
+     Local Database           │
+  (Drift / SQLite)       60s One-Time Love Code (Phase 16)
+          │                   │
+          └─────────┬─────────┘
+                    │
+              E2EE Layer (Phase 9)
+                    │
+         Temporary Firebase Relay (Phase 10)
+         (Ephemeral Ciphertext Only)
+                    │
+                 Internet
 ```
 
 ---
@@ -311,7 +338,7 @@ Every contributor and agent interacting with this codebase **must** adhere to th
    NEXT TASK: <Immediate next item to build>
    ```
 2. **Rule 2 — Never Skip Phases:**  
-   Do not introduce Firebase, E2EE, or Push Notifications while local chat and persistence are incomplete. Complete Phase 3 and Phase 4 first.
+   Do not introduce Love Connection, E2EE, or relay infrastructure while identity, local security, and database foundations are incomplete.
 3. **Rule 3 — Preserve Working Code:**  
    Do not rewrite functional UI or logic without justification. Retain the existing dark charcoal/black design identity.
 4. **Rule 4 — Work Incrementally:**  
@@ -319,53 +346,36 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 5. **Rule 5 — Architectural Explanations:**  
    Document *why* a design decision was made, not just *how*.
 6. **Rule 6 — Test Checklists:**  
-   Accompany each completed feature with an explicit manual/automated testing checklist.
+   Accompany each completed feature with an explicit automated and manual testing checklist.
 7. **Rule 7 — Dependency Restraint:**  
    Add only essential, well-maintained packages.
 8. **Rule 8 — Security over Convenience:**  
-   Never compromise end-to-end encryption or backend authentication to take shortcuts.
+   Never compromise privacy, authentication, or end-to-end encryption to take shortcuts. Never store plaintext credentials.
 
 ---
 
-## 7. Immediate Action Items & Future Task Backlog
+## 7. Immediate Action Items & Next Milestone
 
-### Immediate Next Steps (Finishing Phase 3 ➔ Starting Phase 4)
+### Immediate Next Steps (Starting Phase 7)
 
-#### Task 3.1: Complete Functional Local Chat (Phase 3)
-- [x] Add date dividers between message groups (e.g., "Today", "Yesterday").
-- [x] Implement auto-scroll to latest message when sending.
-- [x] Connect `ChatInputField` submit action (Enter key / keyboard done action).
-- [x] Handle keyboard focus dismiss when tapping outside input.
-
-#### Task 3.2: Technical Debt Cleanup
-- [x] Modernize constructor parameters across widgets to use super parameters (`super.key`) to clear the 12 `use_super_parameters` analyzer lints.
-- [x] Forward legacy `chatbox/lib/chat_screen.dart` to `chatbox/lib/screens/chat_screen.dart` to remove duplication.
-- [x] Update `chatbox/test/widget_test.dart` to smoke test `ChatScreen` instead of the non-existent counter app (100% tests passing).
-- [ ] Clarify / clean up `demoproject/` workspace folder.
-
-#### Task 4.1: SQLite / Drift Integration (Phase 4)
-- [x] Add `drift`, `drift_flutter`, `drift_dev`, and `build_runner` to `chatbox/pubspec.yaml`.
-- [x] Implement `Messages` table schema matching `ChatMessage` domain model.
-- [x] Generate `app_database.g.dart` using `build_runner`.
-- [x] Connect `LocalDatabase` singleton implementation to Drift `AppDatabase`.
-- [x] Wire message sending to save to SQLite, query on startup, and update UI reactively.
-- [x] Comprehensive in-memory SQLite unit and widget tests passing (4/4 tests).
+#### Task 7.1: Local App Passcode Architecture (Phase 7)
+- [ ] Define local passcode domain model and cryptographic storage mechanism (using local salted hash, never sent to remote servers).
+- [ ] Implement `PasscodeService` with setup, verification, change, and attempt rate-limiting.
+- [ ] Build `AppLockScreen` matching `#000000`/`#383838` dark design with 4/6-digit numeric keypad and animated pin dots.
+- [ ] Connect App Lifecycle Observer to lock app on background resume/timeout.
+- [ ] Unit & widget tests verifying passcode verification, incorrect attempt lockouts, and app lock transitions.
 
 ---
 
 ## 8. Verification & Testing Matrix
 
-### Manual Verification Flow for Current State
-1. **Launch App:** Run `flutter run` inside `chatbox/`.
-2. **UI Inspection:**
-   - Confirm pure black background `#000000`.
-   - Confirm floating pill header showing "Alex" avatar and "Send luv" button.
-   - Confirm mock messages load with proper right-align (You) and left-align (Alex).
-3. **Send Message:**
-   - Type `"Hello sweetheart"` into bottom input field.
-   - Tap send icon.
-   - Verify input field clears immediately.
-   - Verify `"Hello sweetheart"` appears at the bottom of the chat list with timestamp and right alignment.
-4. **Send Luv:**
-   - Tap "💕 Send luv" in header.
-   - Verify dark charcoal SnackBar appears stating `"💕 Love sent!"`.
+### Current Automated Test Suite Status
+- **Test Command:** `flutter test`
+- **Results:** `14 / 14 tests passing` (100% pass rate)
+- **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 4.1s)`
+
+### Test Coverage Highlights
+1. **Cryptographic Tests:** Random salt generation, SHA-256 consistency, username normalization, and input validation.
+2. **Database Tests:** In-memory SQLite tests verifying account insertion, unique username enforcement, retrieval, and message CRUD.
+3. **Authentication Tests:** Registration, duplicate username rejection, sign out, invalid password rejection, and correct credential login.
+4. **UI Widget Tests:** `AuthScreen` tab switching, `AuthGate` session transitions, `ChatScreen` smoke test, message sending, and "Send luv" interaction.
