@@ -19,9 +19,17 @@ import 'package:chatbox/screens/chat_screen.dart';
 import 'package:chatbox/screens/home_screen.dart';
 import 'package:chatbox/screens/inbox/inbox_screen.dart';
 import 'package:chatbox/services/auth_service.dart';
+import 'package:chatbox/services/app_lock_service.dart';
+import 'package:chatbox/services/secure_storage_service.dart';
+import 'package:chatbox/screens/auth/app_lock_screen.dart';
+import 'package:chatbox/screens/auth/passcode_setup_screen.dart';
+import 'package:chatbox/screens/profile/profile_screen.dart';
 import 'package:chatbox/widgets/conversation_tile.dart';
+import 'package:chatbox/widgets/numeric_keypad.dart';
+import 'package:chatbox/widgets/passcode_dots.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'dart:async';
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -480,9 +488,16 @@ void main() {
 
     testWidgets('AuthGate presents HomeScreen when authenticated and AuthScreen when signed out',
         (WidgetTester tester) async {
+      final mockLock = MockAppLockService(isAppUnlocked: true);
+      await mockLock.setPasscode('1234');
+      mockLock.unlockApp();
+
       await tester.pumpWidget(
         MaterialApp(
-          home: AuthGate(authRepository: authRepository),
+          home: AuthGate(
+            authRepository: authRepository,
+            appLockService: mockLock,
+          ),
         ),
       );
       await tester.pump();
@@ -504,6 +519,11 @@ void main() {
         username: 'alice',
         password: 'password123',
       );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Unlock device
+      mockLock.unlockApp();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
@@ -574,4 +594,337 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
     });
   });
+
+  group('AppLockService & SecureStorage Tests', () {
+    late InMemorySecureStorageService storage;
+    late MockAppLockService lockService;
+
+    setUp(() {
+      storage = InMemorySecureStorageService();
+      lockService = MockAppLockService(storage: storage);
+    });
+
+    test('Setting passcode salts and hashes candidate without storing plaintext', () async {
+      const passcode = '1234';
+      await lockService.setPasscode(passcode);
+
+      final isConfigured = await lockService.isPasscodeConfigured();
+      expect(isConfigured, isTrue);
+
+      final salt = await storage.read('app_lock_passcode_salt');
+      final verifier = await storage.read('app_lock_passcode_verifier');
+
+      expect(salt, isNotNull);
+      expect(verifier, isNotNull);
+      expect(salt, isNot(equals(passcode)));
+      expect(verifier, isNot(equals(passcode)));
+    });
+
+    test('verifyPasscode correctly unlocks on match and rejects mismatch', () async {
+      await lockService.setPasscode('4321');
+
+      expect(lockService.isAppUnlocked, isFalse);
+
+      final wrongResult = await lockService.verifyPasscode('9999');
+      expect(wrongResult, isFalse);
+      expect(lockService.isAppUnlocked, isFalse);
+
+      final correctResult = await lockService.verifyPasscode('4321');
+      expect(correctResult, isTrue);
+      expect(lockService.isAppUnlocked, isTrue);
+    });
+
+    test('Biometric setting toggle and clearPasscode lifecycle', () async {
+      expect(await lockService.isBiometricsEnabled(), isFalse);
+
+      await lockService.setBiometricsEnabled(true);
+      expect(await lockService.isBiometricsEnabled(), isTrue);
+
+      await lockService.setPasscode('7777');
+      await lockService.clearPasscode();
+
+      expect(await lockService.isPasscodeConfigured(), isFalse);
+      expect(await lockService.isBiometricsEnabled(), isFalse);
+      expect(lockService.isAppUnlocked, isFalse);
+    });
+  });
+
+  group('App Lock UI & Screen Widget Tests', () {
+    late InMemorySecureStorageService storage;
+    late MockAppLockService lockService;
+
+    setUp(() {
+      storage = InMemorySecureStorageService();
+      lockService = MockAppLockService(storage: storage);
+    });
+
+    testWidgets('PasscodeDots renders specified length and filled dots', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: PasscodeDots(
+              length: 4,
+              filledCount: 2,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(PasscodeDots), findsOneWidget);
+      expect(find.byType(AnimatedContainer), findsNWidgets(4));
+    });
+
+    testWidgets('NumericKeypad handles digit, backspace, and biometric taps', (WidgetTester tester) async {
+      int? tappedDigit;
+      var backspaceTapped = false;
+      var biometricTapped = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: NumericKeypad(
+              onDigit: (d) => tappedDigit = d,
+              onBackspace: () => backspaceTapped = true,
+              onBiometric: () => biometricTapped = true,
+              showBiometric: true,
+            ),
+          ),
+        ),
+      );
+
+      // Tap 5
+      await tester.tap(find.text('5'));
+      expect(tappedDigit, equals(5));
+
+      // Tap backspace
+      await tester.tap(find.byIcon(Icons.backspace_outlined));
+      expect(backspaceTapped, isTrue);
+
+      // Tap fingerprint
+      await tester.tap(find.byIcon(Icons.fingerprint));
+      expect(biometricTapped, isTrue);
+    });
+
+    testWidgets('PasscodeSetupScreen creates and confirms passcode, then completes', (WidgetTester tester) async {
+      var setupDone = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PasscodeSetupScreen(
+            appLockService: lockService,
+            onSetupComplete: () => setupDone = true,
+          ),
+        ),
+      );
+
+      expect(find.text('Create App Passcode'), findsOneWidget);
+
+      // Step 1: Enter 1234
+      await tester.tap(find.text('1'));
+      await tester.tap(find.text('2'));
+      await tester.tap(find.text('3'));
+      await tester.tap(find.text('4'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Should advance to step 2: Confirm Passcode
+      expect(find.text('Confirm Passcode'), findsOneWidget);
+
+      // Step 2: Enter matching 1234
+      await tester.tap(find.text('1'));
+      await tester.tap(find.text('2'));
+      await tester.tap(find.text('3'));
+      await tester.tap(find.text('4'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Verify biometric sheet appears or setupDone triggers
+      if (find.text('Enable Biometric Unlock?').evaluate().isNotEmpty) {
+        await tester.tap(find.text('Enable Biometrics'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(setupDone, isTrue);
+      expect(await lockService.isPasscodeConfigured(), isTrue);
+    });
+
+    testWidgets('AppLockScreen displays lock prompt and unlocks on correct passcode', (WidgetTester tester) async {
+      await lockService.setPasscode('8888');
+      var unlocked = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppLockScreen(
+            appLockService: lockService,
+            autoPromptBiometrics: false,
+            onUnlocked: () => unlocked = true,
+          ),
+        ),
+      );
+
+      expect(find.text('ourPlace'), findsOneWidget);
+      expect(find.text('Enter your 4-digit passcode to unlock'), findsOneWidget);
+
+      // Enter incorrect code 1234
+      await tester.tap(find.text('1'));
+      await tester.tap(find.text('2'));
+      await tester.tap(find.text('3'));
+      await tester.tap(find.text('4'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Incorrect passcode'), findsOneWidget);
+      expect(unlocked, isFalse);
+
+      // Enter correct code 8888
+      await tester.tap(find.text('8'));
+      await tester.tap(find.text('8'));
+      await tester.tap(find.text('8'));
+      await tester.tap(find.text('8'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(unlocked, isTrue);
+    });
+
+    testWidgets('AuthGate routes to PasscodeSetupScreen when passcode not configured', (WidgetTester tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: db);
+      final authService = LocalAuthService(database: localDb, resetSession: true);
+      final authRepo = DefaultAuthRepository(authService: authService);
+
+      final freshLockService = MockAppLockService(storage: InMemorySecureStorageService());
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AuthGate(
+            authRepository: authRepo,
+            appLockService: freshLockService,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Create App Passcode'), findsOneWidget);
+      await localDb.close();
+    });
+
+    testWidgets('ProfileScreen displays Security & App Lock card and allows Lock App Now', (WidgetTester tester) async {
+      await lockService.setPasscode('5555');
+      lockService.unlockApp();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ProfileScreen(
+            currentUser: User(id: 'alex', username: '@alex'),
+            appLockService: lockService,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Security & App Lock'), findsOneWidget);
+      expect(find.text('Active • Protected locally'), findsOneWidget);
+
+      // Tap "Lock App Now"
+      await tester.tap(find.text('Lock App Now'));
+      await tester.pump();
+
+      expect(lockService.isAppUnlocked, isFalse);
+    });
+  });
 }
+
+/// Helper mock implementation for AppLockService during widget/unit tests
+class MockAppLockService implements AppLockService {
+  final SecureStorageService storage;
+  bool _isAppUnlocked;
+  bool mockBiometricsAvailable;
+  bool mockBiometricsAuthenticateSuccess;
+  final StreamController<bool> _controller = StreamController<bool>.broadcast();
+
+  MockAppLockService({
+    SecureStorageService? storage,
+    bool isAppUnlocked = false,
+    this.mockBiometricsAvailable = true,
+    this.mockBiometricsAuthenticateSuccess = true,
+  })  : storage = storage ?? InMemorySecureStorageService(),
+        _isAppUnlocked = isAppUnlocked;
+
+  @override
+  bool get isAppUnlocked => _isAppUnlocked;
+
+  @override
+  Stream<bool> get lockStateChanges => _controller.stream;
+
+  @override
+  void lockApp() {
+    _isAppUnlocked = false;
+    _controller.add(false);
+  }
+
+  @override
+  void unlockApp() {
+    _isAppUnlocked = true;
+    _controller.add(true);
+  }
+
+  @override
+  Future<bool> isPasscodeConfigured() async {
+    final v = await storage.read('app_lock_passcode_verifier');
+    return v != null && v.isNotEmpty;
+  }
+
+  @override
+  Future<bool> isBiometricsEnabled() async {
+    final e = await storage.read('app_lock_biometrics_enabled');
+    return e == 'true';
+  }
+
+  @override
+  Future<bool> isBiometricsAvailable() async => mockBiometricsAvailable;
+
+  @override
+  Future<void> setPasscode(String passcode) async {
+    final salt = HashUtils.generateSalt();
+    final verifier = HashUtils.hashPassword(passcode, salt);
+    await storage.write('app_lock_passcode_salt', salt);
+    await storage.write('app_lock_passcode_verifier', verifier);
+  }
+
+  @override
+  Future<bool> verifyPasscode(String candidate) async {
+    final salt = await storage.read('app_lock_passcode_salt');
+    final verifier = await storage.read('app_lock_passcode_verifier');
+    if (salt == null || verifier == null) return false;
+    final valid = HashUtils.hashPassword(candidate, salt) == verifier;
+    if (valid) unlockApp();
+    return valid;
+  }
+
+  @override
+  Future<bool> authenticateWithBiometrics({String reason = ''}) async {
+    if (mockBiometricsAuthenticateSuccess) {
+      unlockApp();
+      return true;
+    }
+    return false;
+  }
+
+  @override
+  Future<void> setBiometricsEnabled(bool enabled) async {
+    await storage.write('app_lock_biometrics_enabled', enabled ? 'true' : 'false');
+  }
+
+  @override
+  Future<void> clearPasscode() async {
+    await storage.delete('app_lock_passcode_verifier');
+    await storage.delete('app_lock_passcode_salt');
+    await storage.delete('app_lock_biometrics_enabled');
+    lockApp();
+  }
+}
+

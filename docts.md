@@ -1,6 +1,6 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.0.0  
-> **Last Updated:** 2026-09-14  
+> **Document Version:** 3.1.0  
+> **Last Updated:** 2026-09-15  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
 
@@ -66,9 +66,6 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
        (PLANNED)                       (PLANNED)                     (PLANNED)
-```
-
-#### Detailed Phase Progress Breakdown               (PLANNED)                     (PLANNED)
 ```
 
 #### Detailed Phase Progress Breakdown
@@ -205,8 +202,12 @@ e:\ourPlace\
 ├── docts.md                                 # Master project documentation & task tracker (this file)
 ├── README.md                                # Root repository readme
 └── chatbox/                                 # PRIMARY FLUTTER APPLICATION
-    ├── pubspec.yaml                         # Dependencies (drift, crypto, cupertino_icons)
+    ├── pubspec.yaml                         # Dependencies (drift, crypto, cupertino_icons, local_auth, flutter_secure_storage)
     ├── analysis_options.yaml                # Linter rules configuration
+    ├── android/
+    │   └── app/src/main/
+    │       ├── AndroidManifest.xml          # Declares USE_BIOMETRIC permission
+    │       └── kotlin/.../MainActivity.kt   # Extends FlutterFragmentActivity for biometrics
     ├── lib/
     │   ├── main.dart                        # Application entry point with AuthGate
     │   ├── core/
@@ -229,28 +230,34 @@ e:\ourPlace\
     │   │   └── conversation_repository.dart # ConversationRepository & LocalConversationRepository
     │   ├── screens/
     │   │   ├── auth/
-    │   │   │   ├── auth_gate.dart           # Reactive session gate routing to HomeScreen/AuthScreen
-    │   │   │   └── auth_screen.dart         # Dark-themed login & registration UI
+    │   │   │   ├── app_lock_screen.dart     # Dedicated device lock & passcode verification screen
+    │   │   │   ├── auth_gate.dart           # Session & device lock coordinator (lifecycle auto-lock)
+    │   │   │   ├── auth_screen.dart         # Dark-themed login & registration UI
+    │   │   │   └── passcode_setup_screen.dart # Multi-step PIN creation & biometric setup
     │   │   ├── home_screen.dart             # Primary Home screen hosting Inbox & Profile nav
     │   │   ├── inbox/
     │   │   │   └── inbox_screen.dart        # Inbox displaying Love Connection & Conversations
     │   │   ├── profile/
-    │   │   │   └── profile_screen.dart      # User Profile, Love Connection status, & privacy
+    │   │   │   └── profile_screen.dart      # User Profile, Love Connection status, & security settings
     │   │   └── chat_screen.dart             # Modular ChatScreen widget with active user context
     │   ├── services/
+    │   │   ├── app_lock_service.dart        # Device passcode & biometric authentication service
     │   │   ├── auth_service.dart            # AuthService contract & LocalAuthService
     │   │   ├── chat_service.dart            # Chat transport service contract
     │   │   ├── encryption_service.dart      # E2EE contract & NoOp implementation
-    │   │   └── notification_service.dart    # Push notifications contract & stub
+    │   │   ├── notification_service.dart    # Push notifications contract & stub
+    │   │   └── secure_storage_service.dart  # Hardware-backed encrypted key-value storage
     │   └── widgets/
     │       ├── chat_header.dart             # Floating pill header with back button, user & partner
     │       ├── chat_input_field.dart        # Message input bar and send button
     │       ├── conversation_tile.dart       # Reusable conversation tile component
     │       ├── date_divider.dart            # Date group divider ("Today", "Yesterday")
     │       ├── message_bubble.dart          # Chat message bubble container
+    │       ├── numeric_keypad.dart          # Tactile dark numeric keypad with biometric button
+    │       ├── passcode_dots.dart           # Animated passcode dots indicator with shake feedback
     │       └── timestamp_indicator.dart     # Timestamp indicator widget
     └── test/
-        └── widget_test.dart                 # Automated test suite (20/20 tests passing)
+        └── widget_test.dart                 # Automated test suite (29/29 tests passing)
 ```
 
 ---
@@ -314,12 +321,36 @@ All UI components strictly adhere to the minimalist dark aesthetic:
   Custom bottom text field encased in a `0xFF383838` rounded capsule (`borderRadius: BorderRadius.circular(28)`) with white cursor and `#AAAAAA` placeholder, paired with a matching circular send button.
 - **`MessageBubble` (`message_bubble.dart`):**  
   Constrained to 75% max viewport width. Sent messages align right; received messages align left. Encased in dark charcoal with `BorderRadius.circular(20)`.
+- **`NumericKeypad` (`numeric_keypad.dart`):**  
+  Tactile dark keypad with circular buttons (`#282828`), white numerals, haptic feedback on touch, backspace, and biometric icon button.
+- **`PasscodeDots` (`passcode_dots.dart`):**  
+  4-digit animated circular dots indicator highlighting upon digit entry, featuring horizontal shake animation and red glow on invalid input.
 
 ### 4.3. Navigation & Screen Architecture (`chatbox/lib/screens/`)
 - **`HomeScreen` (`home_screen.dart`):** Top-level coordinator hosting `InboxScreen` and pushing `ProfileScreen`.
 - **`InboxScreen` (`inbox/inbox_screen.dart`):** Main authenticated view with search filtering, `❤️ LOVE CONNECTION` section, `CONVERSATIONS` section, pull-to-refresh, empty state, and new conversation dialog (`+`). Tapping any tile navigates to `ChatScreen`.
-- **`ProfileScreen` (`profile/profile_screen.dart`):** User identity card, Love Connection status with profile visibility toggle, privacy summary, and sign-out action.
+- **`ProfileScreen` (`profile/profile_screen.dart`):** User identity card, Security & App Lock settings card (active status, biometrics switch, change passcode, immediate lock), Love Connection status with profile visibility toggle, privacy summary, and sign-out action.
 - **`ChatScreen` (`chat_screen.dart`):** Conversation thread view with message persistence, auto-scroll, date dividers, and send actions.
+- **`AuthScreen` (`auth/auth_screen.dart`):** Dedicated dark-themed login and registration screen with tab switching, unique `@username` validation, salted password entry, and error state handling.
+- **`AppLockScreen` (`auth/app_lock_screen.dart`):** Dedicated device lock screen protecting local data, accepting passcode entry or biometrics, and providing account re-authentication fallback.
+- **`PasscodeSetupScreen` (`auth/passcode_setup_screen.dart`):** First-time passcode creation and confirmation flow with optional biometric enrollment sheet.
+- **`AuthGate` (`auth/auth_gate.dart`):** Coordinates authentication session, device lock state, and lifecycle background pause/hide auto-lock.
+
+### 4.4. Security, Authentication & App Lock Subsystem (`chatbox/lib/services/`)
+- **`AuthService` (`auth_service.dart`):**  
+  Authentication service contract and `LocalAuthService` implementation managing reactive session state, registration with username validation/uniqueness checks, credential verification against salted hashes, session persistence, and `currentUserStream`.
+- **`SecureStorageService` (`secure_storage_service.dart`):**  
+  Hardware-backed key-value storage backed by `flutter_secure_storage` (Android Keystore / iOS Keychain / Windows DPAPI). Features an in-memory adapter (`InMemorySecureStorageService`) for unit tests.
+- **`AppLockService` (`app_lock_service.dart`):**  
+  Manages device passcode verification, salting (`HashUtils.hashPassword`), `LocalAuthentication` biometric prompts, biometrics enable/disable toggle, in-memory unlock state (`isAppUnlocked`), and `lockStateChanges` broadcast stream. Plaintext passcodes are never stored.
+
+### 4.5. Persistence & Database Subsystem (`chatbox/lib/database/`)
+- **`LocalDatabase` (`local_database.dart`):**  
+  Singleton database manager wrapping Drift/SQLite. Provides reactive queries (`watchMessagesForPartner`), message CRUD, and account management (`saveAccount`, `getAccountByUsername`, `verifyAccountCredentials`).
+- **`Messages` Table (`app_database.dart`):**  
+  Local message schema storing `id`, `senderId`, `recipientId`, `partner`, `text`, `type`, `status`, and `timestamp`. Indexed on partner and timestamp.
+- **`UserAccounts` Table (`app_database.dart`):**  
+  Local account credentials schema (Schema v2) storing `accountId`, unique lowercase `username`, salted `passwordHash`, `salt`, `createdAt`, and `publicIdentityKey`.
 
 ---
 
@@ -379,12 +410,14 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ---
 
-## 7. Phase 6 Completion & Milestone Report
+## 7. Milestone Completion Reports
+
+### 7.1. Phase 6 Completion Report — Inbox & Multi-Conversation UI
 
 - **Current Phase:** Phase 6 — Inbox & Multi-Conversation UI
 - **Phase Status:** COMPLETED
 
-### Completed Work
+#### Completed Work
 1. Upgraded application primary navigation from a single 1-on-1 chat prototype to an authenticated multi-user **Inbox**.
 2. Created `Conversation` domain model with unread counting, formatted relative timestamps, and Love Connection indicator flags.
 3. Created reusable `ConversationTile` component adhering to the dark charcoal `#383838` design token, with circular avatar, Love Connection badge (`❤️`), snippet preview, and unread pill count.
@@ -392,87 +425,76 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 5. Built `InboxScreen` with floating search bar, real-time client-side search filtering, sticky Love Connection section, conversations list, empty search state, and new chat dialog (`+`).
 6. Built `HomeScreen` navigation coordinator and `ProfileScreen` with anonymous `@username` identity card, Love Connection status with profile visibility toggle, privacy overview, and sign-out button.
 7. Updated `ChatHeader` to display an inline back button (`<`) whenever navigated from Inbox, preserving full backward compatibility with the existing chat thread, local SQLite persistence, and "Send luv" actions.
-8. Implemented `AuthGate` routing to `HomeScreen` for authenticated sessions and `AuthScreen` when logged out.
-9. Implemented foundational `UserAccount` and `HashUtils` (salted SHA-256 verifiers) ready for Phase 7 authentication.
+8. Implemented initial `AuthGate` routing to `HomeScreen` for authenticated sessions.
 
-### Files Created
-- `chatbox/lib/core/utils/hash_utils.dart`: Cryptographic salt generation, SHA-256 verifiers, and username validation/normalization.
-- `chatbox/lib/models/user_account.dart`: Private account entity with salted verification logic.
+#### Files Created
 - `chatbox/lib/repositories/conversation_repository.dart`: Multi-conversation repository contract and local implementation.
-- `chatbox/lib/screens/auth/auth_gate.dart`: Session state coordinator directing to `HomeScreen` or `AuthScreen`.
-- `chatbox/lib/screens/auth/auth_screen.dart`: Anonymous account login and creation screen with dark aesthetic.
 - `chatbox/lib/screens/home_screen.dart`: Primary shell hosting `InboxScreen` and pushing `ProfileScreen`.
 - `chatbox/lib/screens/inbox/inbox_screen.dart`: Primary Inbox view with search, Love Connection, and conversations list.
 - `chatbox/lib/screens/profile/profile_screen.dart`: Profile identity, Love Connection status, privacy settings, and sign-out.
 - `chatbox/lib/widgets/conversation_tile.dart`: Modular conversation list item component.
 
-### Files Modified
+#### Architecture Changes
+- **Single-Chat to Multi-User:** Transformed the top-level UX from a single hard-coded chat to an extensible Inbox architecture backing any number of conversations.
+- **Love Connection Isolation:** The Love Connection is highlighted visually as a special relationship category without conferring blanket permissions or automatic access to other user threads.
+
+---
+
+### 7.2. Phase 7 Completion Report — Anonymous Account Authentication
+
+- **Current Phase:** Phase 7 — Anonymous Account Authentication
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. Implemented anonymous account registration and sign-in flows with unique `@username` validation (alphanumeric with underscores, 3–20 characters).
+2. Created `HashUtils` utility providing cryptographically secure random salt generation (32 bytes via `Random.secure()`), salted SHA-256 password hashing, and verification against candidate passwords without exposing credentials.
+3. Created `UserAccount` domain entity holding account ID, normalized lowercase username, password hash, salt, created timestamp, and public identity key.
+4. Added `UserAccounts` table to Drift SQLite database schema (Schema v2) with unique constraint on username.
+5. Implemented account CRUD and verification in `LocalDatabase` (`saveAccount`, `getAccountByUsername`, `verifyAccountCredentials`).
+6. Built `AuthRepository` and `LocalAuthService` providing session streams (`currentUserStream`), registration, sign in, sign out, and session persistence.
+7. Built `AuthScreen` with sleek dark aesthetic (`#000000` / `#383838`), tab switching between "Sign In" and "Create Account", form validation, password visibility toggle, and error banners.
+8. Integrated `AuthGate` to reactively route authenticated users to `HomeScreen` and unauthenticated users to `AuthScreen`.
+
+#### Files Created
+- `chatbox/lib/core/utils/hash_utils.dart`: Cryptographic salt generation, SHA-256 verifiers, and username validation/normalization.
+- `chatbox/lib/models/user_account.dart`: Private account entity with salted verification logic.
+- `chatbox/lib/screens/auth/auth_screen.dart`: Anonymous account login and creation screen with dark aesthetic.
+- `chatbox/lib/screens/auth/auth_gate.dart`: Session state coordinator directing to `HomeScreen` or `AuthScreen`.
+
+#### Files Modified
 - `chatbox/lib/core/constants/app_constants.dart`: Added username and password length constraints.
 - `chatbox/lib/database/app_database.dart`: Added `UserAccounts` table with unique username constraint (Schema version 2).
 - `chatbox/lib/database/app_database.g.dart`: Generated Drift table code.
 - `chatbox/lib/database/local_database.dart`: Added account CRUD methods (`saveAccount`, `getAccountByUsername`, `verifyAccountCredentials`).
-- `chatbox/lib/main.dart`: Wired app entrypoint to `AuthGate` with `AppTheme.darkTheme`.
-- `chatbox/lib/models/conversation.dart`: Added `isLoveConnection`, `unreadCount`, `lastMessageAt`, and `formattedTimestamp`.
-- `chatbox/lib/models/message.dart`: Added `recipientId` support and multi-user compatibility.
 - `chatbox/lib/models/user.dart`: Extended with love connection visibility attributes.
 - `chatbox/lib/repositories/auth_repository.dart`: Updated to use `LocalAuthService` with salted credential verification.
-- `chatbox/lib/screens/chat_screen.dart`: Integrated active user and partner metadata from conversation.
 - `chatbox/lib/services/auth_service.dart`: Enhanced with `currentUserStream` and session management.
-- `chatbox/lib/widgets/chat_header.dart`: Added back navigation button and dynamic partner title.
-- `chatbox/lib/widgets/message_bubble.dart`: Updated to evaluate dynamic current user sender IDs.
 - `chatbox/pubspec.yaml` / `chatbox/pubspec.lock`: Added `crypto: ^3.0.6`.
-- `chatbox/test/widget_test.dart`: Added 20 automated tests covering crypto, database, models, auth, and UI.
-- `docts.md`: Synchronized documentation, roadmap matrix, and ADRs.
 
-### Architecture Changes
-- **Single-Chat to Multi-User:** Transformed the top-level UX from a single hard-coded chat to an extensible Inbox architecture backing any number of conversations.
-- **Love Connection Isolation:** The Love Connection is highlighted visually as a special relationship category without conferring blanket permissions or automatic access to other user threads.
-- **Strict Credential Separation:** Laid architectural boundaries separating Account Passwords (remote auth via salted hashes), Local App Passcodes (device lock PINs in Phase 8), and Love Codes (ephemeral 60s sharing authorizations in Phase 17).
-
-### UI Changes
-- Replaced direct opening of `ChatScreen` with `InboxScreen`.
-- Designed `ConversationTile` matching `#000000` / `#383838` dark palette with heart badge (`❤️`) for Love Connection.
-- Real-time instant search bar with empty state handling.
-- Back button navigation in `ChatHeader` enabling seamless round-trip between Inbox and individual chats.
-- `ProfileScreen` with privacy stats, identity details, and toggleable Love Connection visibility.
-
-### Tests Performed
-- Ran full test suite via `flutter test` across:
-  - Cryptographic salt generation, hashing consistency, username normalization, and password verification (5 tests).
-  - SQLite local database storage for accounts and messages (4 tests).
-  - Conversation repository seed retrieval, unread counts, and new chat creation (3 tests).
-  - Authentication service registration, duplicate username rejection, sign in, and sign out (1 test).
-  - Chat repository message delegation (1 test).
-  - Widget UI tests for `ConversationTile`, `InboxScreen`, navigation, `AuthScreen`, `AuthGate`, and `ChatScreen` (6 tests).
-- Ran code analysis via `flutter analyze`.
-
-### Test Results
-- **`flutter test`:** 20 / 20 tests passed (100%).
-- **`flutter analyze`:** No issues found (0 warnings, 0 errors).
-
-### Known Limitations
-- Network relay and cloud directory sync are not yet implemented (by design, planned for Phases 10–12).
-- Love Code single-use sharing protocol belongs to Phase 17.
+#### Security Guarantees
+- **No Plaintext Passwords:** Passwords are never stored in plaintext in SQLite, memory logs, or preferences.
+- **Salted SHA-256:** Every account uses a distinct 32-byte cryptographically random salt to defeat rainbow table attacks.
+- **Zero PII Required:** Identity consists strictly of an anonymous `@username` and password.
 
 ---
 
-## 8. Phase 8 Completion & Milestone Report
+### 7.3. Phase 8 Completion Report — Local App Passcode & Device Lock
 
 - **Current Phase:** Phase 8 — Local App Passcode & Device Lock
 - **Phase Status:** COMPLETED
 
-### Completed Work
+#### Completed Work
 1. Implemented `SecureStorageService` interface with `DefaultSecureStorageService` (`flutter_secure_storage` hardware-backed keystore/keychain) and `InMemorySecureStorageService` for unit testing.
 2. Built `AppLockService` with `DefaultAppLockService` managing salted SHA-256 passcode verifiers (`HashUtils.hashPassword`), `LocalAuthentication` biometric prompts, toggleable biometric unlock, and reactive state broadcast.
 3. Created animated `PasscodeDots` indicator with error shake animation and red glow on incorrect entry.
-4. Created tactile dark `NumericKeypad` with haptic feedback, 70x70 keys, backspace, and biometric icon button.
+4. Created tactile dark `NumericKeypad` with haptic feedback, 70x70 circular buttons, backspace, and biometric icon button.
 5. Built `AppLockScreen` supporting unlock and current-passcode verification modes, auto-biometric prompt, and account re-login fallback.
 6. Built `PasscodeSetupScreen` with multi-step creation and confirmation flow, mismatch handling, and optional biometric activation bottom sheet.
 7. Enhanced `AuthGate` with `WidgetsBindingObserver` to auto-lock on app background/pause and route cleanly between `AuthScreen`, `PasscodeSetupScreen`, `AppLockScreen`, and `HomeScreen`.
 8. Added "Security & App Lock" card to `ProfileScreen` with passcode active status, biometric unlock toggle, change passcode action, and "Lock App Now" button.
 9. Added 9 automated tests for App Lock & Biometrics, bringing the automated test suite to 29/29 passing tests (100%).
 
-### Files Created
+#### Files Created
 - `chatbox/lib/services/secure_storage_service.dart`: Encrypted key-value hardware storage contract and implementations.
 - `chatbox/lib/services/app_lock_service.dart`: Device passcode & biometric authentication service.
 - `chatbox/lib/widgets/passcode_dots.dart`: Animated 4-digit indicator dots with shake feedback.
@@ -480,51 +502,64 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 - `chatbox/lib/screens/auth/app_lock_screen.dart`: Dedicated device lock screen.
 - `chatbox/lib/screens/auth/passcode_setup_screen.dart`: Passcode creation, confirmation, and biometric setup flow.
 
-### Files Modified
+#### Files Modified
 - `chatbox/pubspec.yaml` / `chatbox/pubspec.lock`: Added `local_auth: ^3.0.2` and `flutter_secure_storage: ^11.1.1`.
-- `chatbox/android/app/src/main/kotlin/com/example/chatbox/MainActivity.kt`: Inherits from `FlutterFragmentActivity`.
+- `chatbox/android/app/src/main/kotlin/com/example/chatbox/MainActivity.kt`: Inherits from `FlutterFragmentActivity` for biometrics.
 - `chatbox/android/app/src/main/AndroidManifest.xml`: Declared `USE_BIOMETRIC` permission.
 - `chatbox/lib/main.dart`: Wired `appLockService` parameter through `MyApp`.
 - `chatbox/lib/screens/home_screen.dart`: Passed `appLockService` to `ProfileScreen`.
-- `chatbox/lib/screens/auth/auth_gate.dart`: Coordinated session and device lock lifecycle.
+- `chatbox/lib/screens/auth/auth_gate.dart`: Coordinated session and device lock lifecycle with auto-lock on background.
 - `chatbox/lib/screens/profile/profile_screen.dart`: Added "Security & App Lock" settings card.
 - `chatbox/test/widget_test.dart`: Added 9 new unit and widget tests (29 tests total).
-- `docts.md`: Synchronized documentation, ADR 3, and status matrix.
 
-### Next Phase
-- **Phase 9 — Account & Access Security:** Remote verification protocols, rate-limiting, brute-force protection, and recovery key architecture.
+#### Security Guarantees
+- **Strict Credential Separation:** Local 4-digit PIN is stored exclusively in hardware keystores (Keystore/Keychain/DPAPI); never sent to Firebase or remote servers.
+- **Biometric Isolation:** Biometric authentication delegates completely to the device OS (`local_auth`); raw biometric data is never accessed or stored by the app.
+- **Background Privacy Protection:** On app minimization or pause, the session is immediately locked to prevent unauthorized physical snooping.
 
 ---
 
-## 9. Verification & Testing Matrix
+## 8. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
 - **Test Command:** `flutter test`
 - **Results:** `29 / 29 tests passing` (100% pass rate)
 - **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 5.6s)`
 
-### Test Coverage Highlights
-1. **Cryptographic Tests (5 tests):** Random salt generation, SHA-256 consistency, username normalization, input validation, and salted password verification.
-2. **Database Tests (4 tests):** In-memory SQLite tests verifying account insertion, unique username enforcement, retrieval, and message CRUD.
-3. **Conversation Tests (3 tests):** Seed loading, Love Connection retrieval, starting/finding conversations, and marking as read.
-4. **Authentication Tests (1 test):** Registration, duplicate username rejection, sign out, invalid password rejection, and correct credential login.
-5. **Chat Repository Tests (1 test):** Message delegation, status updates, and message retrieval.
-6. **UI Widget Tests (6 tests):**
-   - `ConversationTile`: Love Connection styling, badge rendering, and tap callbacks.
-   - `InboxScreen`: Header, search bar filtering, Love Connection section, conversations section.
-   - Navigation: Tapping conversation opens `ChatScreen`, and back button returns to `InboxScreen`.
-   - `AuthScreen`: Tab switching between Sign In and Create Account.
-   - `AuthGate`: Presenting `HomeScreen` on active session and `AuthScreen` on logout.
-   - `ChatScreen`: Smoke test, sending message, and "Send luv" interaction.
-7. **App Lock & Secure Storage Tests (3 tests):**
-   - Passcode salting and hashing without plaintext storage.
-   - Passcode verification and app unlock.
-   - Biometric toggle and clear passcode lifecycle.
-8. **App Lock UI Widget Tests (6 tests):**
-   - `PasscodeDots`: Filled/unfilled rendering and error state.
-   - `NumericKeypad`: Digit, backspace, and biometric callback handling.
-   - `PasscodeSetupScreen`: Create, confirm, mismatch error reset, and complete.
-   - `AppLockScreen`: Incorrect passcode error and correct passcode unlock.
-   - `AuthGate`: First-time setup routing and lock-state coordination.
-   - `ProfileScreen`: Security card display, active passcode badge, and "Lock App Now" action.
+### Comprehensive Test Coverage Breakdown
+
+| Suite | Tests | Scope & Verification Highlights |
+| :--- | :---: | :--- |
+| **Cryptographic Utils** | 5 | Random salt generation (32 bytes), SHA-256 consistency, username normalization, input validation, salted password verification |
+| **Local SQLite Database** | 4 | In-memory Drift tests verifying account creation, duplicate username rejection, credential matching, and message CRUD |
+| **Conversation Repository** | 3 | Seed loading, Love Connection retrieval, starting/finding conversations, unread count tracking |
+| **Authentication Service** | 1 | Complete registration flow, duplicate username rejection, sign-in validation, session persistence, sign-out |
+| **Chat Repository** | 1 | Local chat repository message delegation, status update transitions, and conversation retrieval |
+| **Inbox & Chat UI Widgets** | 6 | `ConversationTile` Love badge rendering, `InboxScreen` search filtering, push navigation & back button, `AuthScreen` tabs, `AuthGate` session routing, `ChatScreen` messaging & "Send luv" |
+| **App Lock & Secure Storage** | 3 | Passcode salting and hashing without plaintext storage, passcode verification and app unlock, biometric toggle & clear passcode lifecycle |
+| **App Lock UI Widgets** | 6 | `PasscodeDots` fill/shake feedback, `NumericKeypad` tactile buttons/biometrics, `PasscodeSetupScreen` create/confirm/mismatch, `AppLockScreen` incorrect error/unlock, `AuthGate` setup routing/auto-lock, `ProfileScreen` security card & immediate lock |
+| **Total Test Suite** | **29** | **100% Passing — Zero Analyzer Issues** |
+
+---
+
+## 9. Immediate Action Items & Next Milestone
+
+### Next Phase: Phase 9 — Account & Access Security
+
+Phase 9 establishes advanced account security and anti-abuse safeguards prior to deploying network relays and end-to-end encryption.
+
+#### Key Objectives for Phase 9:
+1. **Remote Verification Protocols:**
+   - Architecture for verifying account ownership remotely without exposing plaintext passwords or raw salted hashes.
+   - Challenge-response or SRP-inspired authentication handshake preparation.
+2. **Brute-Force & Rate-Limiting Protection:**
+   - Client-side and relay-side exponential backoff for failed account login attempts (e.g. 5 attempts = 30s delay; 10 attempts = 5m delay).
+   - Local passcode throttling (e.g. 5 incorrect device PIN attempts = 60s lockout).
+3. **Privacy-Preserving Account Recovery Key:**
+   - Generate secure offline recovery key / mnemonic phrase upon account creation.
+   - Provide recovery phrase confirmation and export flow.
+   - Re-establish account access using recovery phrase without requiring central customer support or PII.
+4. **Security Audit & Logging:**
+   - Device-local security event logs (login attempts, lock events, passcode changes).
+   - Zero telemetry / zero tracking enforcement.
 

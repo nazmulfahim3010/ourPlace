@@ -6,12 +6,15 @@ import 'package:chatbox/repositories/conversation_repository.dart';
 import 'package:chatbox/screens/inbox/inbox_screen.dart';
 import 'package:chatbox/screens/profile/profile_screen.dart';
 
+import 'package:chatbox/services/app_lock_service.dart';
+
 /// Top-level Home Screen hosting the primary Inbox and profile navigation
 class HomeScreen extends StatelessWidget {
   final User? currentUser;
   final AuthRepository? authRepository;
   final ChatRepository? chatRepository;
   final ConversationRepository? conversationRepository;
+  final AppLockService? appLockService;
 
   const HomeScreen({
     super.key,
@@ -19,6 +22,7 @@ class HomeScreen extends StatelessWidget {
     this.authRepository,
     this.chatRepository,
     this.conversationRepository,
+    this.appLockService,
   });
 
   @override
@@ -34,6 +38,7 @@ class HomeScreen extends StatelessWidget {
             builder: (context) => ProfileScreen(
               currentUser: currentUser,
               authRepository: authRepository,
+              appLockService: appLockService,
             ),
             settings: const RouteSettings(name: '/profile'),
           ),
