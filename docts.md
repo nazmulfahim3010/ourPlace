@@ -30,15 +30,14 @@ Unlike conventional messaging platforms that harvest user metadata and persist c
 ## 2. Project Development Status & Roadmap Tracker
 
 In accordance with the **Master Development Rules**, progress is tracked strictly against the 18 defined phases. Phases must be completed sequentially without skipping ahead.
-
 ### Current Status Dashboard
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 6 — Inbox & Multi-Conversation UI** |
-| **Current Status** | **COMPLETED** (Ready for Phase 7: Anonymous Account Authentication) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI) |
-| **Next Phase** | **Phase 7 — Anonymous Account Authentication** |
+| **Current Phase** | **Phase 8 — Local App Passcode & Device Lock** |
+| **Current Status** | **COMPLETED** (Ready for Phase 9: Account & Access Security) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock) |
+| **Next Phase** | **Phase 9 — Account & Access Security** |
 
 ---
 
@@ -54,7 +53,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
           │
           ▼
 [Phase 7: Anonymous Auth]──►  [Phase 8: App Passcode]   ──►  [Phase 9: Access Security]
-        (NEXT)                         (PLANNED)                     (PLANNED)
+       (COMPLETED)                     (COMPLETED)                       (NEXT)
                                                                           │
                                                                           ▼
 [Phase 12: Message Sync] ◄──  [Phase 11: Temp Relay]    ◄──  [Phase 10: E2EE Layer]
@@ -67,6 +66,9 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
        (PLANNED)                       (PLANNED)                     (PLANNED)
+```
+
+#### Detailed Phase Progress Breakdown               (PLANNED)                     (PLANNED)
 ```
 
 #### Detailed Phase Progress Breakdown
@@ -132,17 +134,20 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Integrated `AuthGate` to present `HomeScreen` (Inbox) as the primary view for authenticated sessions
   - [x] 20/20 automated tests passing with 0 analyzer issues
 
-- [ ] **Phase 7 — Anonymous Account Authentication**
-  - [ ] Connect account registration and login flows with unique `@username` validation
-  - [ ] Enforce salted password verifiers (never plaintext)
-  - [ ] Username uniqueness enforcement via local/backend directory
-  - [ ] Support session switching and re-authentication
+- [x] **Phase 7 — Anonymous Account Authentication**
+  - [x] Connect account registration and login flows with unique `@username` validation
+  - [x] Enforce salted password verifiers (never plaintext)
+  - [x] Username uniqueness enforcement via local/backend directory
+  - [x] Support session switching and re-authentication
 
-- [ ] **Phase 8 — Local App Passcode & Device Lock**
-  - [ ] Local 4- or 6-digit passcode setup and verification (completely separate from account password)
-  - [ ] App Lock view triggered on app launch or background resume
-  - [ ] Secure local storage for device passcode verifier (never sent to server)
-  - [ ] Rate-limiting and retry backoff on failed passcode attempts
+- [x] **Phase 8 — Local App Passcode & Device Lock**
+  - [x] Local 4-digit numeric passcode setup and confirmation flow (`PasscodeSetupScreen`)
+  - [x] Dedicated App Lock view triggered on app launch or background resume (`AppLockScreen`)
+  - [x] Hardware-backed secure local storage for device passcode verifier via `flutter_secure_storage` (never sent to server)
+  - [x] Biometric unlock integration via `local_auth` (Fingerprint/Face) with graceful passcode fallback
+  - [x] Lifecycle auto-lock via `WidgetsBindingObserver` on background pause/hide
+  - [x] Profile security controls: Biometric toggle, Change App Passcode, and Lock App Now
+  - [x] 29/29 automated tests passing with 0 analyzer issues
 
 - [ ] **Phase 9 — Account & Access Security**
   - [ ] Remote verification protocols without exposing passwords
@@ -334,6 +339,15 @@ All UI components strictly adhere to the minimalist dark aesthetic:
   3. **Love Code:** Ephemeral 60-second single-use authorization for conversation sharing (Phase 17). Never used as an encryption key.
 - **Reason:** Prevents remote credential compromise from leaking local access, and prevents local lockouts from requiring cloud account resets.
 
+### ADR 3: Hardware-Backed Local App Passcode & Biometric Security
+- **Previous Design:** No physical device-level application lock existed; possession of the unlocked device exposed all local private messages.
+- **New Design:** Implemented a dedicated local app lock system with 4-digit passcode setup (`PasscodeSetupScreen`), lock screen (`AppLockScreen`), biometric unlock via `local_auth`, hardware-backed key-value storage (`flutter_secure_storage`), and lifecycle background locking via `WidgetsBindingObserver`.
+- **Security Guarantees:**
+  - The local passcode is hashed using a random salt with SHA-256 and stored exclusively in hardware keystores (Android Keystore / iOS Keychain / Windows DPAPI).
+  - The passcode is **never** transmitted over the network or saved to Firebase.
+  - Biometric authentication uses platform OS prompts and never accesses or stores raw biometric data.
+  - Device unlock is required upon app launch and after backgrounding without requiring repeated account password entries.
+
 ---
 
 ## 6. Development Rules & Protocol
@@ -438,20 +452,56 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ### Known Limitations
 - Network relay and cloud directory sync are not yet implemented (by design, planned for Phases 10–12).
-- Real account creation persistence across device restarts will be finalized in Phase 7.
-- Local App Passcode protection is not active yet (scheduled for Phase 8).
-
-### Next Phase
-- **Phase 7 — Anonymous Account Authentication:** Connect end-to-end account registration and login flows with unique `@username` validation, salted password storage, session switching, and database persistence.
+- Love Code single-use sharing protocol belongs to Phase 17.
 
 ---
 
-## 8. Verification & Testing Matrix
+## 8. Phase 8 Completion & Milestone Report
+
+- **Current Phase:** Phase 8 — Local App Passcode & Device Lock
+- **Phase Status:** COMPLETED
+
+### Completed Work
+1. Implemented `SecureStorageService` interface with `DefaultSecureStorageService` (`flutter_secure_storage` hardware-backed keystore/keychain) and `InMemorySecureStorageService` for unit testing.
+2. Built `AppLockService` with `DefaultAppLockService` managing salted SHA-256 passcode verifiers (`HashUtils.hashPassword`), `LocalAuthentication` biometric prompts, toggleable biometric unlock, and reactive state broadcast.
+3. Created animated `PasscodeDots` indicator with error shake animation and red glow on incorrect entry.
+4. Created tactile dark `NumericKeypad` with haptic feedback, 70x70 keys, backspace, and biometric icon button.
+5. Built `AppLockScreen` supporting unlock and current-passcode verification modes, auto-biometric prompt, and account re-login fallback.
+6. Built `PasscodeSetupScreen` with multi-step creation and confirmation flow, mismatch handling, and optional biometric activation bottom sheet.
+7. Enhanced `AuthGate` with `WidgetsBindingObserver` to auto-lock on app background/pause and route cleanly between `AuthScreen`, `PasscodeSetupScreen`, `AppLockScreen`, and `HomeScreen`.
+8. Added "Security & App Lock" card to `ProfileScreen` with passcode active status, biometric unlock toggle, change passcode action, and "Lock App Now" button.
+9. Added 9 automated tests for App Lock & Biometrics, bringing the automated test suite to 29/29 passing tests (100%).
+
+### Files Created
+- `chatbox/lib/services/secure_storage_service.dart`: Encrypted key-value hardware storage contract and implementations.
+- `chatbox/lib/services/app_lock_service.dart`: Device passcode & biometric authentication service.
+- `chatbox/lib/widgets/passcode_dots.dart`: Animated 4-digit indicator dots with shake feedback.
+- `chatbox/lib/widgets/numeric_keypad.dart`: Charcoal numeric keypad with tactile feedback.
+- `chatbox/lib/screens/auth/app_lock_screen.dart`: Dedicated device lock screen.
+- `chatbox/lib/screens/auth/passcode_setup_screen.dart`: Passcode creation, confirmation, and biometric setup flow.
+
+### Files Modified
+- `chatbox/pubspec.yaml` / `chatbox/pubspec.lock`: Added `local_auth: ^3.0.2` and `flutter_secure_storage: ^11.1.1`.
+- `chatbox/android/app/src/main/kotlin/com/example/chatbox/MainActivity.kt`: Inherits from `FlutterFragmentActivity`.
+- `chatbox/android/app/src/main/AndroidManifest.xml`: Declared `USE_BIOMETRIC` permission.
+- `chatbox/lib/main.dart`: Wired `appLockService` parameter through `MyApp`.
+- `chatbox/lib/screens/home_screen.dart`: Passed `appLockService` to `ProfileScreen`.
+- `chatbox/lib/screens/auth/auth_gate.dart`: Coordinated session and device lock lifecycle.
+- `chatbox/lib/screens/profile/profile_screen.dart`: Added "Security & App Lock" settings card.
+- `chatbox/test/widget_test.dart`: Added 9 new unit and widget tests (29 tests total).
+- `docts.md`: Synchronized documentation, ADR 3, and status matrix.
+
+### Next Phase
+- **Phase 9 — Account & Access Security:** Remote verification protocols, rate-limiting, brute-force protection, and recovery key architecture.
+
+---
+
+## 9. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
 - **Test Command:** `flutter test`
-- **Results:** `20 / 20 tests passing` (100% pass rate)
-- **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 5.2s)`
+- **Results:** `29 / 29 tests passing` (100% pass rate)
+- **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 5.6s)`
 
 ### Test Coverage Highlights
 1. **Cryptographic Tests (5 tests):** Random salt generation, SHA-256 consistency, username normalization, input validation, and salted password verification.
@@ -466,4 +516,15 @@ Every contributor and agent interacting with this codebase **must** adhere to th
    - `AuthScreen`: Tab switching between Sign In and Create Account.
    - `AuthGate`: Presenting `HomeScreen` on active session and `AuthScreen` on logout.
    - `ChatScreen`: Smoke test, sending message, and "Send luv" interaction.
+7. **App Lock & Secure Storage Tests (3 tests):**
+   - Passcode salting and hashing without plaintext storage.
+   - Passcode verification and app unlock.
+   - Biometric toggle and clear passcode lifecycle.
+8. **App Lock UI Widget Tests (6 tests):**
+   - `PasscodeDots`: Filled/unfilled rendering and error state.
+   - `NumericKeypad`: Digit, backspace, and biometric callback handling.
+   - `PasscodeSetupScreen`: Create, confirm, mismatch error reset, and complete.
+   - `AppLockScreen`: Incorrect passcode error and correct passcode unlock.
+   - `AuthGate`: First-time setup routing and lock-state coordination.
+   - `ProfileScreen`: Security card display, active passcode badge, and "Lock App Now" action.
 
