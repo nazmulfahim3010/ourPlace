@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 8 — Local App Passcode & Device Lock** |
-| **Current Status** | **COMPLETED** (Ready for Phase 9: Account & Access Security) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock) |
-| **Next Phase** | **Phase 9 — Account & Access Security** |
+| **Current Phase** | **Phase 9 — Account & Access Security** |
+| **Current Status** | **COMPLETED** (Ready for Phase 10: End-to-End Encryption Layer) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security) |
+| **Next Phase** | **Phase 10 — End-to-End Encryption (E2EE) Layer** |
 
 ---
 
@@ -53,11 +53,11 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
           │
           ▼
 [Phase 7: Anonymous Auth]──►  [Phase 8: App Passcode]   ──►  [Phase 9: Access Security]
-       (COMPLETED)                     (COMPLETED)                       (NEXT)
+       (COMPLETED)                     (COMPLETED)                     (COMPLETED)
                                                                           │
                                                                           ▼
 [Phase 12: Message Sync] ◄──  [Phase 11: Temp Relay]    ◄──  [Phase 10: E2EE Layer]
-       (PLANNED)                       (PLANNED)                     (PLANNED)
+       (PLANNED)                       (PLANNED)                         (NEXT)
           │
           ▼
 [Phase 13: Real-Time]    ──►  [Phase 14: Push Notifs]   ──►  [Phase 15: Media]
@@ -146,10 +146,12 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Profile security controls: Biometric toggle, Change App Passcode, and Lock App Now
   - [x] 29/29 automated tests passing with 0 analyzer issues
 
-- [ ] **Phase 9 — Account & Access Security**
-  - [ ] Remote verification protocols without exposing passwords
-  - [ ] Rate-limiting and brute-force protection
-  - [ ] Privacy-preserving recovery key architecture
+- [x] **Phase 9 — Account & Access Security**
+  - [x] Remote verification protocols / challenge-response handshake architecture without exposing passwords
+  - [x] Rate-limiting and brute-force protection (login exponential backoff + 60s device PIN lockout)
+  - [x] Privacy-preserving 12-word recovery key architecture (BIP-39 mnemonic, salted storage, account reset)
+  - [x] Local security audit logs with zero-telemetry enforcement in SQLite (Drift Schema v3)
+  - [x] 44/44 automated tests passing with 0 analyzer issues
 
 - [ ] **Phase 10 — End-to-End Encryption (E2EE) Architecture**
   - [ ] Cryptographic design (identity keys, prekeys, ratchet session establishment)
@@ -215,14 +217,17 @@ e:\ourPlace\
     │   │   ├── constants/app_constants.dart # App constants & username/password rules
     │   │   ├── errors/app_exception.dart    # Centralized exception hierarchy
     │   │   ├── theme/app_theme.dart         # Design tokens & dark theme
-    │   │   └── utils/hash_utils.dart        # Cryptographic salt & SHA-256 verifiers
+    │   │   └── utils/
+    │   │       ├── hash_utils.dart          # Cryptographic salt & SHA-256 verifiers
+    │   │       └── recovery_key_utils.dart  # BIP-39 mnemonic generation & phrase hashing
     │   ├── database/
-    │   │   ├── app_database.dart            # Drift database (Messages & UserAccounts tables)
+    │   │   ├── app_database.dart            # Drift database (Messages, UserAccounts, SecurityLogs - v3)
     │   │   ├── app_database.g.dart          # Drift generated code
     │   │   └── local_database.dart          # Local database singleton & CRUD methods
     │   ├── models/
     │   │   ├── conversation.dart            # Conversation model with Love Connection support
     │   │   ├── message.dart                 # ChatMessage domain model & enums
+    │   │   ├── security_log.dart            # Device-local security event audit model
     │   │   ├── user.dart                    # Anonymous User domain model
     │   │   └── user_account.dart            # UserAccount credentials & verification
     │   ├── repositories/
@@ -231,18 +236,20 @@ e:\ourPlace\
     │   │   └── conversation_repository.dart # ConversationRepository & LocalConversationRepository
     │   ├── screens/
     │   │   ├── auth/
-    │   │   │   ├── app_lock_screen.dart     # Dedicated device lock & passcode verification screen
+    │   │   │   ├── app_lock_screen.dart     # Dedicated device lock with lockout countdown & PIN throttling
     │   │   │   ├── auth_gate.dart           # Session & device lock coordinator (lifecycle auto-lock)
-    │   │   │   ├── auth_screen.dart         # Dark-themed login & registration UI
+    │   │   │   ├── auth_screen.dart         # Dark-themed login/register with recovery key reset dialog
     │   │   │   └── passcode_setup_screen.dart # Multi-step PIN creation & biometric setup
     │   │   ├── home_screen.dart             # Primary Home screen hosting Inbox & Profile nav
     │   │   ├── inbox/
     │   │   │   └── inbox_screen.dart        # Inbox displaying Love Connection & Conversations
     │   │   ├── profile/
-    │   │   │   └── profile_screen.dart      # User Profile, Love Connection status, & security settings
+    │   │   │   └── profile_screen.dart      # User Profile, Security/Passcode, Recovery Key & Audit Log
     │   │   └── chat_screen.dart             # Modular ChatScreen widget with active user context
     │   ├── services/
+    │   │   ├── access_throttling_service.dart # Exponential backoff & login rate-limiting service
     │   │   ├── app_lock_service.dart        # Device passcode & biometric authentication service
+    │   │   ├── auth_security_service.dart   # Zero-knowledge challenge-response protocol engine
     │   │   ├── auth_service.dart            # AuthService contract & LocalAuthService
     │   │   ├── chat_service.dart            # Chat transport service contract
     │   │   ├── encryption_service.dart      # E2EE contract & NoOp implementation
@@ -258,7 +265,7 @@ e:\ourPlace\
     │       ├── passcode_dots.dart           # Animated passcode dots indicator with shake feedback
     │       └── timestamp_indicator.dart     # Timestamp indicator widget
     └── test/
-        └── widget_test.dart                 # Automated test suite (29/29 tests passing)
+        └── widget_test.dart                 # Automated test suite (44/44 tests passing)
 ```
 
 ---
@@ -308,9 +315,10 @@ class ChatMessage {
 }
 ```
 
-#### `User` & `UserAccount` (`chatbox/lib/models/`)
+#### `User`, `UserAccount`, and `SecurityLog` (`chatbox/lib/models/`)
 - **`User` (`user.dart`):** Public domain representation containing `id`, `username` (`@username`), `displayName`, `createdAt`, `publicIdentityKey`, `loveConnectionId`, `loveConnectionVisibility`, and `isCurrentUser`.
-- **`UserAccount` (`user_account.dart`):** Internal entity storing `accountId`, normalized `username`, `passwordHash`, `salt`, `createdAt`, and `publicIdentityKey`. Exposes `verifyPassword(candidate)` to match against salted hashes without exposing credentials.
+- **`UserAccount` (`user_account.dart`):** Internal account entity storing `accountId`, normalized `username`, `passwordHash`, `salt`, `createdAt`, `publicIdentityKey`, `recoveryKeyHash`, and `recoveryKeySalt`. Exposes `verifyPassword(candidate)` and `verifyRecoveryKey(candidateMnemonic)` to verify credentials against salted SHA-256 verifiers without exposing plaintext.
+- **`SecurityLog` (`security_log.dart`):** Domain model for local security audit records (`id`, `eventType`, `severity`, `description`, `timestamp`, `metadata`). Categorizes events via `SecurityEventType` (`loginSuccess`, `loginFailure`, `lockoutTriggered`, `passwordReset`, `pinFailure`, etc.) and `SecuritySeverity` (`low`, `medium`, `high`, `critical`) strictly within the local device sandbox.
 
 ### 4.2. UI Design System & Component Library (`chatbox/lib/widgets/`)
 All UI components strictly adhere to the minimalist dark aesthetic:
@@ -330,28 +338,36 @@ All UI components strictly adhere to the minimalist dark aesthetic:
 ### 4.3. Navigation & Screen Architecture (`chatbox/lib/screens/`)
 - **`HomeScreen` (`home_screen.dart`):** Top-level coordinator hosting `InboxScreen` and pushing `ProfileScreen`.
 - **`InboxScreen` (`inbox/inbox_screen.dart`):** Main authenticated view with search filtering, `❤️ LOVE CONNECTION` section, `CONVERSATIONS` section, pull-to-refresh, empty state, and new conversation dialog (`+`). Tapping any tile navigates to `ChatScreen`.
-- **`ProfileScreen` (`profile/profile_screen.dart`):** User identity card, Security & App Lock settings card (active status, biometrics switch, change passcode, immediate lock), Love Connection status with profile visibility toggle, privacy summary, and sign-out action.
+- **`ProfileScreen` (`profile/profile_screen.dart`):** User identity card, Security & App Lock settings card (active status, biometrics switch, change passcode, immediate lock), Account Recovery Key card (protected reveal, copy phrase, regenerate), Security Audit Log viewer, Love Connection status with profile visibility toggle, privacy summary, and sign-out action.
 - **`ChatScreen` (`chat_screen.dart`):** Conversation thread view with message persistence, auto-scroll, date dividers, and send actions.
-- **`AuthScreen` (`auth/auth_screen.dart`):** Dedicated dark-themed login and registration screen with tab switching, unique `@username` validation, salted password entry, and error state handling.
-- **`AppLockScreen` (`auth/app_lock_screen.dart`):** Dedicated device lock screen protecting local data, accepting passcode entry or biometrics, and providing account re-authentication fallback.
+- **`AuthScreen` (`auth/auth_screen.dart`):** Dedicated dark-themed login and registration screen with tab switching, unique `@username` validation, salted password entry, rate limiting error banners, and "Forgot Password? Reset with Recovery Key" bottom sheet modal.
+- **`AppLockScreen` (`auth/app_lock_screen.dart`):** Dedicated device lock screen protecting local data, accepting passcode entry or biometrics, displaying attempt warnings and live 60-second countdown lockout banner upon 5 consecutive failed attempts.
 - **`PasscodeSetupScreen` (`auth/passcode_setup_screen.dart`):** First-time passcode creation and confirmation flow with optional biometric enrollment sheet.
 - **`AuthGate` (`auth/auth_gate.dart`):** Coordinates authentication session, device lock state, and lifecycle background pause/hide auto-lock.
 
-### 4.4. Security, Authentication & App Lock Subsystem (`chatbox/lib/services/`)
+### 4.4. Security, Authentication & Access Security Subsystem (`chatbox/lib/services/` & `core/utils/`)
 - **`AuthService` (`auth_service.dart`):**  
-  Authentication service contract and `LocalAuthService` implementation managing reactive session state, registration with username validation/uniqueness checks, credential verification against salted hashes, session persistence, and `currentUserStream`.
+  Authentication service contract and `LocalAuthService` implementation managing reactive session state, registration with username validation/uniqueness checks, credential verification against salted hashes, recovery key assignment, password reset, login rate-limiting, audit event dispatch, and `currentUserStream`.
+- **`AccessThrottlingService` (`access_throttling_service.dart`):**  
+  Enforces exponential backoff against remote login brute-force attacks (10s at 3 fails, 30s at 5 fails, 2m at 8 fails, 5m at 10 fails), tracks attempt timestamps per username, computes remaining cooldown durations, and resets on successful authentication.
+- **`AuthSecurityService` (`auth_security_service.dart`):**  
+  Ephemeral challenge-response zero-knowledge handshake engine. Issues time-bound cryptographic nonces, generates HMAC-SHA256 client proofs over nonces, and validates mutual server identity proofs so passwords or raw hashes never traverse the network.
+- **`RecoveryKeyUtils` (`recovery_key_utils.dart`):**  
+  BIP-39 standard 2048-word English dictionary mnemonic generator, validator, and normalizer. Hashes phrases with 32-byte salts and SHA-256 for local verification.
 - **`SecureStorageService` (`secure_storage_service.dart`):**  
   Hardware-backed key-value storage backed by `flutter_secure_storage` (Android Keystore / iOS Keychain / Windows DPAPI). Features an in-memory adapter (`InMemorySecureStorageService`) for unit tests.
 - **`AppLockService` (`app_lock_service.dart`):**  
-  Manages device passcode verification, salting (`HashUtils.hashPassword`), `LocalAuthentication` biometric prompts, biometrics enable/disable toggle, in-memory unlock state (`isAppUnlocked`), and `lockStateChanges` broadcast stream. Plaintext passcodes are never stored.
+  Manages device passcode verification, salting (`HashUtils.hashPassword`), attempt tracking, 60-second hardware interface lockout upon 5 failed attempts, `LocalAuthentication` biometric prompts, biometrics toggle, in-memory unlock state (`isAppUnlocked`), and `lockStateChanges` broadcast stream.
 
 ### 4.5. Persistence & Database Subsystem (`chatbox/lib/database/`)
 - **`LocalDatabase` (`local_database.dart`):**  
-  Singleton database manager wrapping Drift/SQLite. Provides reactive queries (`watchMessagesForPartner`), message CRUD, and account management (`saveAccount`, `getAccountByUsername`, `verifyAccountCredentials`).
+  Singleton database manager wrapping Drift/SQLite. Provides reactive queries (`watchMessagesForPartner`), message CRUD, account management (`saveAccount`, `getAccountByUsername`, `verifyAccountCredentials`, `resetPasswordWithRecoveryKey`, `updateRecoveryKey`), and security audit log operations (`logSecurityEvent`, `getSecurityLogs`, `watchSecurityLogs`, `clearOldSecurityLogs`).
 - **`Messages` Table (`app_database.dart`):**  
   Local message schema storing `id`, `senderId`, `recipientId`, `partner`, `text`, `type`, `status`, and `timestamp`. Indexed on partner and timestamp.
 - **`UserAccounts` Table (`app_database.dart`):**  
-  Local account credentials schema (Schema v2) storing `accountId`, unique lowercase `username`, salted `passwordHash`, `salt`, `createdAt`, and `publicIdentityKey`.
+  Local account credentials schema (Schema Version 3) storing `accountId`, unique lowercase `username`, salted `passwordHash`, `salt`, `createdAt`, `publicIdentityKey`, `recoveryKeyHash`, and `recoveryKeySalt`.
+- **`SecurityLogs` Table (`app_database.dart`):**  
+  Device-local audit ledger storing `id` (auto-increment), `eventType`, `severity`, `description`, `timestamp`, and `metadataJson`.
 
 ---
 
@@ -379,6 +395,15 @@ All UI components strictly adhere to the minimalist dark aesthetic:
   - The passcode is **never** transmitted over the network or saved to Firebase.
   - Biometric authentication uses platform OS prompts and never accesses or stores raw biometric data.
   - Device unlock is required upon app launch and after backgrounding without requiring repeated account password entries.
+
+### ADR 4: Self-Sovereign 12-Word Recovery Key & Zero-Telemetry Device Audit Logging
+- **Previous Design:** No offline recovery mechanism existed for lost account passwords without introducing email/SMS/cloud central recovery authority.
+- **New Design:** Introduced a self-sovereign 12-word BIP-39 recovery mnemonic system generated locally upon account registration. The recovery phrase is verified using a 32-byte salt and SHA-256 hash stored in Drift SQLite (Schema v3). Paired with device-local security audit logging in the `SecurityLogs` table with zero external telemetry.
+- **Security Guarantees:**
+  - Password recovery is 100% offline and self-sovereign; no customer support, email verification, or phone SMS required.
+  - Plaintext mnemonic words are never persisted; only the salted SHA-256 verifier is saved to SQLite.
+  - Access throttling defends against brute-force attacks locally and remotely with exponential backoff and 60-second lockouts.
+  - All security audit logs are retained strictly in the local SQLite database and are never synced to Firebase or third-party analytics.
 
 ---
 
@@ -520,12 +545,54 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ---
 
+### 7.4. Phase 9 Completion Report — Account & Access Security
+
+- **Current Phase:** Phase 9 — Account & Access Security
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. **Remote Zero-Knowledge Handshake Protocol:** Implemented `AuthSecurityService` issuing ephemeral server nonces, computing HMAC-SHA256 client proofs over nonces without sending plaintext passwords or raw hashes over the wire, and validating mutual server identity proofs.
+2. **Login Brute-Force & Rate-Limiting Protection:** Built `AccessThrottlingService` enforcing exponential backoff (10s at 3 fails, 30s at 5 fails, 2m at 8 fails, 5m at 10 fails), integrated into `AuthService.login(...)` with real-time cooldown calculations.
+3. **Local Device Passcode Throttling & 60s Lockout:** Enhanced `AppLockService` with failed attempt tracking. 5 consecutive incorrect passcodes activates a 60-second device lockout. Upgraded `AppLockScreen` with live countdown ticker banner and keypad disablement during lockout.
+4. **Privacy-Preserving 12-Word Recovery Key System:** Built `RecoveryKeyUtils` utilizing the standard BIP-39 2048-word English dictionary. Automatically generates 12-word recovery phrases during registration, salted and hashed via SHA-256 into local SQLite.
+5. **Drift SQLite Schema v3 Migration:** Upgraded `AppDatabase` to Schema Version 3, adding `recoveryKeyHash` and `recoveryKeySalt` to `UserAccounts` and creating the `SecurityLogs` table with non-destructive migration preserving existing accounts and chat history.
+6. **Account Password Reset Flow:** Added "Forgot Password? Reset with Recovery Key" sheet to `AuthScreen`, enabling users to securely reset their password on-device with their 12-word phrase without central authority or PII.
+7. **Profile Security Controls:** Extended `ProfileScreen` with "Account Recovery Key" viewer/backup (gated by passcode confirmation, with copy-to-clipboard and regenerate actions) and "Security Audit Log" viewer displaying local chronological security events with zero-telemetry guarantee.
+8. **Automated Test Suite Expansion:** Added 15 new automated tests across cryptographic utilities, throttling, challenge-response handshake, SQLite Schema v3, and UI widget flows, bringing the test suite to **44/44 passing tests (100%)** with **0 analyzer issues**.
+
+#### Files Created
+- `chatbox/lib/core/utils/recovery_key_utils.dart`: BIP-39 12-word generator, validator, normalizer, and salted verifier.
+- `chatbox/lib/models/security_log.dart`: Domain model for device-local security audit events.
+- `chatbox/lib/services/access_throttling_service.dart`: Exponential backoff rate limiter for logins.
+- `chatbox/lib/services/auth_security_service.dart`: Zero-knowledge challenge-response handshake engine.
+
+#### Files Modified
+- `chatbox/lib/database/app_database.dart`: Added recovery columns to `UserAccounts`, added `SecurityLogs` table, bumped to Schema v3.
+- `chatbox/lib/database/app_database.g.dart`: Generated Drift schema v3 code via build_runner.
+- `chatbox/lib/database/local_database.dart`: Added recovery key methods, password reset, and SecurityLogs CRUD.
+- `chatbox/lib/models/user_account.dart`: Added recoveryKeyHash/recoveryKeySalt and verifyRecoveryKey.
+- `chatbox/lib/services/app_lock_service.dart`: Added PIN throttling and 60-second lockout timer.
+- `chatbox/lib/services/auth_service.dart`: Integrated throttling, recovery key generation, reset, and audit logging.
+- `chatbox/lib/repositories/auth_repository.dart`: Exposed recovery key and rate limit query methods.
+- `chatbox/lib/screens/auth/app_lock_screen.dart`: Added live lockout countdown banner and attempt warnings.
+- `chatbox/lib/screens/auth/auth_screen.dart`: Added password reset bottom sheet using 12-word recovery phrase.
+- `chatbox/lib/screens/profile/profile_screen.dart`: Added Account Recovery Key and Security Audit Log viewers.
+- `chatbox/test/widget_test.dart`: Added 15 new unit and widget tests (44 tests total).
+
+#### Security Guarantees
+- **Zero Plaintext Password Exposure:** Passwords and recovery keys are strictly stored and verified as salted SHA-256 hashes.
+- **Anti-Brute-Force Lockouts:** 5 failed device PIN attempts locks the physical interface for 60 seconds; login attempts trigger exponential backoff.
+- **Offline Self-Sovereign Recovery:** Account recovery does not require cloud support, emails, phone numbers, or central servers.
+- **Zero Cloud Telemetry:** Security audit logs reside strictly on the local device SQLite database.
+
+---
+
 ## 8. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
 - **Test Command:** `flutter test`
-- **Results:** `29 / 29 tests passing` (100% pass rate)
-- **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 5.6s)`
+- **Results:** `44 / 44 tests passing` (100% pass rate)
+- **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 17.8s)`
 
 ### Comprehensive Test Coverage Breakdown
 
@@ -539,28 +606,32 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 | **Inbox & Chat UI Widgets** | 6 | `ConversationTile` Love badge rendering, `InboxScreen` search filtering, push navigation & back button, `AuthScreen` tabs, `AuthGate` session routing, `ChatScreen` messaging & "Send luv" |
 | **App Lock & Secure Storage** | 3 | Passcode salting and hashing without plaintext storage, passcode verification and app unlock, biometric toggle & clear passcode lifecycle |
 | **App Lock UI Widgets** | 6 | `PasscodeDots` fill/shake feedback, `NumericKeypad` tactile buttons/biometrics, `PasscodeSetupScreen` create/confirm/mismatch, `AppLockScreen` incorrect error/unlock, `AuthGate` setup routing/auto-lock, `ProfileScreen` security card & immediate lock |
-| **Total Test Suite** | **29** | **100% Passing — Zero Analyzer Issues** |
+| **Recovery Key Utilities** | 3 | BIP-39 mnemonic generation, 12-word dictionary validation, normalization, salted hashing & verification |
+| **Access Throttling & Rate Limiting** | 2 | Exponential backoff cooldown escalation (10s, 30s, 2m, 5m), lockout enforcement, reset on success |
+| **Challenge-Response Handshake** | 3 | Ephemeral challenge nonces, HMAC-SHA256 client proof generation & verification, mutual server proof |
+| **Database Schema v3 & Security Logs** | 3 | Recovery key persistence, password reset with recovery phrase verification, security log insertion/retrieval/cleanup |
+| **App Lock PIN Throttling** | 1 | 5 failed attempts triggering 60s lockout, rejection during lockout, unlock reset |
+| **Phase 9 UI Widgets** | 3 | `AppLockScreen` lockout banner, `AuthScreen` reset with recovery key, `ProfileScreen` recovery key card and audit log viewer |
+| **Total Test Suite** | **44** | **100% Passing — Zero Analyzer Issues** |
 
 ---
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Next Phase: Phase 9 — Account & Access Security
+### Next Phase: Phase 10 — End-to-End Encryption (E2EE) Layer
 
-Phase 9 establishes advanced account security and anti-abuse safeguards prior to deploying network relays and end-to-end encryption.
+Phase 10 designs and implements the core cryptographic protocol guaranteeing that only the sender and recipient can read conversation contents.
 
-#### Key Objectives for Phase 9:
-1. **Remote Verification Protocols:**
-   - Architecture for verifying account ownership remotely without exposing plaintext passwords or raw salted hashes.
-   - Challenge-response or SRP-inspired authentication handshake preparation.
-2. **Brute-Force & Rate-Limiting Protection:**
-   - Client-side and relay-side exponential backoff for failed account login attempts (e.g. 5 attempts = 30s delay; 10 attempts = 5m delay).
-   - Local passcode throttling (e.g. 5 incorrect device PIN attempts = 60s lockout).
-3. **Privacy-Preserving Account Recovery Key:**
-   - Generate secure offline recovery key / mnemonic phrase upon account creation.
-   - Provide recovery phrase confirmation and export flow.
-   - Re-establish account access using recovery phrase without requiring central customer support or PII.
-4. **Security Audit & Logging:**
-   - Device-local security event logs (login attempts, lock events, passcode changes).
-   - Zero telemetry / zero tracking enforcement.
+#### Key Objectives for Phase 10:
+1. **Cryptographic Identity & Ratchet Session Keys:**
+   - Generate identity key pairs (Ed25519 / X25519) and signed prekeys per user.
+   - Store private identity keys securely in hardware keystores (`flutter_secure_storage`).
+2. **Payload Encryption & Decryption:**
+   - Double Ratchet or Signal Protocol-inspired session management.
+   - Symmetric AES-256-GCM / ChaCha20-Poly1305 payload encryption.
+   - Compute and verify HMAC integrity tags.
+3. **Local Cryptographic Engine:**
+   - Decouple encryption engine from UI and local storage.
+   - Implement `EncryptionService` encrypting outgoing plaintext messages before network staging, and decrypting incoming payloads before SQLite insertion.
+
 

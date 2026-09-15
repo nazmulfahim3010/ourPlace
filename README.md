@@ -3,7 +3,7 @@
 > **Tagline:** *"The phones own the conversation. The server only helps the phones communicate."*  
 > **Target Framework:** Flutter (Dart 3.11+)  
 > **Design Aesthetic:** Minimalist High-Contrast Dark Mode (`#000000` pure black & `#383838` dark charcoal)  
-> **Current Progress:** **Phase 8 Completed** (29/29 automated tests passing, 0 analyzer issues)
+> **Current Progress:** **Phase 9 Completed** (44/44 automated tests passing, 0 analyzer issues)
 
 ---
 
@@ -46,9 +46,9 @@ Jump directly to specific architectural diagrams inside [`diagram.md`](file:///e
 - [`home_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/home_screen.dart) — Main authenticated shell hosting Inbox and Profile
 - [`inbox_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/inbox/inbox_screen.dart) — Inbox with real-time search, Love Connection section, and conversations list
 - [`chat_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/chat_screen.dart) — Conversation view with SQLite persistence, auto-scroll, and "Send luv" action
-- [`profile_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/profile/profile_screen.dart) — User profile card, Security & App Lock settings, and Love Connection toggle
-- [`auth_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/auth/auth_screen.dart) — Anonymous `@username` registration and login
-- [`app_lock_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/auth/app_lock_screen.dart) — Fullscreen device lock with tactile keypad and biometric prompts
+- [`profile_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/profile/profile_screen.dart) — User profile card, Security & Passcode, Recovery Key backup & Security Audit Log
+- [`auth_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/auth/auth_screen.dart) — Anonymous registration, login, rate limiting, and 12-word recovery reset
+- [`app_lock_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/auth/app_lock_screen.dart) — Device lock with tactile keypad, biometrics, attempt warnings, and 60s lockout countdown
 - [`passcode_setup_screen.dart`](file:///e:/ourPlace/chatbox/lib/screens/auth/passcode_setup_screen.dart) — Multi-step 4-digit PIN creation and biometric enrollment
 
 ### 🧩 UI Design System & Reusable Widgets (`lib/widgets/`)
@@ -62,37 +62,41 @@ Jump directly to specific architectural diagrams inside [`diagram.md`](file:///e
 - [`timestamp_indicator.dart`](file:///e:/ourPlace/chatbox/lib/widgets/timestamp_indicator.dart) — Subdued timestamp indicator
 
 ### 🔒 Security, Authentication & Services (`lib/services/`)
-- [`app_lock_service.dart`](file:///e:/ourPlace/chatbox/lib/services/app_lock_service.dart) — Local app lock manager (salted SHA-256 verifier, biometrics, state broadcast)
+- [`access_throttling_service.dart`](file:///e:/ourPlace/chatbox/lib/services/access_throttling_service.dart) — Exponential backoff & login rate-limiting service (10s, 30s, 2m, 5m)
+- [`auth_security_service.dart`](file:///e:/ourPlace/chatbox/lib/services/auth_security_service.dart) — Zero-knowledge challenge-response protocol engine (HMAC-SHA256 proofs)
+- [`app_lock_service.dart`](file:///e:/ourPlace/chatbox/lib/services/app_lock_service.dart) — Local app lock manager (PIN throttling, 60s lockout, biometrics, state broadcast)
 - [`secure_storage_service.dart`](file:///e:/ourPlace/chatbox/lib/services/secure_storage_service.dart) — Hardware Keystore abstraction (`flutter_secure_storage`)
-- [`auth_service.dart`](file:///e:/ourPlace/chatbox/lib/services/auth_service.dart) — Session service with reactive `currentUserStream`
+- [`auth_service.dart`](file:///e:/ourPlace/chatbox/lib/services/auth_service.dart) — Session service with reactive `currentUserStream`, recovery resets & audit logs
 - [`chat_service.dart`](file:///e:/ourPlace/chatbox/lib/services/chat_service.dart) — Transport service interface
 - [`encryption_service.dart`](file:///e:/ourPlace/chatbox/lib/services/encryption_service.dart) — E2EE interface
 - [`notification_service.dart`](file:///e:/ourPlace/chatbox/lib/services/notification_service.dart) — Push notification interface
 
 ### 🗄️ Repositories (`lib/repositories/`)
-- [`auth_repository.dart`](file:///e:/ourPlace/chatbox/lib/repositories/auth_repository.dart) — Authentication repository contract and implementation
+- [`auth_repository.dart`](file:///e:/ourPlace/chatbox/lib/repositories/auth_repository.dart) — Authentication repository contract, recovery key & throttling methods
 - [`conversation_repository.dart`](file:///e:/ourPlace/chatbox/lib/repositories/conversation_repository.dart) — Multi-user conversations and Love Connection seed data
 - [`chat_repository.dart`](file:///e:/ourPlace/chatbox/lib/repositories/chat_repository.dart) — Message sending, retrieval, and status management
 
 ### 💾 Local Database & Persistence (`lib/database/`)
-- [`local_database.dart`](file:///e:/ourPlace/chatbox/lib/database/local_database.dart) — Singleton database manager with reactive queries and account CRUD
-- [`app_database.dart`](file:///e:/ourPlace/chatbox/lib/database/app_database.dart) — Drift SQLite schema (`Messages` and `UserAccounts` tables)
+- [`local_database.dart`](file:///e:/ourPlace/chatbox/lib/database/local_database.dart) — Singleton database manager with reactive queries, recovery keys, and SecurityLogs CRUD
+- [`app_database.dart`](file:///e:/ourPlace/chatbox/lib/database/app_database.dart) — Drift SQLite schema v3 (`Messages`, `UserAccounts`, and `SecurityLogs` tables)
 - [`app_database.g.dart`](file:///e:/ourPlace/chatbox/lib/database/app_database.g.dart) — Generated Drift database code
 
 ### 📦 Domain Models (`lib/models/`)
 - [`user.dart`](file:///e:/ourPlace/chatbox/lib/models/user.dart) — Public anonymous User model
-- [`user_account.dart`](file:///e:/ourPlace/chatbox/lib/models/user_account.dart) — Private account entity with salted verification logic
+- [`user_account.dart`](file:///e:/ourPlace/chatbox/lib/models/user_account.dart) — Private account entity with salted verification & recovery key verification logic
+- [`security_log.dart`](file:///e:/ourPlace/chatbox/lib/models/security_log.dart) — Device-local security event audit model
 - [`conversation.dart`](file:///e:/ourPlace/chatbox/lib/models/conversation.dart) — Conversation domain model with Love Connection support
 - [`message.dart`](file:///e:/ourPlace/chatbox/lib/models/message.dart) — `ChatMessage` model, `MessageType`, and `MessageStatus` enums
 
 ### 🛠️ Core Infrastructure & Tokens (`lib/core/`)
+- [`recovery_key_utils.dart`](file:///e:/ourPlace/chatbox/lib/core/utils/recovery_key_utils.dart) — BIP-39 12-word recovery mnemonic generator, validator, normalizer, and verifier
 - [`hash_utils.dart`](file:///e:/ourPlace/chatbox/lib/core/utils/hash_utils.dart) — Cryptographic salt generation (32 bytes), SHA-256 verifiers, username validation
 - [`app_theme.dart`](file:///e:/ourPlace/chatbox/lib/core/theme/app_theme.dart) — Centralized dark theme tokens (`#000000` / `#383838`)
 - [`app_constants.dart`](file:///e:/ourPlace/chatbox/lib/core/constants/app_constants.dart) — Credential constraints & app constants
 - [`app_exception.dart`](file:///e:/ourPlace/chatbox/lib/core/errors/app_exception.dart) — Centralized exception hierarchy
 
 ### 🧪 Automated Tests (`test/`)
-- [`widget_test.dart`](file:///e:/ourPlace/chatbox/test/widget_test.dart) — Automated test suite with 29 passing unit, repository, and widget tests
+- [`widget_test.dart`](file:///e:/ourPlace/chatbox/test/widget_test.dart) — Automated test suite with 44 passing unit, repository, security, and widget tests (100% pass rate)
 
 ---
 
@@ -106,7 +110,7 @@ cd chatbox
 # Check code health & analyze linting
 flutter analyze
 
-# Run the complete automated test suite (29 tests)
+# Run the complete automated test suite (44 tests)
 flutter test
 
 # Generate Drift database code (if schema changes)
@@ -124,11 +128,22 @@ flutter run
    - Accounts require only a unique `@username` and password.
    - Never asks for email, phone number, real name, contact lists, or location.
 
-2. **Three-Tier Credential Separation:**
+2. **Three-Tier Credential Separation + Offline Recovery:**
    - **Account Password:** Remote authentication; stored locally as salted SHA-256 verifier.
    - **Local App Passcode:** Device-only 4-digit PIN stored in Android Keystore / iOS Keychain; never sent to Firebase or remote servers.
+   - **Account Recovery Key:** 12-word offline BIP-39 mnemonic phrase allowing self-sovereign password resets without customer support or cloud PII.
    - **One-Time Love Code:** 60-second single-use authorization code for selective conversation sharing (Phase 17).
 
-3. **Background Privacy Protection:**
+3. **Brute-Force & Rate-Limiting Protection:**
+   - Account logins enforce exponential backoff (10s, 30s, 2m, 5m).
+   - 5 incorrect device PIN attempts triggers a 60-second hardware interface lockout with real-time countdown timer.
+
+4. **Zero-Knowledge Remote Verification Preparation:**
+   - Challenge-response handshake protocol computes ephemeral HMAC-SHA256 client proofs over nonces so credentials are never sent across the wire.
+
+5. **Device-Local Security Audit Logging:**
+   - Complete security events log stored in Drift SQLite on device (`SecurityLogs` table) with zero cloud telemetry.
+
+6. **Background Privacy Protection:**
    - App automatically locks on minimization, app-switching, or screen lock via `WidgetsBindingObserver`.
    - Conversations and messages are never left exposed in task switchers.

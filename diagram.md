@@ -111,8 +111,20 @@ classDiagram
         Never used as encryption key
     }
 
+    class EmergencyRecoveryKey {
+        +List~String~ mnemonicWords (12 words)
+        +String randomSalt (32 bytes)
+        +String saltedSha256Hash
+        +verifyRecoveryKey(candidateMnemonic)
+        -- Scope --
+        Phase 9 Offline Account Password Reset
+        Self-sovereign BIP-39 mnemonic
+        Never transmitted across network
+    }
+
     AccountPassword <.. LocalAppPasscode : "Strict Isolation (Separate Verifiers)"
     LocalAppPasscode <.. OneTimeLoveCode : "Strict Isolation (Ephemeral Authorization)"
+    AccountPassword <.. EmergencyRecoveryKey : "Self-Sovereign Recovery (Zero Cloud PII)"
 ```
 
 ---
@@ -240,24 +252,25 @@ The codebase follows Clean Architecture with unidirectional dependencies:
 ```mermaid
 flowchart TD
     subgraph PresentationLayer["Presentation Layer (Flutter Widgets & Screens)"]
-        Screens["Screens\n- HomeScreen\n- InboxScreen\n- ChatScreen\n- ProfileScreen\n- AuthScreen\n- AppLockScreen\n- PasscodeSetupScreen"]
+        Screens["Screens\n- HomeScreen\n- InboxScreen\n- ChatScreen\n- ProfileScreen (Recovery Key & Audit Log)\n- AuthScreen (Recovery Key Reset)\n- AppLockScreen (Lockout Countdown)\n- PasscodeSetupScreen"]
         Widgets["Reusable Widgets\n- ConversationTile\n- ChatHeader\n- MessageBubble\n- ChatInputField\n- NumericKeypad\n- PasscodeDots\n- DateDivider"]
     end
 
     subgraph ServiceRepositoryLayer["Service & Repository Layer (Business Orchestration)"]
-        AuthRepo["AuthRepository / AuthService\n- User Registration\n- Salted SHA-256 Auth\n- Session Stream"]
+        AuthRepo["AuthRepository / AuthService\n- User Registration\n- Salted SHA-256 Auth\n- Session Stream & Recovery Resets"]
         ChatRepo["ChatRepository / LocalChatRepository\n- Message Delegation\n- Status Lifecycle"]
         ConvRepo["ConversationRepository\n- Love Connection Seed\n- Inbox Unread Tracking"]
-        AppLockServ["AppLockService\n- Passcode Keystore Verification\n- Local Biometrics\n- Auto-Lock Broadcast"]
+        AppLockServ["AppLockService\n- Passcode Keystore Verification\n- PIN Throttling & 60s Lockout\n- Local Biometrics & Auto-Lock"]
+        SecurityServ["AuthSecurityService & AccessThrottling\n- Challenge-Response Handshake\n- Exponential Backoff (10s..5m)"]
     end
 
     subgraph DomainLayer["Domain & Core Layer (Pure Dart Business Rules)"]
-        Models["Domain Models\n- User\n- UserAccount\n- Conversation\n- ChatMessage"]
-        CryptoCore["Cryptographic & Core Utils\n- HashUtils (Salt + SHA-256)\n- AppTheme (Pure Black & Charcoal)\n- AppConstants & Exceptions"]
+        Models["Domain Models\n- User & UserAccount\n- Conversation & ChatMessage\n- SecurityLog (Audit Events)"]
+        CryptoCore["Cryptographic & Core Utils\n- RecoveryKeyUtils (BIP-39 Mnemonic)\n- HashUtils (Salt + SHA-256)\n- AppTheme (Pure Black & Charcoal)\n- AppConstants & Exceptions"]
     end
 
     subgraph DataStorageLayer["Data & Hardware Layer (Infrastructure)"]
-        DriftDB["Drift SQLite Database\n- Messages Table\n- UserAccounts Table"]
+        DriftDB["Drift SQLite Database (v3)\n- Messages Table\n- UserAccounts Table (Recovery Key)\n- SecurityLogs Table (Audit Ledger)"]
         SecStore["flutter_secure_storage\n- Android Keystore\n- iOS Keychain\n- Windows DPAPI"]
         LocalAuth["local_auth\n- Platform OS Biometrics"]
     end
@@ -268,10 +281,12 @@ flowchart TD
     Screens --> ConvRepo
     Screens --> AppLockServ
 
+    AuthRepo --> SecurityServ
     AuthRepo --> Models
     ChatRepo --> Models
     ConvRepo --> Models
     AppLockServ --> CryptoCore
+    SecurityServ --> CryptoCore
 
     AuthRepo --> DriftDB
     ChatRepo --> DriftDB
@@ -410,7 +425,7 @@ sequenceDiagram
 
 ## 9. Local Database Schema & Entity Relationships
 
-The local Drift SQLite database enforces local persistence for accounts and chat messages:
+The local Drift SQLite database (Schema Version 3) enforces local persistence for accounts, chat messages, and device security logs:
 
 ```mermaid
 erDiagram
@@ -421,6 +436,8 @@ erDiagram
         TEXT salt "32-byte cryptographically random salt"
         DATETIME created_at "Account creation timestamp"
         TEXT public_identity_key "Nullable E2EE identity key"
+        TEXT recovery_key_hash "Salted SHA-256 recovery mnemonic verifier (nullable)"
+        TEXT recovery_key_salt "32-byte recovery salt (nullable)"
     }
 
     MESSAGES {
@@ -432,6 +449,15 @@ erDiagram
         INTEGER type "MessageType enum (0:text, 1:image, 2:audio, 3:video, 4:system)"
         INTEGER status "MessageStatus enum (0:sending, 1:sent, 2:delivered, 3:read, 4:failed)"
         DATETIME timestamp "UTC timestamp"
+    }
+
+    SECURITY_LOGS {
+        INTEGER id PK "Auto-increment audit ID"
+        TEXT event_type "SecurityEventType (login, passwordReset, pinFailure, etc.)"
+        TEXT severity "SecuritySeverity (low, medium, high, critical)"
+        TEXT description "Human-readable event audit description"
+        DATETIME timestamp "UTC event timestamp"
+        TEXT metadata_json "Nullable JSON serialized audit details"
     }
 
     CONVERSATION_DOMAIN {
@@ -453,6 +479,7 @@ erDiagram
     }
 
     USER_ACCOUNTS ||--o{ USER_DOMAIN : "Hydrates"
+    USER_ACCOUNTS ||--o{ SECURITY_LOGS : "Logs device security events for"
     MESSAGES }o--|| CONVERSATION_DOMAIN : "Aggregated into"
     USER_DOMAIN ||--o{ CONVERSATION_DOMAIN : "Partner of"
 ```
@@ -461,7 +488,7 @@ erDiagram
 
 ## 10. Security Enclave & Cryptographic Trust Boundaries
 
-Physical and network security boundaries ensure zero data leakage:
+Physical and network security boundaries ensure zero data leakage and zero cloud telemetry:
 
 ```mermaid
 flowchart LR
@@ -471,8 +498,8 @@ flowchart LR
     end
 
     subgraph AppSandbox["Device Application Sandbox (Flutter App)"]
-        RAM["Application Volatile Memory\n- Ephemeral state\n- Plaintext only during active viewing\n- Wiped upon app lock"]
-        LocalSQLite["SQLite Database File\n- Drift Encrypted/Protected Local Store\n- Permanent conversation history"]
+        RAM["Application Volatile Memory\n- Ephemeral state\n- Access Throttling & PIN Lockout Ticker\n- Plaintext only during active viewing\n- Wiped upon app lock"]
+        LocalSQLite["SQLite Database File (Schema v3)\n- Drift Encrypted/Protected Local Store\n- Permanent conversation history\n- Local Security Audit Logs (Zero Telemetry)"]
     end
 
     subgraph HardwareEnclave["Hardware Security Enclave (OS Protected)"]
