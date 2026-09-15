@@ -313,9 +313,224 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
           label: 'Sign In',
           onPressed: _isLoading ? null : _handleLogin,
         ),
+        const SizedBox(height: 10),
+        Center(
+          child: TextButton(
+            onPressed: _showPasswordResetDialog,
+            child: const Text(
+              'Forgot Password? Reset with Recovery Key',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
+
+  void _showPasswordResetDialog() {
+    final resetUsernameController = TextEditingController(
+      text: _loginUsernameController.text.trim(),
+    );
+    final recoveryPhraseController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    String? resetError;
+    bool isResetting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20.0,
+                right: 20.0,
+                top: 20.0,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20.0,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Reset with Recovery Key',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Enter your username and 12-word offline recovery phrase to set a new account password.',
+                      style: TextStyle(color: Colors.white54, fontSize: 12.5),
+                    ),
+                    const SizedBox(height: 16),
+                    if (resetError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          resetError!,
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 12.5),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    _buildTextField(
+                      controller: resetUsernameController,
+                      label: 'Username',
+                      hint: 'e.g. alex',
+                      prefixText: '@',
+                      icon: Icons.person_outline,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF383838),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: TextField(
+                        controller: recoveryPhraseController,
+                        maxLines: 2,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          icon: Icon(Icons.key_outlined, color: Colors.white70, size: 20),
+                          labelText: '12-Word Recovery Key',
+                          labelStyle: TextStyle(color: Colors.white54, fontSize: 13),
+                          hintText: 'word1 word2 word3 ... word12',
+                          hintStyle: TextStyle(color: Colors.white30, fontSize: 13),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: newPasswordController,
+                      label: 'New Password',
+                      hint: 'Min 6 characters',
+                      obscureText: true,
+                      icon: Icons.lock_outline,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: confirmPasswordController,
+                      label: 'Confirm New Password',
+                      hint: 'Repeat password',
+                      obscureText: true,
+                      icon: Icons.lock_reset,
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: isResetting
+                            ? null
+                            : () async {
+                                final user = resetUsernameController.text.trim();
+                                final phrase = recoveryPhraseController.text.trim();
+                                final newPass = newPasswordController.text;
+                                final confirmPass = confirmPasswordController.text;
+
+                                if (user.isEmpty || phrase.isEmpty || newPass.isEmpty) {
+                                  setModalState(() {
+                                    resetError = 'All fields are required';
+                                  });
+                                  return;
+                                }
+                                if (newPass != confirmPass) {
+                                  setModalState(() {
+                                    resetError = 'New passwords do not match';
+                                  });
+                                  return;
+                                }
+
+                                setModalState(() {
+                                  isResetting = true;
+                                  resetError = null;
+                                });
+
+                                try {
+                                  await _authRepository.resetPasswordWithRecoveryKey(
+                                    username: user,
+                                    recoveryPhrase: phrase,
+                                    newPassword: newPass,
+                                  );
+
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Password reset successfully! Please sign in.'),
+                                        backgroundColor: Color(0xFF2E2E2E),
+                                      ),
+                                    );
+                                  }
+                                } on AppException catch (e) {
+                                  setModalState(() {
+                                    resetError = e.message;
+                                    isResetting = false;
+                                  });
+                                } catch (e) {
+                                  setModalState(() {
+                                    resetError = 'Failed to reset password. Check recovery phrase.';
+                                    isResetting = false;
+                                  });
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                        ),
+                        child: isResetting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                              )
+                            : const Text(
+                                'Reset Password',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
 
   Widget _buildRegisterTab() {
     return Column(

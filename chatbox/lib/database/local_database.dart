@@ -1,9 +1,11 @@
 import 'package:drift/drift.dart';
 import 'package:chatbox/database/app_database.dart';
+import 'package:chatbox/core/utils/hash_utils.dart';
 import 'package:chatbox/models/message.dart';
+import 'package:chatbox/models/security_log.dart';
 import 'package:chatbox/models/user_account.dart';
 
-/// Local database service for persisting chat messages and anonymous accounts using Drift / SQLite
+/// Local database service for persisting chat messages, anonymous accounts, and security logs using Drift / SQLite
 class LocalDatabase {
   /// Singleton instance
   static final LocalDatabase _instance = LocalDatabase._internal();
@@ -220,6 +222,8 @@ class LocalDatabase {
       salt: row.salt,
       createdAt: row.createdAt,
       publicIdentityKey: row.publicIdentityKey,
+      recoveryKeyHash: row.recoveryKeyHash,
+      recoveryKeySalt: row.recoveryKeySalt,
     );
   }
 
@@ -232,6 +236,8 @@ class LocalDatabase {
       salt: Value(account.salt),
       createdAt: Value(account.createdAt),
       publicIdentityKey: Value(account.publicIdentityKey),
+      recoveryKeyHash: Value(account.recoveryKeyHash),
+      recoveryKeySalt: Value(account.recoveryKeySalt),
     );
   }
 
@@ -272,6 +278,137 @@ class LocalDatabase {
     return rows.map(_rowToAccount).toList();
   }
 
+  /// Set or update recovery key hash and salt for an existing account
+  Future<bool> setAccountRecoveryKey(
+    String username, {
+    required String recoveryKeyHash,
+    required String recoveryKeySalt,
+  }) async {
+    final account = await getAccountByUsername(username);
+    if (account == null) return false;
+
+    final updated = account.copyWith(
+      recoveryKeyHash: recoveryKeyHash,
+      recoveryKeySalt: recoveryKeySalt,
+    );
+    await saveAccount(updated);
+    await logSecurityEvent(
+      'recovery_key_updated',
+      'Recovery key configured/updated for account ${account.username}',
+      severity: 'info',
+    );
+    return true;
+  }
+
+  /// Reset account password using verified recovery phrase
+  Future<bool> resetPasswordWithRecoveryKey({
+    required String username,
+    required String recoveryPhrase,
+    required String newPlaintextPassword,
+  }) async {
+    final account = await getAccountByUsername(username);
+    if (account == null) return false;
+
+    final isRecoveryValid = account.verifyRecoveryKey(recoveryPhrase);
+    if (!isRecoveryValid) {
+      await logSecurityEvent(
+        'recovery_reset_failed',
+        'Invalid recovery phrase provided for password reset on ${account.username}',
+        severity: 'warning',
+      );
+      return false;
+    }
+
+    final newSalt = HashUtils.generateSalt();
+    final newPasswordHash = HashUtils.hashPassword(newPlaintextPassword, newSalt);
+
+    final updated = account.copyWith(
+      passwordHash: newPasswordHash,
+      salt: newSalt,
+    );
+
+    await saveAccount(updated);
+    await logSecurityEvent(
+      'password_reset_success',
+      'Password successfully reset using recovery key for ${account.username}',
+      severity: 'critical',
+    );
+    return true;
+  }
+
+  // ==================== SECURITY AUDIT LOGS CRUD ====================
+
+  /// Convert Drift DbSecurityLog row to domain SecurityLog
+  SecurityLog _rowToSecurityLog(DbSecurityLog row) {
+    return SecurityLog(
+      id: row.id,
+      eventType: row.eventType,
+      details: row.details,
+      severity: row.severity,
+      timestamp: row.timestamp,
+    );
+  }
+
+  /// Convert domain SecurityLog to Drift SecurityLogsCompanion
+  SecurityLogsCompanion _logToCompanion(SecurityLog log) {
+    return SecurityLogsCompanion(
+      id: Value(log.id),
+      eventType: Value(log.eventType),
+      details: Value(log.details),
+      severity: Value(log.severity),
+      timestamp: Value(log.timestamp),
+    );
+  }
+
+  /// Log a local security event
+  Future<void> logSecurityEvent(
+    String eventType,
+    String details, {
+    String severity = 'info',
+  }) async {
+    final id = 'sec_${DateTime.now().millisecondsSinceEpoch}_${(1000 + (DateTime.now().microsecond % 9000))}';
+    final log = SecurityLog(
+      id: id,
+      eventType: eventType,
+      details: details,
+      severity: severity,
+      timestamp: DateTime.now(),
+    );
+
+    await db.into(db.securityLogs).insertOnConflictUpdate(_logToCompanion(log));
+  }
+
+  /// Retrieve recent security logs, newest first
+  Future<List<SecurityLog>> getSecurityLogs({int limit = 50}) async {
+    final query = db.select(db.securityLogs)
+      ..orderBy([
+        (tbl) => OrderingTerm.desc(tbl.timestamp),
+        (tbl) => OrderingTerm.desc(tbl.id),
+      ])
+      ..limit(limit);
+
+    final rows = await query.get();
+    return rows.map(_rowToSecurityLog).toList();
+  }
+
+  /// Reactive stream of security logs for UI display
+  Stream<List<SecurityLog>> watchSecurityLogs({int limit = 50}) {
+    final query = db.select(db.securityLogs)
+      ..orderBy([
+        (tbl) => OrderingTerm.desc(tbl.timestamp),
+        (tbl) => OrderingTerm.desc(tbl.id),
+      ])
+      ..limit(limit);
+
+    return query.watch().map((rows) => rows.map(_rowToSecurityLog).toList());
+  }
+
+
+  /// Clear local security logs
+  Future<void> clearSecurityLogs() async {
+    await db.delete(db.securityLogs).go();
+  }
+
   /// Check if database is initialized
   Future<bool> isInitialized() async {
     return _db != null;
@@ -283,3 +420,4 @@ class LocalDatabase {
     _db = null;
   }
 }
+

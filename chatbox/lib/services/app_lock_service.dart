@@ -21,7 +21,13 @@ abstract class AppLockService {
   void lockApp();
   void unlockApp();
   Stream<bool> get lockStateChanges;
+
+  bool isLockedOut();
+  int remainingLockoutSeconds();
+  int get failedAttempts;
+  void resetFailedAttempts();
 }
+
 
 /// Production implementation backed by hardware secure storage and platform biometrics
 class DefaultAppLockService implements AppLockService {
@@ -50,6 +56,8 @@ class DefaultAppLockService implements AppLockService {
   static const String _keyBiometricsEnabled = 'app_lock_biometrics_enabled';
 
   bool _isAppUnlocked = false;
+  int _failedPasscodeAttempts = 0;
+  DateTime? _lockoutUntil;
   final StreamController<bool> _lockStateController =
       StreamController<bool>.broadcast();
 
@@ -60,6 +68,32 @@ class DefaultAppLockService implements AppLockService {
   Stream<bool> get lockStateChanges => _lockStateController.stream;
 
   @override
+  int get failedAttempts => _failedPasscodeAttempts;
+
+  @override
+  bool isLockedOut() {
+    if (_lockoutUntil == null) return false;
+    if (DateTime.now().isBefore(_lockoutUntil!)) {
+      return true;
+    }
+    _lockoutUntil = null;
+    return false;
+  }
+
+  @override
+  int remainingLockoutSeconds() {
+    if (_lockoutUntil == null) return 0;
+    final diff = _lockoutUntil!.difference(DateTime.now()).inSeconds;
+    return diff > 0 ? diff : 0;
+  }
+
+  @override
+  void resetFailedAttempts() {
+    _failedPasscodeAttempts = 0;
+    _lockoutUntil = null;
+  }
+
+  @override
   void lockApp() {
     _isAppUnlocked = false;
     _lockStateController.add(false);
@@ -68,6 +102,7 @@ class DefaultAppLockService implements AppLockService {
   @override
   void unlockApp() {
     _isAppUnlocked = true;
+    resetFailedAttempts();
     _lockStateController.add(true);
   }
 
@@ -103,10 +138,15 @@ class DefaultAppLockService implements AppLockService {
 
     await _storage.write(_keyPasscodeSalt, salt);
     await _storage.write(_keyPasscodeVerifier, verifier);
+    resetFailedAttempts();
   }
 
   @override
   Future<bool> verifyPasscode(String candidate) async {
+    if (isLockedOut()) {
+      return false;
+    }
+
     final salt = await _storage.read(_keyPasscodeSalt);
     final storedVerifier = await _storage.read(_keyPasscodeVerifier);
 
@@ -119,9 +159,15 @@ class DefaultAppLockService implements AppLockService {
 
     if (isValid) {
       unlockApp();
+    } else {
+      _failedPasscodeAttempts += 1;
+      if (_failedPasscodeAttempts >= 5) {
+        _lockoutUntil = DateTime.now().add(const Duration(seconds: 60));
+      }
     }
     return isValid;
   }
+
 
   @override
   Future<bool> authenticateWithBiometrics({
@@ -164,6 +210,8 @@ class DefaultAppLockService implements AppLockService {
     await _storage.delete(_keyPasscodeVerifier);
     await _storage.delete(_keyPasscodeSalt);
     await _storage.delete(_keyBiometricsEnabled);
+    resetFailedAttempts();
     lockApp();
   }
+
 }

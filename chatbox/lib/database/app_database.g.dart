@@ -541,6 +541,28 @@ class $UserAccountsTable extends UserAccounts
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _recoveryKeyHashMeta = const VerificationMeta(
+    'recoveryKeyHash',
+  );
+  @override
+  late final GeneratedColumn<String> recoveryKeyHash = GeneratedColumn<String>(
+    'recovery_key_hash',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _recoveryKeySaltMeta = const VerificationMeta(
+    'recoveryKeySalt',
+  );
+  @override
+  late final GeneratedColumn<String> recoveryKeySalt = GeneratedColumn<String>(
+    'recovery_key_salt',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     accountId,
@@ -549,6 +571,8 @@ class $UserAccountsTable extends UserAccounts
     salt,
     createdAt,
     publicIdentityKey,
+    recoveryKeyHash,
+    recoveryKeySalt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -614,6 +638,24 @@ class $UserAccountsTable extends UserAccounts
         ),
       );
     }
+    if (data.containsKey('recovery_key_hash')) {
+      context.handle(
+        _recoveryKeyHashMeta,
+        recoveryKeyHash.isAcceptableOrUnknown(
+          data['recovery_key_hash']!,
+          _recoveryKeyHashMeta,
+        ),
+      );
+    }
+    if (data.containsKey('recovery_key_salt')) {
+      context.handle(
+        _recoveryKeySaltMeta,
+        recoveryKeySalt.isAcceptableOrUnknown(
+          data['recovery_key_salt']!,
+          _recoveryKeySaltMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -647,6 +689,14 @@ class $UserAccountsTable extends UserAccounts
         DriftSqlType.string,
         data['${effectivePrefix}public_identity_key'],
       ),
+      recoveryKeyHash: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recovery_key_hash'],
+      ),
+      recoveryKeySalt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recovery_key_salt'],
+      ),
     );
   }
 
@@ -663,6 +713,8 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
   final String salt;
   final DateTime createdAt;
   final String? publicIdentityKey;
+  final String? recoveryKeyHash;
+  final String? recoveryKeySalt;
   const DbUserAccount({
     required this.accountId,
     required this.username,
@@ -670,6 +722,8 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
     required this.salt,
     required this.createdAt,
     this.publicIdentityKey,
+    this.recoveryKeyHash,
+    this.recoveryKeySalt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -681,6 +735,12 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || publicIdentityKey != null) {
       map['public_identity_key'] = Variable<String>(publicIdentityKey);
+    }
+    if (!nullToAbsent || recoveryKeyHash != null) {
+      map['recovery_key_hash'] = Variable<String>(recoveryKeyHash);
+    }
+    if (!nullToAbsent || recoveryKeySalt != null) {
+      map['recovery_key_salt'] = Variable<String>(recoveryKeySalt);
     }
     return map;
   }
@@ -695,6 +755,12 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
       publicIdentityKey: publicIdentityKey == null && nullToAbsent
           ? const Value.absent()
           : Value(publicIdentityKey),
+      recoveryKeyHash: recoveryKeyHash == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recoveryKeyHash),
+      recoveryKeySalt: recoveryKeySalt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recoveryKeySalt),
     );
   }
 
@@ -712,6 +778,8 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
       publicIdentityKey: serializer.fromJson<String?>(
         json['publicIdentityKey'],
       ),
+      recoveryKeyHash: serializer.fromJson<String?>(json['recoveryKeyHash']),
+      recoveryKeySalt: serializer.fromJson<String?>(json['recoveryKeySalt']),
     );
   }
   @override
@@ -724,6 +792,8 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
       'salt': serializer.toJson<String>(salt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'publicIdentityKey': serializer.toJson<String?>(publicIdentityKey),
+      'recoveryKeyHash': serializer.toJson<String?>(recoveryKeyHash),
+      'recoveryKeySalt': serializer.toJson<String?>(recoveryKeySalt),
     };
   }
 
@@ -734,6 +804,8 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
     String? salt,
     DateTime? createdAt,
     Value<String?> publicIdentityKey = const Value.absent(),
+    Value<String?> recoveryKeyHash = const Value.absent(),
+    Value<String?> recoveryKeySalt = const Value.absent(),
   }) => DbUserAccount(
     accountId: accountId ?? this.accountId,
     username: username ?? this.username,
@@ -743,6 +815,12 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
     publicIdentityKey: publicIdentityKey.present
         ? publicIdentityKey.value
         : this.publicIdentityKey,
+    recoveryKeyHash: recoveryKeyHash.present
+        ? recoveryKeyHash.value
+        : this.recoveryKeyHash,
+    recoveryKeySalt: recoveryKeySalt.present
+        ? recoveryKeySalt.value
+        : this.recoveryKeySalt,
   );
   DbUserAccount copyWithCompanion(UserAccountsCompanion data) {
     return DbUserAccount(
@@ -756,6 +834,12 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
       publicIdentityKey: data.publicIdentityKey.present
           ? data.publicIdentityKey.value
           : this.publicIdentityKey,
+      recoveryKeyHash: data.recoveryKeyHash.present
+          ? data.recoveryKeyHash.value
+          : this.recoveryKeyHash,
+      recoveryKeySalt: data.recoveryKeySalt.present
+          ? data.recoveryKeySalt.value
+          : this.recoveryKeySalt,
     );
   }
 
@@ -767,7 +851,9 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
           ..write('passwordHash: $passwordHash, ')
           ..write('salt: $salt, ')
           ..write('createdAt: $createdAt, ')
-          ..write('publicIdentityKey: $publicIdentityKey')
+          ..write('publicIdentityKey: $publicIdentityKey, ')
+          ..write('recoveryKeyHash: $recoveryKeyHash, ')
+          ..write('recoveryKeySalt: $recoveryKeySalt')
           ..write(')'))
         .toString();
   }
@@ -780,6 +866,8 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
     salt,
     createdAt,
     publicIdentityKey,
+    recoveryKeyHash,
+    recoveryKeySalt,
   );
   @override
   bool operator ==(Object other) =>
@@ -790,7 +878,9 @@ class DbUserAccount extends DataClass implements Insertable<DbUserAccount> {
           other.passwordHash == this.passwordHash &&
           other.salt == this.salt &&
           other.createdAt == this.createdAt &&
-          other.publicIdentityKey == this.publicIdentityKey);
+          other.publicIdentityKey == this.publicIdentityKey &&
+          other.recoveryKeyHash == this.recoveryKeyHash &&
+          other.recoveryKeySalt == this.recoveryKeySalt);
 }
 
 class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
@@ -800,6 +890,8 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
   final Value<String> salt;
   final Value<DateTime> createdAt;
   final Value<String?> publicIdentityKey;
+  final Value<String?> recoveryKeyHash;
+  final Value<String?> recoveryKeySalt;
   final Value<int> rowid;
   const UserAccountsCompanion({
     this.accountId = const Value.absent(),
@@ -808,6 +900,8 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
     this.salt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.publicIdentityKey = const Value.absent(),
+    this.recoveryKeyHash = const Value.absent(),
+    this.recoveryKeySalt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   UserAccountsCompanion.insert({
@@ -817,6 +911,8 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
     required String salt,
     required DateTime createdAt,
     this.publicIdentityKey = const Value.absent(),
+    this.recoveryKeyHash = const Value.absent(),
+    this.recoveryKeySalt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : accountId = Value(accountId),
        username = Value(username),
@@ -830,6 +926,8 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
     Expression<String>? salt,
     Expression<DateTime>? createdAt,
     Expression<String>? publicIdentityKey,
+    Expression<String>? recoveryKeyHash,
+    Expression<String>? recoveryKeySalt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -839,6 +937,8 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
       if (salt != null) 'salt': salt,
       if (createdAt != null) 'created_at': createdAt,
       if (publicIdentityKey != null) 'public_identity_key': publicIdentityKey,
+      if (recoveryKeyHash != null) 'recovery_key_hash': recoveryKeyHash,
+      if (recoveryKeySalt != null) 'recovery_key_salt': recoveryKeySalt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -850,6 +950,8 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
     Value<String>? salt,
     Value<DateTime>? createdAt,
     Value<String?>? publicIdentityKey,
+    Value<String?>? recoveryKeyHash,
+    Value<String?>? recoveryKeySalt,
     Value<int>? rowid,
   }) {
     return UserAccountsCompanion(
@@ -859,6 +961,8 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
       salt: salt ?? this.salt,
       createdAt: createdAt ?? this.createdAt,
       publicIdentityKey: publicIdentityKey ?? this.publicIdentityKey,
+      recoveryKeyHash: recoveryKeyHash ?? this.recoveryKeyHash,
+      recoveryKeySalt: recoveryKeySalt ?? this.recoveryKeySalt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -884,6 +988,12 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
     if (publicIdentityKey.present) {
       map['public_identity_key'] = Variable<String>(publicIdentityKey.value);
     }
+    if (recoveryKeyHash.present) {
+      map['recovery_key_hash'] = Variable<String>(recoveryKeyHash.value);
+    }
+    if (recoveryKeySalt.present) {
+      map['recovery_key_salt'] = Variable<String>(recoveryKeySalt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -899,6 +1009,370 @@ class UserAccountsCompanion extends UpdateCompanion<DbUserAccount> {
           ..write('salt: $salt, ')
           ..write('createdAt: $createdAt, ')
           ..write('publicIdentityKey: $publicIdentityKey, ')
+          ..write('recoveryKeyHash: $recoveryKeyHash, ')
+          ..write('recoveryKeySalt: $recoveryKeySalt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SecurityLogsTable extends SecurityLogs
+    with TableInfo<$SecurityLogsTable, DbSecurityLog> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SecurityLogsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _eventTypeMeta = const VerificationMeta(
+    'eventType',
+  );
+  @override
+  late final GeneratedColumn<String> eventType = GeneratedColumn<String>(
+    'event_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _detailsMeta = const VerificationMeta(
+    'details',
+  );
+  @override
+  late final GeneratedColumn<String> details = GeneratedColumn<String>(
+    'details',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _severityMeta = const VerificationMeta(
+    'severity',
+  );
+  @override
+  late final GeneratedColumn<String> severity = GeneratedColumn<String>(
+    'severity',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _timestampMeta = const VerificationMeta(
+    'timestamp',
+  );
+  @override
+  late final GeneratedColumn<DateTime> timestamp = GeneratedColumn<DateTime>(
+    'timestamp',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    eventType,
+    details,
+    severity,
+    timestamp,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'security_logs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DbSecurityLog> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('event_type')) {
+      context.handle(
+        _eventTypeMeta,
+        eventType.isAcceptableOrUnknown(data['event_type']!, _eventTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_eventTypeMeta);
+    }
+    if (data.containsKey('details')) {
+      context.handle(
+        _detailsMeta,
+        details.isAcceptableOrUnknown(data['details']!, _detailsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_detailsMeta);
+    }
+    if (data.containsKey('severity')) {
+      context.handle(
+        _severityMeta,
+        severity.isAcceptableOrUnknown(data['severity']!, _severityMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_severityMeta);
+    }
+    if (data.containsKey('timestamp')) {
+      context.handle(
+        _timestampMeta,
+        timestamp.isAcceptableOrUnknown(data['timestamp']!, _timestampMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_timestampMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DbSecurityLog map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DbSecurityLog(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      eventType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_type'],
+      )!,
+      details: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}details'],
+      )!,
+      severity: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}severity'],
+      )!,
+      timestamp: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}timestamp'],
+      )!,
+    );
+  }
+
+  @override
+  $SecurityLogsTable createAlias(String alias) {
+    return $SecurityLogsTable(attachedDatabase, alias);
+  }
+}
+
+class DbSecurityLog extends DataClass implements Insertable<DbSecurityLog> {
+  final String id;
+  final String eventType;
+  final String details;
+  final String severity;
+  final DateTime timestamp;
+  const DbSecurityLog({
+    required this.id,
+    required this.eventType,
+    required this.details,
+    required this.severity,
+    required this.timestamp,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['event_type'] = Variable<String>(eventType);
+    map['details'] = Variable<String>(details);
+    map['severity'] = Variable<String>(severity);
+    map['timestamp'] = Variable<DateTime>(timestamp);
+    return map;
+  }
+
+  SecurityLogsCompanion toCompanion(bool nullToAbsent) {
+    return SecurityLogsCompanion(
+      id: Value(id),
+      eventType: Value(eventType),
+      details: Value(details),
+      severity: Value(severity),
+      timestamp: Value(timestamp),
+    );
+  }
+
+  factory DbSecurityLog.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DbSecurityLog(
+      id: serializer.fromJson<String>(json['id']),
+      eventType: serializer.fromJson<String>(json['eventType']),
+      details: serializer.fromJson<String>(json['details']),
+      severity: serializer.fromJson<String>(json['severity']),
+      timestamp: serializer.fromJson<DateTime>(json['timestamp']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'eventType': serializer.toJson<String>(eventType),
+      'details': serializer.toJson<String>(details),
+      'severity': serializer.toJson<String>(severity),
+      'timestamp': serializer.toJson<DateTime>(timestamp),
+    };
+  }
+
+  DbSecurityLog copyWith({
+    String? id,
+    String? eventType,
+    String? details,
+    String? severity,
+    DateTime? timestamp,
+  }) => DbSecurityLog(
+    id: id ?? this.id,
+    eventType: eventType ?? this.eventType,
+    details: details ?? this.details,
+    severity: severity ?? this.severity,
+    timestamp: timestamp ?? this.timestamp,
+  );
+  DbSecurityLog copyWithCompanion(SecurityLogsCompanion data) {
+    return DbSecurityLog(
+      id: data.id.present ? data.id.value : this.id,
+      eventType: data.eventType.present ? data.eventType.value : this.eventType,
+      details: data.details.present ? data.details.value : this.details,
+      severity: data.severity.present ? data.severity.value : this.severity,
+      timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbSecurityLog(')
+          ..write('id: $id, ')
+          ..write('eventType: $eventType, ')
+          ..write('details: $details, ')
+          ..write('severity: $severity, ')
+          ..write('timestamp: $timestamp')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, eventType, details, severity, timestamp);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DbSecurityLog &&
+          other.id == this.id &&
+          other.eventType == this.eventType &&
+          other.details == this.details &&
+          other.severity == this.severity &&
+          other.timestamp == this.timestamp);
+}
+
+class SecurityLogsCompanion extends UpdateCompanion<DbSecurityLog> {
+  final Value<String> id;
+  final Value<String> eventType;
+  final Value<String> details;
+  final Value<String> severity;
+  final Value<DateTime> timestamp;
+  final Value<int> rowid;
+  const SecurityLogsCompanion({
+    this.id = const Value.absent(),
+    this.eventType = const Value.absent(),
+    this.details = const Value.absent(),
+    this.severity = const Value.absent(),
+    this.timestamp = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SecurityLogsCompanion.insert({
+    required String id,
+    required String eventType,
+    required String details,
+    required String severity,
+    required DateTime timestamp,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       eventType = Value(eventType),
+       details = Value(details),
+       severity = Value(severity),
+       timestamp = Value(timestamp);
+  static Insertable<DbSecurityLog> custom({
+    Expression<String>? id,
+    Expression<String>? eventType,
+    Expression<String>? details,
+    Expression<String>? severity,
+    Expression<DateTime>? timestamp,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (eventType != null) 'event_type': eventType,
+      if (details != null) 'details': details,
+      if (severity != null) 'severity': severity,
+      if (timestamp != null) 'timestamp': timestamp,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SecurityLogsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? eventType,
+    Value<String>? details,
+    Value<String>? severity,
+    Value<DateTime>? timestamp,
+    Value<int>? rowid,
+  }) {
+    return SecurityLogsCompanion(
+      id: id ?? this.id,
+      eventType: eventType ?? this.eventType,
+      details: details ?? this.details,
+      severity: severity ?? this.severity,
+      timestamp: timestamp ?? this.timestamp,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (eventType.present) {
+      map['event_type'] = Variable<String>(eventType.value);
+    }
+    if (details.present) {
+      map['details'] = Variable<String>(details.value);
+    }
+    if (severity.present) {
+      map['severity'] = Variable<String>(severity.value);
+    }
+    if (timestamp.present) {
+      map['timestamp'] = Variable<DateTime>(timestamp.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SecurityLogsCompanion(')
+          ..write('id: $id, ')
+          ..write('eventType: $eventType, ')
+          ..write('details: $details, ')
+          ..write('severity: $severity, ')
+          ..write('timestamp: $timestamp, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -910,11 +1384,16 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $MessagesTable messages = $MessagesTable(this);
   late final $UserAccountsTable userAccounts = $UserAccountsTable(this);
+  late final $SecurityLogsTable securityLogs = $SecurityLogsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [messages, userAccounts];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+    messages,
+    userAccounts,
+    securityLogs,
+  ];
 }
 
 typedef $$MessagesTableCreateCompanionBuilder =
@@ -1161,6 +1640,8 @@ typedef $$UserAccountsTableCreateCompanionBuilder =
       required String salt,
       required DateTime createdAt,
       Value<String?> publicIdentityKey,
+      Value<String?> recoveryKeyHash,
+      Value<String?> recoveryKeySalt,
       Value<int> rowid,
     });
 typedef $$UserAccountsTableUpdateCompanionBuilder =
@@ -1171,6 +1652,8 @@ typedef $$UserAccountsTableUpdateCompanionBuilder =
       Value<String> salt,
       Value<DateTime> createdAt,
       Value<String?> publicIdentityKey,
+      Value<String?> recoveryKeyHash,
+      Value<String?> recoveryKeySalt,
       Value<int> rowid,
     });
 
@@ -1210,6 +1693,16 @@ class $$UserAccountsTableFilterComposer
 
   ColumnFilters<String> get publicIdentityKey => $composableBuilder(
     column: $table.publicIdentityKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recoveryKeyHash => $composableBuilder(
+    column: $table.recoveryKeyHash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recoveryKeySalt => $composableBuilder(
+    column: $table.recoveryKeySalt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -1252,6 +1745,16 @@ class $$UserAccountsTableOrderingComposer
     column: $table.publicIdentityKey,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get recoveryKeyHash => $composableBuilder(
+    column: $table.recoveryKeyHash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recoveryKeySalt => $composableBuilder(
+    column: $table.recoveryKeySalt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$UserAccountsTableAnnotationComposer
@@ -1282,6 +1785,16 @@ class $$UserAccountsTableAnnotationComposer
 
   GeneratedColumn<String> get publicIdentityKey => $composableBuilder(
     column: $table.publicIdentityKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recoveryKeyHash => $composableBuilder(
+    column: $table.recoveryKeyHash,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recoveryKeySalt => $composableBuilder(
+    column: $table.recoveryKeySalt,
     builder: (column) => column,
   );
 }
@@ -1323,6 +1836,8 @@ class $$UserAccountsTableTableManager
                 Value<String> salt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<String?> publicIdentityKey = const Value.absent(),
+                Value<String?> recoveryKeyHash = const Value.absent(),
+                Value<String?> recoveryKeySalt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => UserAccountsCompanion(
                 accountId: accountId,
@@ -1331,6 +1846,8 @@ class $$UserAccountsTableTableManager
                 salt: salt,
                 createdAt: createdAt,
                 publicIdentityKey: publicIdentityKey,
+                recoveryKeyHash: recoveryKeyHash,
+                recoveryKeySalt: recoveryKeySalt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1341,6 +1858,8 @@ class $$UserAccountsTableTableManager
                 required String salt,
                 required DateTime createdAt,
                 Value<String?> publicIdentityKey = const Value.absent(),
+                Value<String?> recoveryKeyHash = const Value.absent(),
+                Value<String?> recoveryKeySalt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => UserAccountsCompanion.insert(
                 accountId: accountId,
@@ -1349,6 +1868,8 @@ class $$UserAccountsTableTableManager
                 salt: salt,
                 createdAt: createdAt,
                 publicIdentityKey: publicIdentityKey,
+                recoveryKeyHash: recoveryKeyHash,
+                recoveryKeySalt: recoveryKeySalt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -1376,6 +1897,206 @@ typedef $$UserAccountsTableProcessedTableManager =
       DbUserAccount,
       PrefetchHooks Function()
     >;
+typedef $$SecurityLogsTableCreateCompanionBuilder =
+    SecurityLogsCompanion Function({
+      required String id,
+      required String eventType,
+      required String details,
+      required String severity,
+      required DateTime timestamp,
+      Value<int> rowid,
+    });
+typedef $$SecurityLogsTableUpdateCompanionBuilder =
+    SecurityLogsCompanion Function({
+      Value<String> id,
+      Value<String> eventType,
+      Value<String> details,
+      Value<String> severity,
+      Value<DateTime> timestamp,
+      Value<int> rowid,
+    });
+
+class $$SecurityLogsTableFilterComposer
+    extends Composer<_$AppDatabase, $SecurityLogsTable> {
+  $$SecurityLogsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get eventType => $composableBuilder(
+    column: $table.eventType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get details => $composableBuilder(
+    column: $table.details,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get severity => $composableBuilder(
+    column: $table.severity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get timestamp => $composableBuilder(
+    column: $table.timestamp,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SecurityLogsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SecurityLogsTable> {
+  $$SecurityLogsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get eventType => $composableBuilder(
+    column: $table.eventType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get details => $composableBuilder(
+    column: $table.details,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get severity => $composableBuilder(
+    column: $table.severity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get timestamp => $composableBuilder(
+    column: $table.timestamp,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SecurityLogsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SecurityLogsTable> {
+  $$SecurityLogsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get eventType =>
+      $composableBuilder(column: $table.eventType, builder: (column) => column);
+
+  GeneratedColumn<String> get details =>
+      $composableBuilder(column: $table.details, builder: (column) => column);
+
+  GeneratedColumn<String> get severity =>
+      $composableBuilder(column: $table.severity, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get timestamp =>
+      $composableBuilder(column: $table.timestamp, builder: (column) => column);
+}
+
+class $$SecurityLogsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SecurityLogsTable,
+          DbSecurityLog,
+          $$SecurityLogsTableFilterComposer,
+          $$SecurityLogsTableOrderingComposer,
+          $$SecurityLogsTableAnnotationComposer,
+          $$SecurityLogsTableCreateCompanionBuilder,
+          $$SecurityLogsTableUpdateCompanionBuilder,
+          (
+            DbSecurityLog,
+            BaseReferences<_$AppDatabase, $SecurityLogsTable, DbSecurityLog>,
+          ),
+          DbSecurityLog,
+          PrefetchHooks Function()
+        > {
+  $$SecurityLogsTableTableManager(_$AppDatabase db, $SecurityLogsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SecurityLogsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SecurityLogsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SecurityLogsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> eventType = const Value.absent(),
+                Value<String> details = const Value.absent(),
+                Value<String> severity = const Value.absent(),
+                Value<DateTime> timestamp = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SecurityLogsCompanion(
+                id: id,
+                eventType: eventType,
+                details: details,
+                severity: severity,
+                timestamp: timestamp,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String eventType,
+                required String details,
+                required String severity,
+                required DateTime timestamp,
+                Value<int> rowid = const Value.absent(),
+              }) => SecurityLogsCompanion.insert(
+                id: id,
+                eventType: eventType,
+                details: details,
+                severity: severity,
+                timestamp: timestamp,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SecurityLogsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SecurityLogsTable,
+      DbSecurityLog,
+      $$SecurityLogsTableFilterComposer,
+      $$SecurityLogsTableOrderingComposer,
+      $$SecurityLogsTableAnnotationComposer,
+      $$SecurityLogsTableCreateCompanionBuilder,
+      $$SecurityLogsTableUpdateCompanionBuilder,
+      (
+        DbSecurityLog,
+        BaseReferences<_$AppDatabase, $SecurityLogsTable, DbSecurityLog>,
+      ),
+      DbSecurityLog,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1384,4 +2105,6 @@ class $AppDatabaseManager {
       $$MessagesTableTableManager(_db, _db.messages);
   $$UserAccountsTableTableManager get userAccounts =>
       $$UserAccountsTableTableManager(_db, _db.userAccounts);
+  $$SecurityLogsTableTableManager get securityLogs =>
+      $$SecurityLogsTableTableManager(_db, _db.securityLogs);
 }

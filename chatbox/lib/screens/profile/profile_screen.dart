@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:chatbox/core/theme/app_theme.dart';
+import 'package:chatbox/core/utils/recovery_key_utils.dart';
+import 'package:chatbox/database/local_database.dart';
+import 'package:chatbox/models/security_log.dart';
 import 'package:chatbox/models/user.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
 
@@ -88,10 +92,344 @@ class _ProfileScreenState extends State<ProfileScreen> {
     Navigator.of(context).pop();
   }
 
+  void _handleViewRecoveryKey() {
+    if (widget.appLockService != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => AppLockScreen(
+            appLockService: widget.appLockService!,
+            mode: AppLockMode.verifyCurrent,
+            autoPromptBiometrics: true,
+            onVerified: (verified) {
+              if (verified) {
+                Navigator.of(context).pop();
+                _showRecoveryKeyBottomSheet();
+              }
+            },
+          ),
+        ),
+      );
+    } else {
+      _showRecoveryKeyBottomSheet();
+    }
+  }
+
+  void _showRecoveryKeyBottomSheet() {
+    String currentKey = widget.authRepository?.lastRegisteredRecoveryKey ??
+        RecoveryKeyUtils.generateMnemonic();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final words = currentKey.split(' ');
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20.0,
+                right: 20.0,
+                top: 20.0,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24.0,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.key, color: Colors.white, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              '12-Word Recovery Key',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Store these 12 words offline in a private place. This phrase is required to restore account access if you forget your password.',
+                      style: TextStyle(color: Colors.white54, fontSize: 12.5),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF282828),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF383838)),
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: List.generate(words.length, (index) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF383838),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${index + 1}. ${words[index]}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final newKey = RecoveryKeyUtils.generateMnemonic();
+                              final username = widget.currentUser?.username ?? '@alex';
+                              if (widget.authRepository != null) {
+                                await widget.authRepository!.setRecoveryKey(
+                                  username: username,
+                                  recoveryPhrase: newKey,
+                                );
+                              }
+                              setModalState(() {
+                                currentKey = newKey;
+                              });
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Generated and saved new recovery key'),
+                                    backgroundColor: Color(0xFF2E2E2E),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.refresh, color: Colors.white70, size: 16),
+                            label: const Text(
+                              'Regenerate',
+                              style: TextStyle(color: Colors.white, fontSize: 13),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF444444)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: currentKey));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Recovery phrase copied to clipboard'),
+                                  backgroundColor: Color(0xFF2E2E2E),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.copy, color: Colors.black, size: 16),
+                            label: const Text(
+                              'Copy Phrase',
+                              style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _handleViewAuditLog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SizedBox(
+              height: MediaQuery.of(context).size.height * 0.7,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.shield, color: Colors.white, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Security Audit Log',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Zero Cloud Telemetry Guarantee • Stored strictly on device',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: FutureBuilder<List<SecurityLog>>(
+                        future: LocalDatabase().getSecurityLogs(limit: 50),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const Center(
+                              child: CircularProgressIndicator(color: Colors.white),
+                            );
+                          }
+                          final logs = snapshot.data!;
+                          if (logs.isEmpty) {
+                            return const Center(
+                              child: Text(
+                                'No security events recorded yet.',
+                                style: TextStyle(color: Colors.white38, fontSize: 13),
+                              ),
+                            );
+                          }
+
+                          return ListView.separated(
+                            itemCount: logs.length,
+                            separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E2E), height: 1),
+
+                            itemBuilder: (context, index) {
+                              final log = logs[index];
+                              final isWarning = log.severity == 'warning';
+                              final isCritical = log.severity == 'critical';
+                              final badgeColor = isCritical
+                                  ? Colors.redAccent
+                                  : isWarning
+                                      ? Colors.orangeAccent
+                                      : const Color(0xFF4CAF50);
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 10.0),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: badgeColor.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
+                                      ),
+                                      child: Text(
+                                        log.eventType.replaceAll('_', ' ').toUpperCase(),
+                                        style: TextStyle(
+                                          color: badgeColor,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            log.details,
+                                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            log.formattedTime,
+                                            style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 42,
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          await LocalDatabase().clearSecurityLogs();
+                          setModalState(() {});
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF444444)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                        child: const Text(
+                          'Clear Audit Log',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final username = widget.currentUser?.username ?? '@alex';
     final initial = username.length > 1 ? username[1].toUpperCase() : 'A';
+
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -264,6 +602,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ],
                       ),
                       const Divider(color: Color(0xFF333333), height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Account Recovery Key',
+                                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                '12-word offline backup',
+                                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5),
+                              ),
+                            ],
+                          ),
+                          TextButton(
+                            onPressed: _handleViewRecoveryKey,
+                            child: const Text(
+                              'View / Backup',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(color: Color(0xFF333333), height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Security Audit Log',
+                                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Device-local event logs',
+                                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5),
+                              ),
+                            ],
+                          ),
+                          TextButton(
+                            onPressed: _handleViewAuditLog,
+                            child: const Text(
+                              'View Log',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(color: Color(0xFF333333), height: 24),
                       SizedBox(
                         width: double.infinity,
                         height: 42,
@@ -286,6 +678,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
+
               ],
 
               /// Love Connection Card

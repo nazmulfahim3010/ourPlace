@@ -27,12 +27,17 @@ import 'package:chatbox/screens/profile/profile_screen.dart';
 import 'package:chatbox/widgets/conversation_tile.dart';
 import 'package:chatbox/widgets/numeric_keypad.dart';
 import 'package:chatbox/widgets/passcode_dots.dart';
+import 'package:chatbox/core/utils/recovery_key_utils.dart';
+import 'package:chatbox/services/access_throttling_service.dart';
+import 'package:chatbox/services/auth_security_service.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
 
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+
 
   group('Cryptographic Hashing and Username Utilities Tests', () {
     test('generateSalt generates distinct non-empty random salts', () {
@@ -836,6 +841,343 @@ void main() {
       expect(lockService.isAppUnlocked, isFalse);
     });
   });
+
+  group('Phase 9: RecoveryKeyUtils Mnemonic Tests', () {
+    test('generateMnemonic generates valid 12-word phrase from BIP-39 dictionary', () {
+      final mnemonic = RecoveryKeyUtils.generateMnemonic();
+      final words = mnemonic.split(' ');
+      expect(words.length, 12);
+      for (final word in words) {
+        expect(RecoveryKeyUtils.bip39EnglishWordSet.contains(word), isTrue);
+      }
+    });
+
+    test('validateMnemonic validates count and dictionary existence', () {
+      final validMnemonic = RecoveryKeyUtils.generateMnemonic();
+      expect(RecoveryKeyUtils.validateMnemonic(validMnemonic), isNull);
+
+      expect(RecoveryKeyUtils.validateMnemonic(''), isNotNull);
+      expect(RecoveryKeyUtils.validateMnemonic('word1 word2 word3'), isNotNull);
+      expect(RecoveryKeyUtils.validateMnemonic('notabipword ' * 12), isNotNull);
+    });
+
+    test('hashRecoveryKey and verifyRecoveryKey correctly verifies candidate phrase', () {
+      final phrase = RecoveryKeyUtils.generateMnemonic();
+      final salt = HashUtils.generateSalt();
+      final hash = RecoveryKeyUtils.hashRecoveryKey(phrase, salt);
+
+      expect(
+        RecoveryKeyUtils.verifyRecoveryKey(
+          candidatePhrase: phrase,
+          storedHash: hash,
+          salt: salt,
+        ),
+        isTrue,
+      );
+
+      expect(
+        RecoveryKeyUtils.verifyRecoveryKey(
+          candidatePhrase: RecoveryKeyUtils.generateMnemonic(),
+          storedHash: hash,
+          salt: salt,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('Phase 9: AccessThrottlingService & Rate Limiting Tests', () {
+    late AccessThrottlingService throttling;
+
+    setUp(() {
+      throttling = AccessThrottlingService();
+      throttling.clearAll();
+    });
+
+    test('cooldown duration escalates based on consecutive failed attempts', () {
+      expect(throttling.calculateCooldown(0), Duration.zero);
+      expect(throttling.calculateCooldown(2), Duration.zero);
+      expect(throttling.calculateCooldown(3), const Duration(seconds: 10));
+      expect(throttling.calculateCooldown(5), const Duration(seconds: 30));
+      expect(throttling.calculateCooldown(8), const Duration(minutes: 2));
+      expect(throttling.calculateCooldown(10), const Duration(minutes: 5));
+    });
+
+    test('recordFailedLogin sets lockout and canAttemptLogin enforces cooldown', () {
+      const username = '@bad_actor';
+      expect(throttling.canAttemptLogin(username), isTrue);
+
+      throttling.recordFailedLogin(username);
+      throttling.recordFailedLogin(username);
+      expect(throttling.canAttemptLogin(username), isTrue);
+
+      // 3rd attempt triggers 10s cooldown
+      throttling.recordFailedLogin(username);
+      expect(throttling.canAttemptLogin(username), isFalse);
+      expect(throttling.getRemainingCooldown(username).inSeconds, greaterThan(0));
+
+      // Successful login resets throttling
+      throttling.recordSuccessfulLogin(username);
+      expect(throttling.canAttemptLogin(username), isTrue);
+      expect(throttling.getFailedAttempts(username), 0);
+    });
+  });
+
+  group('Phase 9: AuthSecurityService Challenge-Response Protocol Tests', () {
+    test('issueChallenge generates unique nonces with valid timestamp', () {
+      final challenge1 = AuthSecurityService.issueChallenge(username: '@alex');
+      final challenge2 = AuthSecurityService.issueChallenge(username: '@alex');
+
+      expect(challenge1.challengeId, isNotEmpty);
+      expect(challenge1.serverNonce, isNot(equals(challenge2.serverNonce)));
+      expect(challenge1.isExpired, isFalse);
+    });
+
+    test('computeClientProof and verifyClientProof perform zero-knowledge verification', () {
+      const passwordHash = 'salted_hash_verifier_123';
+      const username = '@alex';
+      final challenge = AuthSecurityService.issueChallenge(username: username);
+      final clientNonce = AuthSecurityService.generateNonce();
+
+      final proof = AuthSecurityService.computeClientProof(
+        passwordHash: passwordHash,
+        serverNonce: challenge.serverNonce,
+        clientNonce: clientNonce,
+        username: username,
+      );
+
+      expect(
+        AuthSecurityService.verifyClientProof(
+          clientProof: proof,
+          expectedPasswordHash: passwordHash,
+          serverNonce: challenge.serverNonce,
+          clientNonce: clientNonce,
+          username: username,
+        ),
+        isTrue,
+      );
+
+      expect(
+        AuthSecurityService.verifyClientProof(
+          clientProof: proof,
+          expectedPasswordHash: 'wrong_password_hash',
+          serverNonce: challenge.serverNonce,
+          clientNonce: clientNonce,
+          username: username,
+        ),
+        isFalse,
+      );
+    });
+
+    test('mutual server proof proves server identity back to client', () {
+      const passwordHash = 'salted_hash_verifier_123';
+      const serverNonce = 'server_nonce_abc';
+      const clientProof = 'client_proof_xyz';
+
+      final serverProof = AuthSecurityService.computeServerProof(
+        passwordHash: passwordHash,
+        clientProof: clientProof,
+        serverNonce: serverNonce,
+      );
+
+      expect(
+        AuthSecurityService.verifyServerProof(
+          serverProof: serverProof,
+          passwordHash: passwordHash,
+          clientProof: clientProof,
+          serverNonce: serverNonce,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('Phase 9: LocalDatabase Schema v3 & SecurityLogs Tests', () {
+    late AppDatabase inMemoryDb;
+    late LocalDatabase localDb;
+
+    setUp(() {
+      inMemoryDb = AppDatabase(NativeDatabase.memory());
+      localDb = LocalDatabase(database: inMemoryDb);
+    });
+
+    tearDown(() async {
+      await localDb.close();
+    });
+
+    test('UserAccount saves and verifies recovery key hash and salt', () async {
+      final phrase = RecoveryKeyUtils.generateMnemonic();
+      final recoverySalt = HashUtils.generateSalt();
+      final recoveryHash = RecoveryKeyUtils.hashRecoveryKey(phrase, recoverySalt);
+
+      final account = UserAccount.create(
+        accountId: 'acc_test_rec',
+        username: '@recovery_user',
+        plaintextPassword: 'initialPassword123',
+        recoveryKeyHash: recoveryHash,
+        recoveryKeySalt: recoverySalt,
+      );
+
+      await localDb.saveAccount(account);
+      final retrieved = await localDb.getAccountByUsername('@recovery_user');
+
+      expect(retrieved, isNotNull);
+      expect(retrieved!.recoveryKeyHash, recoveryHash);
+      expect(retrieved.verifyRecoveryKey(phrase), isTrue);
+      expect(retrieved.verifyRecoveryKey(RecoveryKeyUtils.generateMnemonic()), isFalse);
+    });
+
+    test('resetPasswordWithRecoveryKey resets password with valid phrase', () async {
+      final phrase = RecoveryKeyUtils.generateMnemonic();
+      final recoverySalt = HashUtils.generateSalt();
+      final recoveryHash = RecoveryKeyUtils.hashRecoveryKey(phrase, recoverySalt);
+
+      final account = UserAccount.create(
+        accountId: 'acc_test_reset',
+        username: '@reset_user',
+        plaintextPassword: 'oldPassword123',
+        recoveryKeyHash: recoveryHash,
+        recoveryKeySalt: recoverySalt,
+      );
+
+      await localDb.saveAccount(account);
+
+      // Attempt reset with invalid phrase
+      final badReset = await localDb.resetPasswordWithRecoveryKey(
+        username: '@reset_user',
+        recoveryPhrase: RecoveryKeyUtils.generateMnemonic(),
+        newPlaintextPassword: 'brandNewPassword456',
+      );
+      expect(badReset, isFalse);
+
+      // Attempt reset with valid phrase
+      final goodReset = await localDb.resetPasswordWithRecoveryKey(
+        username: '@reset_user',
+        recoveryPhrase: phrase,
+        newPlaintextPassword: 'brandNewPassword456',
+      );
+      expect(goodReset, isTrue);
+
+      final updated = await localDb.getAccountByUsername('@reset_user');
+      expect(updated!.verifyPassword('brandNewPassword456'), isTrue);
+      expect(updated.verifyPassword('oldPassword123'), isFalse);
+    });
+
+    test('logSecurityEvent and getSecurityLogs records and retrieves local events', () async {
+      await localDb.logSecurityEvent('login_attempt', 'Attempt 1 failed', severity: 'warning');
+      await Future.delayed(const Duration(milliseconds: 20));
+      await localDb.logSecurityEvent('lock_app', 'App locked', severity: 'info');
+
+      final logs = await localDb.getSecurityLogs();
+      expect(logs.length, 2);
+      expect(logs.first.eventType, 'lock_app'); // newest first
+      expect(logs.first.formattedTime, isNotEmpty);
+
+      await localDb.clearSecurityLogs();
+      final clearedLogs = await localDb.getSecurityLogs();
+      expect(clearedLogs, isEmpty);
+    });
+
+  });
+
+  group('Phase 9: AppLock Throttling & Lockout Tests', () {
+    test('DefaultAppLockService triggers lockout after 5 consecutive failed attempts', () async {
+      final storage = InMemorySecureStorageService();
+      final lockService = DefaultAppLockService(storage: storage);
+      await lockService.setPasscode('1234');
+      lockService.lockApp();
+
+      expect(lockService.isLockedOut(), isFalse);
+
+      for (int i = 0; i < 4; i++) {
+        final res = await lockService.verifyPasscode('0000');
+        expect(res, isFalse);
+        expect(lockService.isLockedOut(), isFalse);
+      }
+
+      // 5th failed attempt triggers 60s lockout
+      final res5 = await lockService.verifyPasscode('0000');
+      expect(res5, isFalse);
+      expect(lockService.isLockedOut(), isTrue);
+      expect(lockService.remainingLockoutSeconds(), greaterThan(0));
+
+      // Attempt during lockout is immediately rejected
+      final blocked = await lockService.verifyPasscode('1234');
+      expect(blocked, isFalse);
+      expect(lockService.isAppUnlocked, isFalse);
+
+      // Reset allows unlock
+      lockService.resetFailedAttempts();
+      expect(lockService.isLockedOut(), isFalse);
+      final unlocked = await lockService.verifyPasscode('1234');
+      expect(unlocked, isTrue);
+      expect(lockService.isAppUnlocked, isTrue);
+    });
+  });
+
+  group('Phase 9: UI Widget Tests', () {
+    testWidgets('AppLockScreen displays lockout warning banner when locked out', (tester) async {
+      final storage = InMemorySecureStorageService();
+      final lockService = MockAppLockService(storage: storage);
+      await lockService.setPasscode('1234');
+      lockService.lockApp();
+
+      // Trigger lockout
+      for (int i = 0; i < 5; i++) {
+        await lockService.verifyPasscode('0000');
+      }
+      expect(lockService.isLockedOut(), isTrue);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppLockScreen(
+            appLockService: lockService,
+            autoPromptBiometrics: false,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('Lockout Active:'), findsOneWidget);
+    });
+
+    testWidgets('AuthScreen displays Reset with Recovery Key button', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AuthScreen(),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Forgot Password? Reset with Recovery Key'), findsOneWidget);
+    });
+
+    testWidgets('ProfileScreen displays Account Recovery Key and Security Audit Log options', (tester) async {
+      final storage = InMemorySecureStorageService();
+      final lockService = MockAppLockService(storage: storage, isAppUnlocked: true);
+      await lockService.setPasscode('1234');
+
+      final user = User(
+        id: 'user_1',
+        username: '@alex',
+        displayName: 'Alex',
+        isCurrentUser: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ProfileScreen(
+            currentUser: user,
+            appLockService: lockService,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Account Recovery Key'), findsOneWidget);
+      expect(find.text('Security Audit Log'), findsOneWidget);
+    });
+  });
 }
 
 /// Helper mock implementation for AppLockService during widget/unit tests
@@ -845,6 +1187,8 @@ class MockAppLockService implements AppLockService {
   bool mockBiometricsAvailable;
   bool mockBiometricsAuthenticateSuccess;
   final StreamController<bool> _controller = StreamController<bool>.broadcast();
+  int _failedAttempts = 0;
+  DateTime? _lockoutUntil;
 
   MockAppLockService({
     SecureStorageService? storage,
@@ -861,6 +1205,28 @@ class MockAppLockService implements AppLockService {
   Stream<bool> get lockStateChanges => _controller.stream;
 
   @override
+  int get failedAttempts => _failedAttempts;
+
+  @override
+  bool isLockedOut() {
+    if (_lockoutUntil == null) return false;
+    return DateTime.now().isBefore(_lockoutUntil!);
+  }
+
+  @override
+  int remainingLockoutSeconds() {
+    if (_lockoutUntil == null) return 0;
+    final diff = _lockoutUntil!.difference(DateTime.now()).inSeconds;
+    return diff > 0 ? diff : 0;
+  }
+
+  @override
+  void resetFailedAttempts() {
+    _failedAttempts = 0;
+    _lockoutUntil = null;
+  }
+
+  @override
   void lockApp() {
     _isAppUnlocked = false;
     _controller.add(false);
@@ -869,6 +1235,7 @@ class MockAppLockService implements AppLockService {
   @override
   void unlockApp() {
     _isAppUnlocked = true;
+    resetFailedAttempts();
     _controller.add(true);
   }
 
@@ -893,15 +1260,25 @@ class MockAppLockService implements AppLockService {
     final verifier = HashUtils.hashPassword(passcode, salt);
     await storage.write('app_lock_passcode_salt', salt);
     await storage.write('app_lock_passcode_verifier', verifier);
+    resetFailedAttempts();
   }
 
   @override
   Future<bool> verifyPasscode(String candidate) async {
+    if (isLockedOut()) return false;
     final salt = await storage.read('app_lock_passcode_salt');
     final verifier = await storage.read('app_lock_passcode_verifier');
     if (salt == null || verifier == null) return false;
     final valid = HashUtils.hashPassword(candidate, salt) == verifier;
-    if (valid) unlockApp();
+    if (valid) {
+      resetFailedAttempts();
+      unlockApp();
+    } else {
+      _failedAttempts += 1;
+      if (_failedAttempts >= 5) {
+        _lockoutUntil = DateTime.now().add(const Duration(seconds: 60));
+      }
+    }
     return valid;
   }
 
@@ -924,7 +1301,9 @@ class MockAppLockService implements AppLockService {
     await storage.delete('app_lock_passcode_verifier');
     await storage.delete('app_lock_passcode_salt');
     await storage.delete('app_lock_biometrics_enabled');
+    resetFailedAttempts();
     lockApp();
   }
 }
+
 

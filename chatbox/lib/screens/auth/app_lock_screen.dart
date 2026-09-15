@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:chatbox/core/theme/app_theme.dart';
 import 'package:chatbox/services/app_lock_service.dart';
@@ -38,11 +39,40 @@ class _AppLockScreenState extends State<AppLockScreen> {
   String? _errorMessage;
   bool _showBiometricButton = false;
   bool _isChecking = false;
+  Timer? _lockoutTimer;
 
   @override
   void initState() {
     super.initState();
     _checkBiometrics();
+    if (widget.appLockService.isLockedOut()) {
+      _startLockoutCountdown();
+    }
+  }
+
+  @override
+  void dispose() {
+    _lockoutTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startLockoutCountdown() {
+    _lockoutTimer?.cancel();
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (!widget.appLockService.isLockedOut()) {
+        timer.cancel();
+        setState(() {
+          _hasError = false;
+          _errorMessage = null;
+        });
+      } else {
+        setState(() {});
+      }
+    });
   }
 
   Future<void> _checkBiometrics() async {
@@ -54,7 +84,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
         _showBiometricButton = available && enabled && widget.mode == AppLockMode.unlock;
       });
 
-      if (_showBiometricButton && widget.autoPromptBiometrics) {
+      if (_showBiometricButton && widget.autoPromptBiometrics && !widget.appLockService.isLockedOut()) {
         // Small delay to ensure frame is rendered
         Future.delayed(const Duration(milliseconds: 300), () {
           if (mounted) _authenticateBiometrics();
@@ -64,7 +94,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   Future<void> _authenticateBiometrics() async {
-    if (_isChecking) return;
+    if (_isChecking || widget.appLockService.isLockedOut()) return;
     setState(() => _isChecking = true);
 
     final success = await widget.appLockService.authenticateWithBiometrics(
@@ -82,7 +112,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   void _onDigit(int digit) {
-    if (_enteredCode.length >= 4 || _isChecking) return;
+    if (widget.appLockService.isLockedOut() || _enteredCode.length >= 4 || _isChecking) return;
 
     setState(() {
       _hasError = false;
@@ -96,7 +126,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   void _onBackspace() {
-    if (_enteredCode.isNotEmpty && !_isChecking) {
+    if (_enteredCode.isNotEmpty && !_isChecking && !widget.appLockService.isLockedOut()) {
       setState(() {
         _hasError = false;
         _errorMessage = null;
@@ -106,6 +136,11 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   Future<void> _verifyPasscode(String candidate) async {
+    if (widget.appLockService.isLockedOut()) {
+      _startLockoutCountdown();
+      return;
+    }
+
     setState(() => _isChecking = true);
 
     final isValid = await widget.appLockService.verifyPasscode(candidate);
@@ -113,6 +148,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     if (!mounted) return;
 
     if (isValid) {
+      _lockoutTimer?.cancel();
       setState(() {
         _isChecking = false;
         _enteredCode = '';
@@ -124,10 +160,22 @@ class _AppLockScreenState extends State<AppLockScreen> {
         widget.onVerified?.call(true);
       }
     } else {
+      final isNowLockedOut = widget.appLockService.isLockedOut();
+      if (isNowLockedOut) {
+        _startLockoutCountdown();
+      }
+
+      final remaining = 5 - widget.appLockService.failedAttempts;
+      final errorMsg = isNowLockedOut
+          ? 'Device temporarily locked for 60s'
+          : (remaining <= 2 && remaining > 0)
+              ? 'Incorrect passcode ($remaining attempts left)'
+              : 'Incorrect passcode';
+
       setState(() {
         _isChecking = false;
         _hasError = true;
-        _errorMessage = 'Incorrect passcode';
+        _errorMessage = errorMsg;
         _enteredCode = '';
       });
 
@@ -136,6 +184,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -222,10 +271,37 @@ class _AppLockScreenState extends State<AppLockScreen> {
                       ),
                       const SizedBox(height: 12),
 
+                      /// Lockout alert banner
+                      if (widget.appLockService.isLockedOut())
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A1517),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFFF5252).withValues(alpha: 0.5)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.timer_outlined, color: Color(0xFFFF5252), size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Lockout Active: ${widget.appLockService.remainingLockoutSeconds()}s remaining',
+                                style: const TextStyle(
+                                  color: Color(0xFFFF5252),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
                       /// Error message display
                       SizedBox(
                         height: 18,
-                        child: _errorMessage != null
+                        child: _errorMessage != null && !widget.appLockService.isLockedOut()
                             ? Text(
                                 _errorMessage!,
                                 style: const TextStyle(
@@ -236,6 +312,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                               )
                             : null,
                       ),
+
 
                       const Spacer(),
 

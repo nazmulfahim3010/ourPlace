@@ -26,18 +26,33 @@ class UserAccounts extends Table {
   TextColumn get salt => text()();
   DateTimeColumn get createdAt => dateTime()();
   TextColumn get publicIdentityKey => text().nullable()();
+  TextColumn get recoveryKeyHash => text().nullable()();
+  TextColumn get recoveryKeySalt => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {accountId};
 }
 
-@DriftDatabase(tables: [Messages, UserAccounts])
+/// Table schema for storing device-local security audit logs
+@DataClassName('DbSecurityLog')
+class SecurityLogs extends Table {
+  TextColumn get id => text()();
+  TextColumn get eventType => text()();
+  TextColumn get details => text()();
+  TextColumn get severity => text()();
+  DateTimeColumn get timestamp => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [Messages, UserAccounts, SecurityLogs])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? e])
       : super(e ?? driftDatabase(name: 'ourplace_chat'));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -48,6 +63,12 @@ class AppDatabase extends _$AppDatabase {
           if (from < 2) {
             await m.createTable(userAccounts);
           }
+          if (from < 3) {
+            await m.addColumn(userAccounts, userAccounts.recoveryKeyHash);
+            await m.addColumn(userAccounts, userAccounts.recoveryKeySalt);
+            await m.createTable(securityLogs);
+          }
         },
       );
 }
+
