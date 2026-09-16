@@ -1,6 +1,6 @@
 # ourPlace — Architectural & Technical Diagrams Specification
-> **Document Version:** 1.0.0  
-> **Last Updated:** 2026-09-15  
+> **Document Version:** 1.1.0  
+> **Last Updated:** 2026-09-16  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Companion Document:** [`docts.md`](file:///e:/ourPlace/docts.md)
 
@@ -257,21 +257,22 @@ flowchart TD
     end
 
     subgraph ServiceRepositoryLayer["Service & Repository Layer (Business Orchestration)"]
-        AuthRepo["AuthRepository / AuthService\n- User Registration\n- Salted SHA-256 Auth\n- Session Stream & Recovery Resets"]
-        ChatRepo["ChatRepository / LocalChatRepository\n- Message Delegation\n- Status Lifecycle"]
+        AuthRepo["AuthRepository / AuthService\n- User Registration\n- Salted SHA-256 Auth\n- E2EE Key Initialization\n- Session Stream & Recovery Resets"]
+        ChatRepo["ChatRepository / LocalChatRepository\n- Message Delegation & Transport Encryption\n- Cleartext Local SQLite Invariant"]
         ConvRepo["ConversationRepository\n- Love Connection Seed\n- Inbox Unread Tracking"]
         AppLockServ["AppLockService\n- Passcode Keystore Verification\n- PIN Throttling & 60s Lockout\n- Local Biometrics & Auto-Lock"]
         SecurityServ["AuthSecurityService & AccessThrottling\n- Challenge-Response Handshake\n- Exponential Backoff (10s..5m)"]
+        EncryptionServ["EncryptionService / StandardE2EEEncryptionService\n- X25519 ECDH Shared Secret\n- HKDF-SHA256 Key Derivation\n- AES-256-GCM AEAD Authenticated Encryption\n- Hardware Private Key Keystore Isolation"]
     end
 
     subgraph DomainLayer["Domain & Core Layer (Pure Dart Business Rules)"]
-        Models["Domain Models\n- User & UserAccount\n- Conversation & ChatMessage\n- SecurityLog (Audit Events)"]
-        CryptoCore["Cryptographic & Core Utils\n- RecoveryKeyUtils (BIP-39 Mnemonic)\n- HashUtils (Salt + SHA-256)\n- AppTheme (Pure Black & Charcoal)\n- AppConstants & Exceptions"]
+        Models["Domain Models\n- User & UserAccount\n- Conversation & ChatMessage\n- EncryptedPayload (E2EE Envelope)\n- SecurityLog (Audit Events)"]
+        CryptoCore["Cryptographic & Core Utils\n- CryptoKeyUtils (X25519, HKDF, AES-GCM)\n- RecoveryKeyUtils (BIP-39 Mnemonic)\n- HashUtils (Salt + SHA-256)\n- AppTheme (Pure Black & Charcoal)\n- AppConstants & Exceptions (SecurityException)"]
     end
 
     subgraph DataStorageLayer["Data & Hardware Layer (Infrastructure)"]
-        DriftDB["Drift SQLite Database (v3)\n- Messages Table\n- UserAccounts Table (Recovery Key)\n- SecurityLogs Table (Audit Ledger)"]
-        SecStore["flutter_secure_storage\n- Android Keystore\n- iOS Keychain\n- Windows DPAPI"]
+        DriftDB["Drift SQLite Database (v3)\n- Messages Table\n- UserAccounts Table (Recovery Key & Public Identity Key)\n- SecurityLogs Table (Audit Ledger)"]
+        SecStore["flutter_secure_storage\n- Android Keystore / iOS Keychain / Windows DPAPI\n- Passcode Verifier & E2EE Private Keys"]
         LocalAuth["local_auth\n- Platform OS Biometrics"]
     end
 
@@ -282,11 +283,15 @@ flowchart TD
     Screens --> AppLockServ
 
     AuthRepo --> SecurityServ
+    AuthRepo --> EncryptionServ
     AuthRepo --> Models
+    ChatRepo --> EncryptionServ
     ChatRepo --> Models
     ConvRepo --> Models
     AppLockServ --> CryptoCore
     SecurityServ --> CryptoCore
+    EncryptionServ --> CryptoCore
+    EncryptionServ --> SecStore
 
     AuthRepo --> DriftDB
     ChatRepo --> DriftDB
@@ -299,7 +304,7 @@ flowchart TD
 
 ## 6. End-to-End Encryption & Ephemeral Relay Protocol
 
-Planned for **Phases 10–12**, this protocol guarantees zero-knowledge message delivery with no permanent server footprint:
+Implemented in **Phase 10** (X25519 ECDH + HKDF-SHA256 + AES-256-GCM authenticated payload encryption & tamper detection) and connecting to the temporary Firebase relay in **Phases 11–12**, this protocol guarantees zero-knowledge message delivery with no permanent server footprint:
 
 ```mermaid
 sequenceDiagram
