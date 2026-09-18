@@ -7,6 +7,8 @@ class ChatHeader extends StatelessWidget {
   final VoidCallback? onSignOut;
   final VoidCallback? onBackPressed;
   final String? currentUsername;
+  final bool isTyping;
+  final String? presenceText;
 
   const ChatHeader({
     super.key,
@@ -15,6 +17,8 @@ class ChatHeader extends StatelessWidget {
     this.onSignOut,
     this.onBackPressed,
     this.currentUsername,
+    this.isTyping = false,
+    this.presenceText,
   });
 
   @override
@@ -65,7 +69,7 @@ class ChatHeader extends StatelessWidget {
               ),
               const SizedBox(width: 12),
 
-              /// Partner Name Title & optional current user handle
+              /// Partner Name Title & optional presence/typing subtitle
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -79,7 +83,46 @@ class ChatHeader extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (currentUsername != null)
+                    if (isTyping)
+                      const Row(
+                        children: [
+                          Text(
+                            'typing...',
+                            style: TextStyle(
+                              color: Color(0xFFFF80AB),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      )
+                    else if (presenceText != null && presenceText!.isNotEmpty)
+                      Row(
+                        children: [
+                          if (presenceText == 'online') ...[
+                            Container(
+                              width: 6,
+                              height: 6,
+                              margin: const EdgeInsets.only(right: 4),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF00E676),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                          Text(
+                            presenceText!,
+                            style: TextStyle(
+                              color: presenceText == 'online'
+                                  ? const Color(0xFF00E676)
+                                  : Colors.white54,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      )
+                    else if (currentUsername != null)
                       Text(
                         'as $currentUsername',
                         style: const TextStyle(

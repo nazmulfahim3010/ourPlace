@@ -98,6 +98,51 @@ class EphemeralRelayEnvelope {
     );
   }
 
+  /// Create an ephemeral typing indicator signal (Phase 13)
+  factory EphemeralRelayEnvelope.typing({
+    required String senderId,
+    required String recipientId,
+    required bool isTyping,
+    DateTime? timestamp,
+    Duration ttl = const Duration(seconds: 5),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'sig_typing_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: isTyping ? 'true' : 'false',
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'typing',
+    );
+  }
+
+  /// Create an ephemeral presence heartbeat signal (Phase 13)
+  factory EphemeralRelayEnvelope.presence({
+    required String senderId,
+    required String recipientId,
+    required bool isOnline,
+    DateTime? lastSeen,
+    DateTime? timestamp,
+    Duration ttl = const Duration(seconds: 35),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    final payload = jsonEncode({
+      'isOnline': isOnline,
+      if (lastSeen != null) 'lastSeen': lastSeen.toIso8601String(),
+    });
+    return EphemeralRelayEnvelope(
+      id: 'sig_presence_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: payload,
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'presence',
+    );
+  }
+
   /// Whether this envelope is a status receipt rather than a content payload
   bool get isReceipt =>
       envelopeType == 'delivery_receipt' || envelopeType == 'read_receipt';
@@ -107,6 +152,15 @@ class EphemeralRelayEnvelope {
 
   /// Whether this envelope is a read receipt
   bool get isReadReceipt => envelopeType == 'read_receipt';
+
+  /// Whether this envelope is an ephemeral real-time typing indicator
+  bool get isTypingSignal => envelopeType == 'typing';
+
+  /// Whether typing indicator is actively active
+  bool get isTypingActive => isTypingSignal && ciphertextPayload == 'true';
+
+  /// Whether this envelope is an ephemeral presence heartbeat
+  bool get isPresenceSignal => envelopeType == 'presence';
 
   /// Target message ID for receipt envelopes
   String get targetMessageId => ciphertextPayload;

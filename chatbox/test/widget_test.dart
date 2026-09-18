@@ -25,6 +25,8 @@ import 'package:chatbox/screens/auth/app_lock_screen.dart';
 import 'package:chatbox/screens/auth/passcode_setup_screen.dart';
 import 'package:chatbox/screens/profile/profile_screen.dart';
 import 'package:chatbox/widgets/conversation_tile.dart';
+import 'package:chatbox/widgets/chat_header.dart';
+import 'package:chatbox/widgets/chat_input_field.dart';
 import 'package:chatbox/widgets/numeric_keypad.dart';
 import 'package:chatbox/widgets/passcode_dots.dart';
 import 'package:chatbox/core/utils/recovery_key_utils.dart';
@@ -36,6 +38,8 @@ import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/services/relay_service.dart';
+import 'package:chatbox/models/user_presence.dart';
+import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
@@ -603,6 +607,8 @@ void main() {
 
       // Let animations and timers finish
       await tester.pump(const Duration(seconds: 3));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
     });
   });
 
@@ -2181,6 +2187,269 @@ void main() {
       // Message dispatched and updated to sent
       expect((await aliceLocalDb.getMessageById('reconcile_out_01'))!.status, equals(MessageStatus.sent));
       expect(await sharedRelay.getPendingQueueCount('@bob'), equals(1));
+    });
+  });
+
+  group('Phase 13: UserPresence Domain Model Tests', () {
+    test('UserPresence statusText formats online, just now, minutes ago, and days ago correctly', () {
+      final now = DateTime.now().toUtc();
+      final online = UserPresence(userId: '@alice', isOnline: true);
+      expect(online.statusText, equals('online'));
+
+      final offlineNoTime = UserPresence(userId: '@alice', isOnline: false);
+      expect(offlineNoTime.statusText, equals('offline'));
+
+      final justNow = UserPresence(userId: '@alice', isOnline: false, lastSeen: now.subtract(const Duration(seconds: 20)));
+      expect(justNow.statusText, equals('last seen just now'));
+
+      final fiveMinsAgo = UserPresence(userId: '@alice', isOnline: false, lastSeen: now.subtract(const Duration(minutes: 5)));
+      expect(fiveMinsAgo.statusText, equals('last seen 5m ago'));
+
+      final twoHoursAgo = UserPresence(userId: '@alice', isOnline: false, lastSeen: now.subtract(const Duration(hours: 2)));
+      expect(twoHoursAgo.statusText, equals('last seen 2h ago'));
+
+      final yesterday = UserPresence(userId: '@alice', isOnline: false, lastSeen: now.subtract(const Duration(days: 1)));
+      expect(yesterday.statusText, equals('last seen yesterday'));
+
+      final threeDaysAgo = UserPresence(userId: '@alice', isOnline: false, lastSeen: now.subtract(const Duration(days: 3)));
+      expect(threeDaysAgo.statusText, equals('last seen 3d ago'));
+    });
+
+    test('UserPresence serialization and deserialization roundtrip', () {
+      final now = DateTime.now().toUtc();
+      final presence = UserPresence(userId: '@twilight', isOnline: true, lastSeen: now);
+      final serialized = presence.serialize();
+      final restored = UserPresence.deserialize(serialized);
+
+      expect(restored.userId, equals('@twilight'));
+      expect(restored.isOnline, isTrue);
+      expect(restored.lastSeen?.toIso8601String(), equals(now.toIso8601String()));
+    });
+  });
+
+  group('Phase 13: RealtimeService Typing Indicators & Inactivity Tests', () {
+    late InMemoryFirebaseRelayService relay;
+    late DefaultRealtimeService aliceRealtime;
+    late DefaultRealtimeService bobRealtime;
+
+    setUp(() {
+      relay = InMemoryFirebaseRelayService.isolated();
+      aliceRealtime = DefaultRealtimeService(
+        chatService: ChatService(relayService: relay),
+        storage: InMemorySecureStorageService(),
+      );
+      bobRealtime = DefaultRealtimeService(
+        chatService: ChatService(relayService: relay),
+        storage: InMemorySecureStorageService(),
+      );
+    });
+
+    tearDown(() {
+      aliceRealtime.dispose();
+      bobRealtime.dispose();
+      relay.dispose();
+    });
+
+    test('Alice sends typing true and Bob receives typing event', () async {
+      final bobTypingEvents = <bool>[];
+      final sub = bobRealtime
+          .watchTyping(currentUserId: '@bob', partnerId: '@alice')
+          .listen(bobTypingEvents.add);
+
+      await aliceRealtime.sendTyping(
+        currentUserId: '@alice',
+        partnerId: '@bob',
+        isTyping: true,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(bobTypingEvents.isNotEmpty, isTrue);
+      expect(bobTypingEvents.last, isTrue);
+
+      // Sending isTyping: false immediately clears it
+      await aliceRealtime.sendTyping(
+        currentUserId: '@alice',
+        partnerId: '@bob',
+        isTyping: false,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(bobTypingEvents.last, isFalse);
+
+      await sub.cancel();
+    });
+
+    test('Typing privacy toggle blocks typing emissions when disabled', () async {
+      await aliceRealtime.setTypingSharingEnabled(false);
+      expect(await aliceRealtime.isTypingSharingEnabled(), isFalse);
+
+      final bobTypingEvents = <bool>[];
+      final sub = bobRealtime
+          .watchTyping(currentUserId: '@bob', partnerId: '@alice')
+          .listen(bobTypingEvents.add);
+
+      await aliceRealtime.sendTyping(
+        currentUserId: '@alice',
+        partnerId: '@bob',
+        isTyping: true,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(bobTypingEvents, isEmpty);
+
+      await sub.cancel();
+    });
+  });
+
+  group('Phase 13: RealtimeService Presence Heartbeat & Stealth Mode Tests', () {
+    late InMemoryFirebaseRelayService relay;
+    late DefaultRealtimeService aliceRealtime;
+    late DefaultRealtimeService bobRealtime;
+
+    setUp(() {
+      relay = InMemoryFirebaseRelayService.isolated();
+      aliceRealtime = DefaultRealtimeService(
+        chatService: ChatService(relayService: relay),
+        storage: InMemorySecureStorageService(),
+      );
+      bobRealtime = DefaultRealtimeService(
+        chatService: ChatService(relayService: relay),
+        storage: InMemorySecureStorageService(),
+      );
+    });
+
+    tearDown(() {
+      aliceRealtime.dispose();
+      bobRealtime.dispose();
+      relay.dispose();
+    });
+
+    test('Alice updates online presence and Bob receives real-time presence', () async {
+      final bobPresenceEvents = <UserPresence>[];
+      final sub = bobRealtime
+          .watchPresence(currentUserId: '@bob', partnerId: '@alice')
+          .listen(bobPresenceEvents.add);
+
+      await aliceRealtime.updatePresence(
+        currentUserId: '@alice',
+        partnerId: '@bob',
+        isOnline: true,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(bobPresenceEvents.isNotEmpty, isTrue);
+      expect(bobPresenceEvents.last.isOnline, isTrue);
+      expect(bobPresenceEvents.last.statusText, equals('online'));
+
+      // Alice goes offline / pauses app
+      aliceRealtime.pause();
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(bobPresenceEvents.last.isOnline, isFalse);
+
+      await sub.cancel();
+    });
+
+    test('Stealth mode masks presence when disabled', () async {
+      await aliceRealtime.setPresenceSharingEnabled(false);
+      expect(await aliceRealtime.isPresenceSharingEnabled(), isFalse);
+
+      final bobPresenceEvents = <UserPresence>[];
+      final sub = bobRealtime
+          .watchPresence(currentUserId: '@bob', partnerId: '@alice')
+          .listen(bobPresenceEvents.add);
+
+      await aliceRealtime.updatePresence(
+        currentUserId: '@alice',
+        partnerId: '@bob',
+        isOnline: true,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 20));
+      expect(bobPresenceEvents.isNotEmpty, isTrue);
+      expect(bobPresenceEvents.last.isOnline, isFalse); // masked to false!
+
+      await sub.cancel();
+    });
+  });
+
+  group('Phase 13: UI Widget Tests (Header Presence/Typing & Profile Privacy)', () {
+    testWidgets('ChatHeader renders typing indicator and online presence correctly', (tester) async {
+      // 1. Online presence
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatHeader(
+              partnerName: '@alex',
+              presenceText: 'online',
+              isTyping: false,
+              onSendLuv: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('@alex'), findsOneWidget);
+      expect(find.text('online'), findsOneWidget);
+      expect(find.text('typing...'), findsNothing);
+
+      // 2. Typing state overrides presence
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatHeader(
+              partnerName: '@alex',
+              presenceText: 'online',
+              isTyping: true,
+              onSendLuv: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('typing...'), findsOneWidget);
+      expect(find.text('online'), findsNothing);
+    });
+
+    testWidgets('ChatInputField fires onChanged callback when typed', (tester) async {
+      String typedText = '';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatInputField(
+              controller: TextEditingController(),
+              onChanged: (val) => typedText = val,
+              onSendPressed: () {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), 'Hello sweetie 💕');
+      expect(typedText, equals('Hello sweetie 💕'));
+    });
+
+    testWidgets('ProfileScreen displays Privacy & Presence card with toggles', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ProfileScreen(
+            currentUser: User(
+              id: 'test_user',
+              username: '@alex',
+              displayName: 'Alex',
+              createdAt: DateTime.now(),
+            ),
+            appLockService: MockAppLockService(),
+            realtimeService: DefaultRealtimeService(
+              storage: InMemorySecureStorageService(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Privacy & Presence (Phase 13)'), findsOneWidget);
+      expect(find.text('Share Online Status & Last Seen'), findsOneWidget);
+      expect(find.text('Share Typing Indicator'), findsOneWidget);
     });
   });
 }

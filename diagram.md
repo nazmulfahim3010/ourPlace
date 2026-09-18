@@ -1,5 +1,5 @@
 # ourPlace — Architectural & Technical Diagrams Specification
-> **Document Version:** 1.3.0  
+> **Document Version:** 1.4.0  
 > **Last Updated:** 2026-09-18  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Companion Document:** [`docts.md`](file:///e:/ourPlace/docts.md)
@@ -18,6 +18,7 @@
 9. [Local Database Schema & Entity Relationships](#9-local-database-schema--entity-relationships)
 10. [Security Enclave & Cryptographic Trust Boundaries](#10-security-enclave--cryptographic-trust-boundaries)
 11. [Message State Lifecycle & Synchronization Flow](#11-message-state-lifecycle--synchronization-flow)
+12. [Real-Time Typing Indicators & Ephemeral Presence Flow](#12-real-time-typing-indicators--ephemeral-presence-flow)
 
 ---
 
@@ -617,3 +618,82 @@ sequenceDiagram
     Note over Alice: Double blue check ticks render in UI
 ```
 
+---
+
+## 12. Real-Time Typing Indicators & Ephemeral Presence Flow
+
+Real-time typing indicators and online presence adhere strictly to the zero-knowledge ephemeral relay model. Signals are never written to disk or database tables, carry short time-to-live (TTL) limits (5s for typing, 35s for presence), and can be completely suppressed via user privacy preferences (Stealth Mode).
+
+### 12.1 Real-Time Typing Debounce & Inactivity Auto-Expiry Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Alice Device
+    participant RealtimeA as Alice RealtimeService
+    participant Relay as Ephemeral Relay
+    participant RealtimeB as Bob RealtimeService
+    actor Bob as Bob Device
+
+    Alice->>RealtimeA: Keystroke in ChatInputField
+    Note over RealtimeA: Debounce check (<= 2s elapsed?)
+    RealtimeA->>Relay: dispatchEphemeralEnvelope(type: "typing", isTyping: true, ttl: 5s)
+    Relay-->>RealtimeB: Forward typing signal
+    RealtimeB->>Bob: Stream updates: isTyping = true
+    Note over Bob: ChatHeader displays "typing..." in warm pink
+
+    Alice->>RealtimeA: More keystrokes (within 2s debounce window)
+    Note over RealtimeA: Keystrokes throttled (no redundant network packets)
+
+    alt Alice stops typing (3s inactivity)
+        Note over RealtimeA: 3s inactivity timer fires
+        RealtimeA->>Relay: dispatchEphemeralEnvelope(type: "typing", isTyping: false)
+        Relay-->>RealtimeB: Forward cancellation signal
+        RealtimeB->>Bob: Stream updates: isTyping = false
+        Note over Bob: ChatHeader reverts to presence status
+    else Alice sends message immediately
+        Alice->>RealtimeA: sendMessage() triggers cancelTyping()
+        RealtimeA->>Relay: dispatchEphemeralEnvelope(type: "typing", isTyping: false)
+        Relay-->>RealtimeB: Forward cancellation signal
+        RealtimeB->>Bob: Stream updates: isTyping = false
+    else Network drops or app killed
+        Note over RealtimeB: 5s TTL expires on receiver side
+        RealtimeB->>Bob: Auto-expire: isTyping = false
+    end
+```
+
+### 12.2 Ephemeral Presence Heartbeat & Stealth Mode Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Alice Device
+    participant RealtimeA as Alice RealtimeService
+    participant Relay as Ephemeral Relay
+    participant RealtimeB as Bob RealtimeService
+    actor Bob as Bob Device
+
+    Note over Alice: App foregrounded (resumed lifecycle)
+    RealtimeA->>RealtimeA: Start 20s heartbeat timer
+    RealtimeA->>Relay: dispatchEphemeralEnvelope(type: "presence", isOnline: true, ttl: 35s)
+    Relay-->>RealtimeB: Forward presence signal
+    RealtimeB->>Bob: Stream updates: UserPresence(isOnline: true, lastSeen: now)
+    Note over Bob: ChatHeader displays "● online" with green indicator
+
+    Note over Alice,RealtimeA: 20s later: periodic heartbeat fires
+    RealtimeA->>Relay: dispatchEphemeralEnvelope(type: "presence", isOnline: true, ttl: 35s)
+
+    alt Alice backgrounds app (paused lifecycle)
+        Note over Alice: Lifecycle transitions to paused / inactive
+        RealtimeA->>Relay: dispatchEphemeralEnvelope(type: "presence", isOnline: false, ttl: 35s)
+        Relay-->>RealtimeB: Forward offline signal
+        RealtimeB->>Bob: Stream updates: isOnline = false, lastSeen = now
+        Note over Bob: ChatHeader displays "last seen just now"
+    else Alice enables Stealth Mode in Profile
+        Alice->>RealtimeA: setSharePresence(false)
+        RealtimeA->>RealtimeA: Cancel heartbeat timer
+        RealtimeA->>Relay: dispatchEphemeralEnvelope(type: "presence", isOnline: false)
+        Relay-->>RealtimeB: Forward offline signal
+        Note over Bob: Bob sees Alice as offline with last seen frozen
+    end
+```

@@ -8,8 +8,8 @@ This guide contains all external, manual tasks you need to complete for the proj
 
 - [x] **Phase 11: Firebase Cloud Setup (COMPLETED ✅ — 2026-09-18)**
 - [x] **Phase 12: Message Synchronization (COMPLETED ✅ — 2026-09-18, Zero Manual Action Needed; Pure Client-Side E2EE Sync)**
-- [ ] **Phase 13: Real-Time Features (Typing Indicators & Presence - Automated Protocol)**
-- [ ] **Phase 14: Push Notifications (Firebase Cloud Messaging - FCM)**
+- [x] **Phase 13: Real-Time Features (COMPLETED ✅ — 2026-09-18, Zero Manual Action Needed; Ephemeral Debounced Signals & Stealth Controls)**
+- [ ] **Phase 14: Push Notifications (Firebase Cloud Messaging - FCM Wakeup Signals)**
 - [ ] **Phase 15: Media Messaging (Firebase Storage / S3 Setup - Optional)**
 - [ ] **Phase 16–18: Physical Two-Device Testing & Production Release**
 
@@ -39,7 +39,17 @@ All external setup for Phase 11 has been successfully completed:
 
 ---
 
-## 2. Phase 14: Push Notifications (FCM) Setup *(Upcoming)*
+## 2. Phase 13: Real-Time Features (Typing & Presence) (COMPLETED ✅)
+
+Zero manual configuration was needed from you! The client-side protocol was built and fully verified with 85/85 automated unit/widget tests:
+- **Typing Indicator:** 2s keystroke debounce, 3s inactivity auto-cancellation, 5s TTL on wire. Shows warm pink italic `typing...` in `ChatHeader`.
+- **Online Presence:** 20s background heartbeat, 35s wire TTL. Shows green dot `● online` or human-friendly relative last seen (`last seen just now`, `last seen 5m ago`, `last seen 2h ago`).
+- **Stealth Mode (Profile Toggles):** Go to **Profile** ➔ **Privacy & Presence** to disable typing indicators or last seen at will.
+- **Zero-Disk / Zero-Knowledge Guarantee:** Heartbeats and typing signals are completely ephemeral — never saved to SQLite or permanent server storage.
+
+---
+
+## 3. Phase 14: Push Notifications (FCM) Setup *(Upcoming)*
 
 When we reach Phase 14, push notifications will notify the recipient's phone to wake up and fetch pending ciphertexts.
 
@@ -52,7 +62,7 @@ When we reach Phase 14, push notifications will notify the recipient's phone to 
 
 ---
 
-## 3. Phase 15: Media Messaging Storage *(Upcoming)*
+## 4. Phase 15: Media Messaging Storage *(Upcoming)*
 
 For sharing end-to-end encrypted photos and voice notes:
 1. Go to **Build** ➔ **Storage** in Firebase Console.
@@ -61,7 +71,7 @@ For sharing end-to-end encrypted photos and voice notes:
 
 ---
 
-## 4. Multi-Device Real Testing & APK Generation
+## 5. Multi-Device Real Testing & APK Generation
 
 Once we finish the core phases, here is how you install and test it between two phones:
 

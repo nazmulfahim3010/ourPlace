@@ -1,5 +1,5 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.4.0  
+> **Document Version:** 3.5.0  
 > **Last Updated:** 2026-09-18  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 12 — Message Synchronization** |
-| **Current Status** | **COMPLETED** (Ready for Phase 13: Real-Time Features) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization) |
-| **Next Phase** | **Phase 13 — Real-Time Features** |
+| **Current Phase** | **Phase 13 — Real-Time Features** |
+| **Current Status** | **COMPLETED** (Ready for Phase 14: Push Notifications) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features) |
+| **Next Phase** | **Phase 14 — Push Notifications** |
 
 ---
 
@@ -61,7 +61,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
           │
           ▼
 [Phase 13: Real-Time]    ──►  [Phase 14: Push Notifs]   ──►  [Phase 15: Media]
-       (NEXT)                          (PLANNED)                     (PLANNED)
+       (COMPLETED)                     (NEXT)                          (PLANNED)
                                                                           │
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
@@ -178,10 +178,13 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Conversation mark-as-read integration emitting read receipts to original sender
   - [x] Comprehensive test suite (76/76 tests passing, 0 analyzer issues)
 
-- [ ] **Phase 13 — Real-Time Features**
-  - [ ] Real-time typing indicators with debounce
-  - [ ] Ephemeral presence (online / last seen)
-  - [ ] Real-time read receipts
+- [x] **Phase 13 — Real-Time Features**
+  - [x] Real-time typing indicators with 2s debounce and 3s inactivity auto-expiry
+  - [x] Ephemeral presence heartbeat and human-friendly last seen formatting
+  - [x] Privacy-preserving stealth mode (presence & typing sharing toggles in Profile)
+  - [x] Lifecycle battery optimization (auto-pause on background/lock)
+  - [x] Reactive SQLite message status stream in ChatScreen (🕒 ➔ ✓ ➔ ✓✓ ➔ ✓✓ blue)
+  - [x] Comprehensive test suite (85/85 tests passing, 0 analyzer issues)
 
 - [ ] **Phase 14 — Push Notifications**
   - [ ] Privacy-preserving notification payloads (no plaintext leaks)
@@ -778,11 +781,65 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ---
 
+### 7.8. Phase 13 Completion Report — Real-Time Features
+
+- **Current Phase:** Phase 13 — Real-Time Features
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. **User Presence Domain Model (`UserPresence`):**
+   - Created `UserPresence` domain model with `userId`, `isOnline`, `lastSeen`, serialization routines, and dynamic human-friendly `statusText` ("online", "last seen just now", "last seen 5m ago", "last seen 2h ago", "last seen yesterday", "last seen 3d ago").
+2. **Ephemeral Signaling Wire Envelopes (`EphemeralRelayEnvelope`):**
+   - Added support for `'typing'` envelopes with 5-second auto-expiry TTL.
+   - Added support for `'presence'` envelopes with 35-second heartbeat TTL.
+   - Added factory constructors `EphemeralRelayEnvelope.typing` and `EphemeralRelayEnvelope.presence`.
+   - Added helper getters `isTypingSignal`, `isPresenceSignal`, and `isTypingActive`.
+3. **Real-Time Service Layer (`RealtimeService` & `DefaultRealtimeService`):**
+   - Built `RealtimeService` interface and `DefaultRealtimeService` coordinating:
+     - `watchTyping`: Reactive stream for partner typing events.
+     - `sendTyping`: 2-second debounce throttle preventing network flooding, 3-second auto-expiry timer, and instant idle cancellation.
+     - `watchPresence`: Reactive stream for partner presence updates.
+     - `updatePresence`: Online/offline state signaling and periodic 20-second active heartbeat.
+     - Privacy controls: `isPresenceSharingEnabled`, `setPresenceSharingEnabled`, `isTypingSharingEnabled`, `setTypingSharingEnabled` backed by `SecureStorageService`.
+     - Lifecycle hooks: `pause()` (cancels timers, notifies partner of offline transition) and `resume()` (re-engages heartbeat).
+4. **Repository Layer Integration (`ChatRepository`):**
+   - Exposed `RealtimeService get realtimeService` in `ChatRepository` and `LocalChatRepository`.
+5. **UI Widget Enhancements:**
+   - `ChatHeader`: Displays real-time typing indicator (`typing...` in warm pink italic style) or presence status (`● online` with vibrant green dot, or relative last seen time).
+   - `ChatInputField`: Added `onChanged` callback firing typing notifications and immediately cancelling typing on send.
+   - `ChatScreen`: Wired typing stream, presence stream, reactive Drift messages stream (`watchMessages`), and `WidgetsBindingObserver` lifecycle pausing/resuming.
+   - `ProfileScreen`: Added "Privacy & Presence (Phase 13)" card with toggle switches for "Share Online Status & Last Seen" and "Share Typing Indicator" allowing full stealth mode.
+6. **Automated Test Suite Expansion (9 New Tests):**
+   - `UserPresence` status text formatting and serialization.
+   - `RealtimeService` typing events, inactivity auto-expiry, and privacy toggle.
+   - `RealtimeService` presence heartbeat, app pause transition, and stealth mode masking.
+   - `ChatHeader` widget typing/presence rendering.
+   - `ChatInputField` typing callback.
+   - `ProfileScreen` presence switches.
+   - Test suite elevated from **76 to 85 tests (100% passing)** with **0 analyzer issues**.
+
+#### Files Created
+- `chatbox/lib/models/user_presence.dart`: Domain model for real-time user presence.
+- `chatbox/lib/services/realtime_service.dart`: RealtimeService contract and DefaultRealtimeService.
+
+#### Files Modified
+- `chatbox/lib/models/ephemeral_relay_envelope.dart`: Added typing and presence signaling constructors.
+- `chatbox/lib/repositories/chat_repository.dart`: Exposed `realtimeService`.
+- `chatbox/lib/widgets/chat_header.dart`: Added typing & presence indicators.
+- `chatbox/lib/widgets/chat_input_field.dart`: Added `onChanged` callback.
+- `chatbox/lib/screens/chat_screen.dart`: Wired realtime subscriptions and lifecycle observer.
+- `chatbox/lib/screens/profile/profile_screen.dart`: Added Privacy & Presence toggle card.
+- `chatbox/lib/screens/home_screen.dart`: Passed `realtimeService` to `ProfileScreen`.
+- `chatbox/test/widget_test.dart`: Added 9 new unit & widget tests (85 tests total).
+- `docts.md`: Updated master documentation to Version 3.5.0.
+
+---
+
 ## 8. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
 - **Test Command:** `flutter test`
-- **Results:** `76 / 76 tests passing` (100% pass rate)
+- **Results:** `85 / 85 tests passing` (100% pass rate)
 - **Analyzer Check:** `flutter analyze` ➔ `No issues found!`
 
 ### Comprehensive Test Coverage Breakdown
@@ -813,26 +870,32 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 | **Phase 11: End-to-End Relay Integration** | 1 | Full Alice ➔ Relay ➔ Bob delivery flow: Local SQLite cleartext on both devices, zero plaintext in relay queue, immediate post-ACK purge |
 | **Phase 12: Message Lifecycle & Monotonic Status** | 1 | Unidirectional progression validation (`sending` ➔ `sent` ➔ `delivered` ➔ `read`), rejection of regressive transitions, terminal read state |
 | **Phase 12: Offline Queueing & Reconciliation** | 4 | Offline sending queueing with `failed` status & `flushOutboundQueue` drain, single-message `retryMessage` flow, End-to-End Delivery & Read receipt synchronization (Alice ➔ Bob ➔ Alice), bidirectional `reconcile` |
-| **Total Test Suite** | **76** | **100% Passing — Zero Analyzer Issues** |
+| **Phase 13: UserPresence Domain Model** | 2 | Status text formatting ("online", "just now", "5m ago", "2h ago", "yesterday", "3d ago"), JSON serialization and deserialization roundtrip |
+| **Phase 13: RealtimeService Typing Indicators** | 2 | Alice sends typing ➔ Bob receives event, 3s inactivity auto-expiry, instant send cancellation, typing privacy toggle blocking emission |
+| **Phase 13: RealtimeService Presence & Heartbeat** | 2 | Alice online presence ➔ Bob receives update, app pause transition to offline, stealth mode presence masking |
+| **Phase 13: UI Widget Tests** | 3 | `ChatHeader` rendering typing and online states, `ChatInputField` firing `onChanged`, `ProfileScreen` rendering Privacy & Presence card with toggles |
+| **Total Test Suite** | **85** | **100% Passing — Zero Analyzer Issues** |
 
 ---
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Next Phase: Phase 13 — Real-Time Features
+### Next Phase: Phase 14 — Push Notifications
 
-Phase 13 builds upon Phase 12 synchronization to introduce live interactivity while preserving zero-telemetry and battery efficiency.
+Phase 14 connects Firebase Cloud Messaging (FCM) to deliver background wakeups and incoming message notifications without leaking cleartext contents or compromising user anonymity.
 
-#### Key Objectives for Phase 13:
-1. **Real-Time Typing Indicators:**
-   - Ephemeral, debounced typing event emission (3-second auto-expiry).
-   - Zero-payload wire format (e.g. `{"type": "typing", "senderId": "@alice"}`).
-   - Purged immediately upon send or idle.
-2. **Ephemeral Presence (Online / Last Seen):**
-   - Active heartbeat without logging user tracking history.
-   - User-configurable presence privacy (hide online status).
-3. **Live UI Status Transitions:**
-   - Real-time animated ticks (single tick ➔ double tick ➔ blue double tick) reactive to receipt streams.
+#### Key Objectives for Phase 14:
+1. **FCM Token Registration & Signaling:**
+   - Ephemeral device registration associating the current user account with an FCM device token.
+   - Zero telemetry: FCM token stored ephemerally with automatic rotation.
+2. **Silent Wakeup Signals:**
+   - Data-only notification payloads that wake up the app in the background to pull and decrypt ciphertexts.
+3. **Privacy-Preserving Notification Previews:**
+   - Avoid exposing sensitive plaintext message content or sender identities in system notifications.
+   - Displays generic alert: *"New private message received"*.
+4. **Deep Linking to Conversation:**
+   - Tapping the notification securely routes the user to the correct conversation once local device passcode verification succeeds.
+
 
 
 

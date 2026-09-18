@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/models/user.dart';
+import 'package:chatbox/models/user_presence.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
 import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/widgets/chat_header.dart';
@@ -30,7 +32,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   late final TextEditingController _messageController;
   late final ScrollController _scrollController;
   late final ChatRepository _chatRepository;
@@ -38,20 +40,93 @@ class _ChatScreenState extends State<ChatScreen> {
   List<ChatMessage> _messages = [];
   bool _isLoading = true;
 
+  // Phase 13: Real-Time state & subscriptions
+  bool _isPartnerTyping = false;
+  UserPresence? _partnerPresence;
+  StreamSubscription<bool>? _typingSubscription;
+  StreamSubscription<UserPresence>? _presenceSubscription;
+  StreamSubscription<List<ChatMessage>>? _messageSubscription;
+
   String get _currentUserId => widget.currentUser?.id ?? AppConstants.currentUserId;
   String get _currentUsername => widget.currentUser?.username ?? 'You';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _chatRepository = widget.repository ?? LocalChatRepository();
     _messageController = TextEditingController();
     _scrollController = ScrollController();
     _loadMessagesFromRepository();
+    _initRealtimeSubscriptions();
+  }
+
+  void _initRealtimeSubscriptions() {
+    // 1. Reactive messages stream from local SQLite
+    _messageSubscription = _chatRepository
+        .watchMessages(widget.partnerId)
+        .listen((updatedList) {
+      if (mounted && updatedList.isNotEmpty) {
+        setState(() {
+          _messages = updatedList;
+        });
+      }
+    });
+
+    // 2. Typing indicator stream
+    _typingSubscription = _chatRepository.realtimeService
+        .watchTyping(
+          currentUserId: _currentUserId,
+          partnerId: widget.partnerId,
+        )
+        .listen((isTyping) {
+      if (mounted) {
+        setState(() {
+          _isPartnerTyping = isTyping;
+        });
+      }
+    });
+
+    // 3. Presence stream
+    _presenceSubscription = _chatRepository.realtimeService
+        .watchPresence(
+          currentUserId: _currentUserId,
+          partnerId: widget.partnerId,
+        )
+        .listen((presence) {
+      if (mounted) {
+        setState(() {
+          _partnerPresence = presence;
+        });
+      }
+    });
+
+    // 4. Update own presence to online
+    _chatRepository.realtimeService.updatePresence(
+      currentUserId: _currentUserId,
+      partnerId: widget.partnerId,
+      isOnline: true,
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _chatRepository.realtimeService.pause();
+    } else if (state == AppLifecycleState.resumed) {
+      _chatRepository.realtimeService.resume();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _typingSubscription?.cancel();
+    _presenceSubscription?.cancel();
+    _messageSubscription?.cancel();
+    _chatRepository.realtimeService.pause();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -192,6 +267,13 @@ class _ChatScreenState extends State<ChatScreen> {
     // Save and dispatch through ChatRepository
     await _chatRepository.sendMessage(newMessage);
 
+    // Immediately clear typing state
+    _chatRepository.realtimeService.sendTyping(
+      currentUserId: _currentUserId,
+      partnerId: widget.partnerId,
+      isTyping: false,
+    );
+
     // Simulate transition to 'sent'
     Future.delayed(const Duration(milliseconds: 600), () async {
       if (!mounted) return;
@@ -206,6 +288,14 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
+  }
+
+  void _onInputChanged(String text) {
+    _chatRepository.realtimeService.sendTyping(
+      currentUserId: _currentUserId,
+      partnerId: widget.partnerId,
+      isTyping: text.trim().isNotEmpty,
+    );
   }
 
   /// Handle "Send luv" quick action
@@ -229,6 +319,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ChatHeader(
             partnerName: widget.partnerName,
             currentUsername: _currentUsername,
+            isTyping: _isPartnerTyping,
+            presenceText: _partnerPresence?.statusText,
             onSendLuv: _sendLuv,
             onSignOut: widget.authRepository != null
                 ? () async {
@@ -259,6 +351,7 @@ class _ChatScreenState extends State<ChatScreen> {
           /// Bottom Input Bar
           ChatInputField(
             controller: _messageController,
+            onChanged: _onInputChanged,
             onSendPressed: _sendMessage,
           ),
         ],

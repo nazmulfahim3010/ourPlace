@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 class ChatInputField extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onSendPressed;
+  final ValueChanged<String>? onChanged;
 
   const ChatInputField({
     super.key,
     required this.controller,
     required this.onSendPressed,
+    this.onChanged,
   });
 
   @override
@@ -28,6 +30,7 @@ class ChatInputField extends StatelessWidget {
                 ),
                 child: TextField(
                   controller: controller,
+                  onChanged: onChanged,
                   style: const TextStyle(color: Colors.white, fontSize: 15),
                   cursorColor: Colors.white,
                   textInputAction: TextInputAction.send,

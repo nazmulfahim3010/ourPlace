@@ -8,6 +8,7 @@ import 'package:chatbox/models/user.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
 
 import 'package:chatbox/services/app_lock_service.dart';
+import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/screens/auth/app_lock_screen.dart';
 import 'package:chatbox/screens/auth/passcode_setup_screen.dart';
 
@@ -16,12 +17,14 @@ class ProfileScreen extends StatefulWidget {
   final User? currentUser;
   final AuthRepository? authRepository;
   final AppLockService? appLockService;
+  final RealtimeService? realtimeService;
 
   const ProfileScreen({
     super.key,
     this.currentUser,
     this.authRepository,
     this.appLockService,
+    this.realtimeService,
   });
 
   @override
@@ -32,10 +35,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _hideLoveConnection = false;
   bool _biometricsEnabled = false;
   bool _biometricsAvailable = false;
+  late final RealtimeService _realtimeService;
+  bool _presenceSharingEnabled = true;
+  bool _typingSharingEnabled = true;
 
   @override
   void initState() {
     super.initState();
+    _realtimeService = widget.realtimeService ?? DefaultRealtimeService();
     _loadSecuritySettings();
   }
 
@@ -49,6 +56,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _biometricsEnabled = enabled;
         });
       }
+    }
+    final pSharing = await _realtimeService.isPresenceSharingEnabled();
+    final tSharing = await _realtimeService.isTypingSharingEnabled();
+    if (mounted) {
+      setState(() {
+        _presenceSharingEnabled = pSharing;
+        _typingSharingEnabled = tSharing;
+      });
     }
   }
 
@@ -680,6 +695,80 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 20),
 
               ],
+
+              /// Privacy & Real-Time Presence Card (Phase 13)
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF242424),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                padding: const EdgeInsets.all(18.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.visibility, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Privacy & Presence (Phase 13)',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Zero Telemetry • You control what your partner sees',
+                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Share Online Status & Last Seen',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      subtitle: const Text(
+                        'When disabled, you appear permanently offline to your partner.',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                      ),
+                      value: _presenceSharingEnabled,
+                      activeThumbColor: const Color(0xFF00E676),
+                      onChanged: (val) async {
+                        setState(() {
+                          _presenceSharingEnabled = val;
+                        });
+                        await _realtimeService.setPresenceSharingEnabled(val);
+                      },
+                    ),
+                    const Divider(color: Color(0xFF333333), height: 16),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Share Typing Indicator',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      subtitle: const Text(
+                        'When disabled, partner will not see "typing..." when you write.',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                      ),
+                      value: _typingSharingEnabled,
+                      activeThumbColor: const Color(0xFFFF80AB),
+                      onChanged: (val) async {
+                        setState(() {
+                          _typingSharingEnabled = val;
+                        });
+                        await _realtimeService.setTypingSharingEnabled(val);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
 
               /// Love Connection Card
               Container(

@@ -4,6 +4,7 @@ import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/services/sync_service.dart';
 
 /// Abstract contract for chat messaging operations
@@ -31,6 +32,9 @@ abstract class ChatRepository {
   Future<int> markConversationAsRead(String partnerId, {required String currentUserId});
   Future<void> reconcile({required String currentUserId});
   SyncService get syncService;
+
+  // Phase 13 Real-Time Features additions
+  RealtimeService get realtimeService;
 }
 
 /// Primary implementation coordinating local SQLite storage, E2EE, and chat transport
@@ -39,12 +43,14 @@ class LocalChatRepository implements ChatRepository {
   final ChatService _chatService;
   final EncryptionService? _encryptionService;
   final SyncService _syncService;
+  final RealtimeService _realtimeService;
 
   LocalChatRepository({
     LocalDatabase? database,
     ChatService? chatService,
     EncryptionService? encryptionService,
     SyncService? syncService,
+    RealtimeService? realtimeService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
         _encryptionService = encryptionService,
@@ -53,10 +59,17 @@ class LocalChatRepository implements ChatRepository {
               database: database ?? LocalDatabase(),
               chatService: chatService ?? ChatService(),
               encryptionService: encryptionService,
+            ),
+        _realtimeService = realtimeService ??
+            DefaultRealtimeService(
+              chatService: chatService ?? ChatService(),
             );
 
   @override
   SyncService get syncService => _syncService;
+
+  @override
+  RealtimeService get realtimeService => _realtimeService;
 
   @override
   Future<List<ChatMessage>> getMessages(String partnerId) {
