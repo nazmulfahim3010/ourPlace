@@ -1,6 +1,6 @@
 # ourPlace — Architectural & Technical Diagrams Specification
-> **Document Version:** 1.1.0  
-> **Last Updated:** 2026-09-16  
+> **Document Version:** 1.2.0  
+> **Last Updated:** 2026-09-18  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Companion Document:** [`docts.md`](file:///e:/ourPlace/docts.md)
 
@@ -258,15 +258,16 @@ flowchart TD
 
     subgraph ServiceRepositoryLayer["Service & Repository Layer (Business Orchestration)"]
         AuthRepo["AuthRepository / AuthService\n- User Registration\n- Salted SHA-256 Auth\n- E2EE Key Initialization\n- Session Stream & Recovery Resets"]
-        ChatRepo["ChatRepository / LocalChatRepository\n- Message Delegation & Transport Encryption\n- Cleartext Local SQLite Invariant"]
+        ChatRepo["ChatRepository / LocalChatRepository\n- Message Delegation & Transport Encryption\n- Ephemeral Relay Sync & Delivery ACK Purge\n- Cleartext Local SQLite Invariant"]
         ConvRepo["ConversationRepository\n- Love Connection Seed\n- Inbox Unread Tracking"]
         AppLockServ["AppLockService\n- Passcode Keystore Verification\n- PIN Throttling & 60s Lockout\n- Local Biometrics & Auto-Lock"]
         SecurityServ["AuthSecurityService & AccessThrottling\n- Challenge-Response Handshake\n- Exponential Backoff (10s..5m)"]
         EncryptionServ["EncryptionService / StandardE2EEEncryptionService\n- X25519 ECDH Shared Secret\n- HKDF-SHA256 Key Derivation\n- AES-256-GCM AEAD Authenticated Encryption\n- Hardware Private Key Keystore Isolation"]
+        RelayServ["RelayService / InMemoryFirebaseRelayService\n- Ephemeral Ciphertext Queue\n- Delivery ACK & Immediate Purge\n- 48h Ephemeral TTL Garbage Collection"]
     end
 
     subgraph DomainLayer["Domain & Core Layer (Pure Dart Business Rules)"]
-        Models["Domain Models\n- User & UserAccount\n- Conversation & ChatMessage\n- EncryptedPayload (E2EE Envelope)\n- SecurityLog (Audit Events)"]
+        Models["Domain Models\n- User & UserAccount\n- Conversation & ChatMessage\n- EncryptedPayload (E2EE Envelope)\n- EphemeralRelayEnvelope (Relay Wire Envelope)\n- SecurityLog (Audit Events)"]
         CryptoCore["Cryptographic & Core Utils\n- CryptoKeyUtils (X25519, HKDF, AES-GCM)\n- RecoveryKeyUtils (BIP-39 Mnemonic)\n- HashUtils (Salt + SHA-256)\n- AppTheme (Pure Black & Charcoal)\n- AppConstants & Exceptions (SecurityException)"]
     end
 
@@ -286,6 +287,7 @@ flowchart TD
     AuthRepo --> EncryptionServ
     AuthRepo --> Models
     ChatRepo --> EncryptionServ
+    ChatRepo --> RelayServ
     ChatRepo --> Models
     ConvRepo --> Models
     AppLockServ --> CryptoCore
@@ -304,7 +306,8 @@ flowchart TD
 
 ## 6. End-to-End Encryption & Ephemeral Relay Protocol
 
-Implemented in **Phase 10** (X25519 ECDH + HKDF-SHA256 + AES-256-GCM authenticated payload encryption & tamper detection) and connecting to the temporary Firebase relay in **Phases 11–12**, this protocol guarantees zero-knowledge message delivery with no permanent server footprint:
+Implemented in **Phase 10** (X25519 ECDH + HKDF-SHA256 + AES-256-GCM authenticated payload encryption & tamper detection) and **Phase 11** (Temporary Firebase Relay with Delivery ACK Purge), this protocol guarantees zero-knowledge message delivery with no permanent server footprint:
+
 
 ```mermaid
 sequenceDiagram

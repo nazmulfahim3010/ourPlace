@@ -34,6 +34,8 @@ import 'package:chatbox/services/access_throttling_service.dart';
 import 'package:chatbox/services/auth_security_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/chat_service.dart';
+import 'package:chatbox/models/ephemeral_relay_envelope.dart';
+import 'package:chatbox/services/relay_service.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
@@ -1586,6 +1588,339 @@ void main() {
       expect(stored.first.text, equals(originalText));
     });
   });
+
+  group('Phase 11: EphemeralRelayEnvelope Domain Model Tests', () {
+    test('create establishes standard 48-hour TTL and valid attributes', () {
+      final now = DateTime.now().toUtc();
+      final envelope = EphemeralRelayEnvelope.create(
+        id: 'env_001',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        ciphertextPayload: '{"ct":"testCiphertext"}',
+        timestamp: now,
+      );
+
+      expect(envelope.id, equals('env_001'));
+      expect(envelope.senderId, equals('@alex'));
+      expect(envelope.recipientId, equals('@twilight'));
+      expect(envelope.ciphertextPayload, equals('{"ct":"testCiphertext"}'));
+      expect(envelope.timestamp, equals(now));
+      expect(envelope.expiresAt.difference(now).inHours, equals(48));
+      expect(envelope.isExpired(now), isFalse);
+    });
+
+    test('isExpired correctly detects active vs expired envelopes', () {
+      final now = DateTime.now().toUtc();
+      final past = now.subtract(const Duration(hours: 1));
+      final expiredEnvelope = EphemeralRelayEnvelope(
+        id: 'env_exp',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        ciphertextPayload: 'expired_payload',
+        timestamp: now.subtract(const Duration(days: 3)),
+        expiresAt: past,
+      );
+
+      expect(expiredEnvelope.isExpired(now), isTrue);
+    });
+
+    test('serialize and deserialize preserves all envelope properties', () {
+      final envelope = EphemeralRelayEnvelope.create(
+        id: 'env_ser_01',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        ciphertextPayload: '{"ct":"xyz123","mac":"abc"}',
+      );
+
+      final serialized = envelope.serialize();
+      final restored = EphemeralRelayEnvelope.deserialize(serialized);
+
+      expect(restored.id, equals(envelope.id));
+      expect(restored.senderId, equals(envelope.senderId));
+      expect(restored.recipientId, equals(envelope.recipientId));
+      expect(restored.ciphertextPayload, equals(envelope.ciphertextPayload));
+      expect(restored.timestamp.toIso8601String(),
+          equals(envelope.timestamp.toIso8601String()));
+      expect(restored.expiresAt.toIso8601String(),
+          equals(envelope.expiresAt.toIso8601String()));
+    });
+  });
+
+  group('Phase 11: InMemoryFirebaseRelayService Ephemeral Queue Tests', () {
+    late InMemoryFirebaseRelayService relay;
+
+    setUp(() {
+      relay = InMemoryFirebaseRelayService.isolated();
+    });
+
+    tearDown(() {
+      relay.dispose();
+    });
+
+    test('enqueueMessage isolates queues between different recipients', () async {
+      final envBob = EphemeralRelayEnvelope.create(
+        id: 'msg_bob_01',
+        senderId: '@alex',
+        recipientId: '@bob',
+        ciphertextPayload: 'ct_for_bob',
+      );
+
+      final envCharlie = EphemeralRelayEnvelope.create(
+        id: 'msg_charlie_01',
+        senderId: '@alex',
+        recipientId: '@charlie',
+        ciphertextPayload: 'ct_for_charlie',
+      );
+
+      await relay.enqueueMessage(envBob);
+      await relay.enqueueMessage(envCharlie);
+
+      final bobQueue = await relay.fetchPendingMessages('@bob');
+      final charlieQueue = await relay.fetchPendingMessages('@charlie');
+
+      expect(bobQueue.length, equals(1));
+      expect(bobQueue.first.id, equals('msg_bob_01'));
+
+      expect(charlieQueue.length, equals(1));
+      expect(charlieQueue.first.id, equals('msg_charlie_01'));
+    });
+
+    test('fetchPendingMessages prunes expired envelopes on read', () async {
+      final now = DateTime.now().toUtc();
+      final expired = EphemeralRelayEnvelope(
+        id: 'exp_01',
+        senderId: '@alex',
+        recipientId: '@bob',
+        ciphertextPayload: 'old_ct',
+        timestamp: now.subtract(const Duration(days: 4)),
+        expiresAt: now.subtract(const Duration(minutes: 5)),
+      );
+
+      final valid = EphemeralRelayEnvelope.create(
+        id: 'val_01',
+        senderId: '@alex',
+        recipientId: '@bob',
+        ciphertextPayload: 'fresh_ct',
+      );
+
+      await relay.enqueueMessage(expired);
+      await relay.enqueueMessage(valid);
+
+      final pending = await relay.fetchPendingMessages('@bob');
+      expect(pending.length, equals(1));
+      expect(pending.first.id, equals('val_01'));
+    });
+
+    test('watchPendingMessages emits pending messages reactively', () async {
+      final stream = relay.watchPendingMessages('@bob');
+      final expectation = expectLater(
+        stream,
+        emitsThrough(predicate<List<EphemeralRelayEnvelope>>(
+            (list) => list.any((item) => item.id == 'stream_msg_01'))),
+      );
+
+      await relay.enqueueMessage(EphemeralRelayEnvelope.create(
+        id: 'stream_msg_01',
+        senderId: '@alex',
+        recipientId: '@bob',
+        ciphertextPayload: 'stream_payload',
+      ));
+
+      await expectation;
+    });
+
+    test('purgeExpiredMessages prunes all expired messages across all queues', () async {
+      final now = DateTime.now().toUtc();
+      final expiredBob = EphemeralRelayEnvelope(
+        id: 'exp_bob',
+        senderId: '@alex',
+        recipientId: '@bob',
+        ciphertextPayload: 'ct',
+        timestamp: now,
+        expiresAt: now.add(const Duration(milliseconds: 10)),
+      );
+
+      final expiredCharlie = EphemeralRelayEnvelope(
+        id: 'exp_charlie',
+        senderId: '@alex',
+        recipientId: '@charlie',
+        ciphertextPayload: 'ct',
+        timestamp: now,
+        expiresAt: now.add(const Duration(milliseconds: 10)),
+      );
+
+      await relay.enqueueMessage(expiredBob);
+      await relay.enqueueMessage(expiredCharlie);
+
+      // Allow message TTL to elapse
+      await Future.delayed(const Duration(milliseconds: 25));
+
+      final purged = await relay.purgeExpiredMessages();
+      expect(purged, equals(2));
+
+      expect(await relay.getPendingQueueCount('@bob'), equals(0));
+      expect(await relay.getPendingQueueCount('@charlie'), equals(0));
+    });
+  });
+
+  group('Phase 11: Delivery ACK & Purge Protocol Tests', () {
+    late InMemoryFirebaseRelayService relay;
+
+    setUp(() {
+      relay = InMemoryFirebaseRelayService.isolated();
+    });
+
+    tearDown(() {
+      relay.dispose();
+    });
+
+    test('acknowledgeAndPurge immediately and permanently deletes ciphertext from relay queue', () async {
+      final envelope = EphemeralRelayEnvelope.create(
+        id: 'ack_test_01',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        ciphertextPayload: 'secret_payload',
+      );
+
+      await relay.enqueueMessage(envelope);
+      expect(await relay.getPendingQueueCount('@twilight'), equals(1));
+
+      // Recipient issues delivery ACK
+      final acknowledged = await relay.acknowledgeAndPurge(
+        'ack_test_01',
+        recipientId: '@twilight',
+      );
+
+      expect(acknowledged, isTrue);
+      // Ciphertext must be completely erased from server queue
+      expect(await relay.getPendingQueueCount('@twilight'), equals(0));
+      final pending = await relay.fetchPendingMessages('@twilight');
+      expect(pending, isEmpty);
+    });
+
+    test('acknowledgeAndPurge returns false for unknown messageId', () async {
+      final result = await relay.acknowledgeAndPurge(
+        'unknown_id',
+        recipientId: '@twilight',
+      );
+      expect(result, isFalse);
+    });
+  });
+
+  group('Phase 11: End-to-End Ephemeral Relay Integration (Alice -> Relay -> Bob)', () {
+    late AppDatabase aliceDb;
+    late LocalDatabase aliceLocalDb;
+    late AppDatabase bobDb;
+    late LocalDatabase bobLocalDb;
+    late InMemoryFirebaseRelayService sharedRelay;
+    late StandardE2EEEncryptionService aliceEnc;
+    late StandardE2EEEncryptionService bobEnc;
+    late LocalChatRepository aliceRepo;
+    late LocalChatRepository bobRepo;
+
+    setUp(() async {
+      aliceDb = AppDatabase(NativeDatabase.memory());
+      aliceLocalDb = LocalDatabase(database: aliceDb);
+
+      bobDb = AppDatabase(NativeDatabase.memory());
+      bobLocalDb = LocalDatabase(database: bobDb);
+
+      sharedRelay = InMemoryFirebaseRelayService.isolated();
+
+      final aliceStorage = InMemorySecureStorageService();
+      aliceEnc = StandardE2EEEncryptionService(secureStorage: aliceStorage);
+      await aliceEnc.initializeUserKeys('alice');
+      final alicePub = await aliceEnc.getPublicIdentityKey();
+
+      final bobStorage = InMemorySecureStorageService();
+      bobEnc = StandardE2EEEncryptionService(secureStorage: bobStorage);
+      await bobEnc.initializeUserKeys('bob');
+      final bobPub = await bobEnc.getPublicIdentityKey();
+
+      // Alice registers Bob's public key locally
+      await aliceLocalDb.saveAccount(UserAccount.create(
+        accountId: 'acc_bob',
+        username: '@bob',
+        plaintextPassword: 'pw',
+        publicIdentityKey: bobPub,
+      ));
+
+      // Bob registers Alice's public key locally
+      await bobLocalDb.saveAccount(UserAccount.create(
+        accountId: 'acc_alice',
+        username: '@alice',
+        plaintextPassword: 'pw',
+        publicIdentityKey: alicePub,
+      ));
+
+      final aliceChatService = ChatService(relayService: sharedRelay);
+      final bobChatService = ChatService(relayService: sharedRelay);
+
+      aliceRepo = LocalChatRepository(
+        database: aliceLocalDb,
+        chatService: aliceChatService,
+        encryptionService: aliceEnc,
+      );
+
+      bobRepo = LocalChatRepository(
+        database: bobLocalDb,
+        chatService: bobChatService,
+        encryptionService: bobEnc,
+      );
+    });
+
+    tearDown(() async {
+      await aliceLocalDb.close();
+      await bobLocalDb.close();
+      sharedRelay.dispose();
+    });
+
+    test('Full E2EE and Ephemeral Relay Flow with Delivery ACK Purge', () async {
+      const cleartextMessage = 'Meet at our place at 8 PM sharp!';
+
+      final message = ChatMessage(
+        id: 'msg_flow_101',
+        senderId: '@alice',
+        recipientId: '@bob',
+        text: cleartextMessage,
+        timestamp: DateTime.now().toUtc(),
+        type: MessageType.text,
+        status: MessageStatus.sending,
+      );
+
+      // 1. Alice sends message
+      await aliceRepo.sendMessage(message);
+
+      // 2. Local-first check: Alice's SQLite stores cleartext
+      final aliceMessages = await aliceLocalDb.getMessagesForPartner('@bob', currentUserId: '@alice');
+      expect(aliceMessages.length, equals(1));
+      expect(aliceMessages.first.text, equals(cleartextMessage));
+
+      // 3. Ephemeral Relay check: Relay queue for Bob has exactly 1 envelope
+      expect(await sharedRelay.getPendingQueueCount('@bob'), equals(1));
+      final pendingOnRelay = await sharedRelay.fetchPendingMessages('@bob');
+      expect(pendingOnRelay.first.ciphertextPayload, isNot(contains(cleartextMessage)));
+      expect(pendingOnRelay.first.ciphertextPayload, contains('"ct":'));
+
+      // 4. Bob syncs pending messages from ephemeral relay
+      final processedByBob = await bobRepo.syncPendingRelayMessages('@bob');
+      expect(processedByBob.length, equals(1));
+      expect(processedByBob.first.text, equals(cleartextMessage));
+      expect(processedByBob.first.status, equals(MessageStatus.delivered));
+
+      // 5. Zero Server Footprint: Relay ciphertext was permanently purged upon Bob's ACK!
+      expect(await sharedRelay.getPendingQueueCount('@bob'), equals(0));
+      final emptyRelayQueue = await sharedRelay.fetchPendingMessages('@bob');
+      expect(emptyRelayQueue, isEmpty);
+
+      // 6. Local-first check: Bob's device SQLite now permanently owns the cleartext message
+      final bobMessages = await bobLocalDb.getMessagesForPartner('@alice', currentUserId: '@bob');
+      expect(bobMessages.length, equals(1));
+      expect(bobMessages.first.text, equals(cleartextMessage));
+      expect(bobMessages.first.senderId, equals('@alice'));
+    });
+
+  });
 }
 
 /// Helper mock implementation for AppLockService during widget/unit tests
@@ -1715,38 +2050,19 @@ class MockAppLockService implements AppLockService {
 }
 
 /// Mock chat transport capturing messages for E2EE testing
-class MockChatTransportService implements ChatService {
+class MockChatTransportService extends ChatService {
   ChatMessage? lastDispatchedMessage;
+
+  MockChatTransportService({RelayService? relayService})
+      : super(relayService: relayService ?? InMemoryFirebaseRelayService.isolated());
 
   @override
   Future<ChatMessage> sendMessage(ChatMessage message) async {
     lastDispatchedMessage = message;
-    return message;
+    return super.sendMessage(message);
   }
-
-  @override
-  Future<List<ChatMessage>> fetchMessages({
-    required String partnerId,
-    int limit = 50,
-  }) async =>
-      [];
-
-  @override
-  Future<void> sendLuv({required String partnerId}) async {}
-
-  @override
-  Future<void> markMessagesAsRead({required String partnerId}) async {}
-
-  @override
-  Future<bool> deleteMessage({required String messageId}) async => true;
-
-  @override
-  Future<ChatMessage?> editMessage({
-    required String messageId,
-    required String newContent,
-  }) async =>
-      null;
 }
+
 
 
 

@@ -1,6 +1,6 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.2.0  
-> **Last Updated:** 2026-09-16  
+> **Document Version:** 3.3.0  
+> **Last Updated:** 2026-09-18  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
 
@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 10 — End-to-End Encryption (E2EE) Layer** |
-| **Current Status** | **COMPLETED** (Ready for Phase 11: Temporary Firebase Relay) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer) |
-| **Next Phase** | **Phase 11 — Temporary Firebase Relay** |
+| **Current Phase** | **Phase 11 — Temporary Firebase Relay** |
+| **Current Status** | **COMPLETED** (Ready for Phase 12: Message Synchronization) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay) |
+| **Next Phase** | **Phase 12 — Message Synchronization** |
 
 ---
 
@@ -57,7 +57,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           │
                                                                           ▼
 [Phase 12: Message Sync] ◄──  [Phase 11: Temp Relay]    ◄──  [Phase 10: E2EE Layer]
-       (PLANNED)                       (NEXT)                        (COMPLETED)
+       (NEXT)                          (COMPLETED)                     (COMPLETED)
           │
           ▼
 [Phase 13: Real-Time]    ──►  [Phase 14: Push Notifs]   ──►  [Phase 15: Media]
@@ -160,9 +160,13 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Decrypt ciphertext payloads locally on recipient device with tamper detection
   - [x] 61/61 automated tests passing with 0 analyzer issues
 
-- [ ] **Phase 11 — Temporary Firebase Relay**
-  - [ ] Ephemeral ciphertext queue (no permanent history on server)
-  - [ ] Delivery acknowledgement and purge protocol
+- [x] **Phase 11 — Temporary Firebase Relay**
+  - [x] Ephemeral ciphertext queue (no permanent history on server)
+  - [x] Recipient-partitioned volatile storage and isolation
+  - [x] Delivery acknowledgement (ACK) and immediate atomic server purge protocol
+  - [x] Automatic 48-hour ephemeral TTL garbage collection
+  - [x] Upgraded `ChatService` and `LocalChatRepository` with relay transport and sync methods
+  - [x] Comprehensive test suite (71/71 tests passing, 0 analyzer issues)
 
 - [ ] **Phase 12 — Message Synchronization**
   - [ ] State transitions (`sending` ➔ `sent` ➔ `delivered` ➔ `read` / `failed`)
@@ -204,6 +208,7 @@ e:\ourPlace\
 ├── Private Couple Chat App — Master...md    # Master specification & rules prompt
 ├── diagram.md                               # Architectural & technical diagrams (Mermaid)
 ├── docts.md                                 # Master project documentation & task tracker (this file)
+├── myjob.md                                 # User manual action items & Firebase/device setup guide
 ├── README.md                                # Root repository readme
 └── chatbox/                                 # PRIMARY FLUTTER APPLICATION
     ├── pubspec.yaml                         # Dependencies (drift, crypto, cryptography, cupertino_icons, local_auth, flutter_secure_storage)
@@ -229,13 +234,14 @@ e:\ourPlace\
     │   ├── models/
     │   │   ├── conversation.dart            # Conversation model with Love Connection support
     │   │   ├── encrypted_payload.dart       # E2EE ciphertext envelope (version, pubKey, nonce, ct, mac)
+    │   │   ├── ephemeral_relay_envelope.dart # Ephemeral wire envelope (id, sender, recipient, ct, ttl)
     │   │   ├── message.dart                 # ChatMessage domain model & enums
     │   │   ├── security_log.dart            # Device-local security event audit model
     │   │   ├── user.dart                    # Anonymous User domain model
     │   │   └── user_account.dart            # UserAccount credentials & verification
     │   ├── repositories/
     │   │   ├── auth_repository.dart         # AuthRepository contract & default implementation
-    │   │   ├── chat_repository.dart         # ChatRepository contract & LocalChatRepository (E2EE)
+    │   │   ├── chat_repository.dart         # ChatRepository contract & LocalChatRepository (E2EE + Relay)
     │   │   └── conversation_repository.dart # ConversationRepository & LocalConversationRepository
     │   ├── screens/
     │   │   ├── auth/
@@ -254,9 +260,10 @@ e:\ourPlace\
     │   │   ├── app_lock_service.dart        # Device passcode & biometric authentication service
     │   │   ├── auth_security_service.dart   # Zero-knowledge challenge-response protocol engine
     │   │   ├── auth_service.dart            # AuthService contract & LocalAuthService (E2EE Keygen)
-    │   │   ├── chat_service.dart            # Chat transport service contract
+    │   │   ├── chat_service.dart            # Chat transport service coordinating with RelayService
     │   │   ├── encryption_service.dart      # StandardE2EEEncryptionService (X25519 + AES-GCM) & NoOp
     │   │   ├── notification_service.dart    # Push notifications contract & stub
+    │   │   ├── relay_service.dart           # Ephemeral Relay contract, InMemory & Firestore implementations
     │   │   └── secure_storage_service.dart  # Hardware-backed encrypted key-value storage (with test mode)
     │   └── widgets/
     │       ├── chat_header.dart             # Floating pill header with back button, user & partner
@@ -647,12 +654,72 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ---
 
+### 7.6. Phase 11 Completion Report — Temporary Firebase Relay
+
+- **Current Phase:** Phase 11 — Temporary Firebase Relay
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. **Domain Model (`EphemeralRelayEnvelope`):**
+   - Created `EphemeralRelayEnvelope` model encapsulating ephemeral wire transmissions: unique `id`, `senderId`, `recipientId`, `ciphertextPayload` (holding Base64 serialized `EncryptedPayload`), `timestamp`, and automatic 48-hour `expiresAt` TTL.
+   - Built serialization and deserialization routines (`toJson`, `fromJson`, `serialize`, `deserialize`).
+   - Implemented `isExpired([DateTime? now])` TTL checking.
+2. **Relay Service Contract & Implementations (`RelayService`):**
+   - Defined `RelayService` interface with `enqueueMessage`, `fetchPendingMessages`, `watchPendingMessages`, `acknowledgeAndPurge`, `getPendingQueueCount`, and `purgeExpiredMessages`.
+   - Implemented `InMemoryFirebaseRelayService`:
+     - Isolated in-memory queues partitioned by recipient.
+     - Real-time broadcast reactive streams per recipient.
+     - Atomic purge upon delivery ACK.
+     - Automatic TTL pruning of expired messages on pull or scheduled cleanup.
+   - Implemented `FirestoreRelayService`:
+     - Cloud Firestore collection mapping (`/ephemeral_relays/{recipientId}/messages/{messageId}`).
+     - Ready for live Firebase credentials when added.
+3. **Transport Layer Upgrade (`ChatService`):**
+   - Replaced Phase 5 placeholder stubs with dynamic `RelayService` integration.
+   - Added `sendEphemeralEnvelope`, `fetchPendingRelayEnvelopes`, `watchPendingRelayEnvelopes`, and `acknowledgeAndPurge`.
+   - Maintained full backward compatibility with UI methods (`sendLuv`, `markMessagesAsRead`, `deleteMessage`).
+4. **Local-First Repository Synchronization (`LocalChatRepository`):**
+   - Outbound messages: Cleartext is immediately persisted locally in SQLite; message text is encrypted via Phase 10 E2EE and dispatched to ephemeral relay queue.
+   - Inbound synchronization (`syncPendingRelayMessages` & `listenToIncomingRelayMessages`):
+     - Pulls unacknowledged envelopes for the active recipient.
+     - Decrypts ciphertexts locally using sender's public key.
+     - Stores cleartext messages into local SQLite database with `MessageStatus.delivered`.
+     - Immediately dispatches delivery ACK to relay, triggering permanent ciphertext deletion from remote storage.
+5. **Zero-Knowledge User Setup Guide (`myjob.md`):**
+   - Created `myjob.md` providing step-by-step instructions for Firebase project creation, Android registration, `google-services.json` placement, and Firestore ephemeral security rules.
+6. **Automated Test Suite Expansion (10 New Tests):**
+   - Added 10 new unit and integration tests covering:
+     - `EphemeralRelayEnvelope` serialization and TTL expiration.
+     - `InMemoryFirebaseRelayService` isolation, reactive streaming, and TTL purge.
+     - Delivery ACK and atomic server purge protocol.
+     - Full End-to-End Alice ➔ Relay ➔ Bob delivery flow verifying zero server footprint post-ACK and local SQLite cleartext ownership.
+   - Test suite elevated from **61 to 71 tests (100% passing)** with **0 analyzer issues**.
+
+#### Files Created
+- `chatbox/lib/models/ephemeral_relay_envelope.dart`: Domain model for ephemeral wire envelopes.
+- `chatbox/lib/services/relay_service.dart`: RelayService contract, InMemoryFirebaseRelayService, and FirestoreRelayService.
+- `myjob.md`: User manual setup checklist for external Firebase and cloud tasks.
+
+#### Files Modified
+- `chatbox/lib/services/chat_service.dart`: Connected to `RelayService` with ephemeral transport methods.
+- `chatbox/lib/repositories/chat_repository.dart`: Integrated ephemeral queue dispatch, sync, and delivery ACK purge.
+- `chatbox/test/widget_test.dart`: Added 10 new unit and integration tests (71 tests total).
+- `docts.md`: Updated master roadmap tracking and Phase 11 completion details.
+
+#### Security Guarantees
+- **Zero Server Cleartext:** Relay queues only ever receive and hold authenticated E2EE ciphertexts; server operators cannot read message contents.
+- **Immediate Ciphertext Purge:** As soon as a recipient device receives and decrypts a message, an atomic ACK permanently purges the ciphertext from cloud storage.
+- **Strict Recipient Isolation:** Relays partition queues strictly by recipient identifier; unauthorized users cannot inspect pending queue counts or payloads.
+- **Ephemeral TTL Safeguard:** Unclaimed messages past their 48-hour expiration are automatically garbage-collected.
+
+---
+
 ## 8. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
 - **Test Command:** `flutter test`
-- **Results:** `61 / 61 tests passing` (100% pass rate)
-- **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 5.8s)`
+- **Results:** `71 / 71 tests passing` (100% pass rate)
+- **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 3.3s)`
 
 ### Comprehensive Test Coverage Breakdown
 
@@ -676,26 +743,29 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 | **Phase 10: CryptoKeyUtils Primitives** | 8 | X25519 key generation, Base64 encoding/decoding, keypair reconstruction, Alice-Bob ECDH shared secret agreement, HKDF-SHA256 message key derivation, AES-256-GCM roundtrip, ciphertext tamper rejection, MAC tag corruption rejection |
 | **Phase 10: StandardE2EEEncryptionService** | 5 | Key generation & secure keystore storage, re-initialization idempotency, Alice-Bob E2EE exchange, unauthorized third-party (Charlie) decryption denial, malformed envelope handling |
 | **Phase 10: LocalChatRepository E2EE** | 2 | Cleartext local SQLite storage + transport ciphertext dispatch, incoming ciphertext decryption + local cleartext persistence |
-| **Total Test Suite** | **61** | **100% Passing — Zero Analyzer Issues** |
+| **Phase 11: EphemeralRelayEnvelope Domain Model** | 3 | 48-hour default TTL creation, active vs expired calculation, JSON serialization and deserialization roundtrip |
+| **Phase 11: InMemoryFirebaseRelayService** | 4 | Multi-user recipient isolation, expired envelope pruning on fetch, reactive stream emission, cross-queue expired message purge |
+| **Phase 11: Delivery ACK & Purge Protocol** | 2 | Delivery ACK immediately and permanently purging ciphertext from queue (count ➔ 0), unknown message handling |
+| **Phase 11: End-to-End Relay Integration** | 1 | Full Alice ➔ Relay ➔ Bob delivery flow: Local SQLite cleartext on both devices, zero plaintext in relay queue, immediate post-ACK purge |
+| **Total Test Suite** | **71** | **100% Passing — Zero Analyzer Issues** |
 
 ---
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Next Phase: Phase 11 — Temporary Firebase Relay
+### Next Phase: Phase 12 — Message Synchronization
 
-Phase 11 implements the ephemeral communication relay connecting sender and recipient devices without retaining permanent conversation history on remote servers.
+Phase 12 builds upon the Phase 11 transport relay to manage real-world delivery states and network disconnects.
 
-#### Key Objectives for Phase 11:
-1. **Ephemeral Ciphertext Queue:**
-   - Configure Firebase Cloud Firestore / Realtime Database collection for temporary message relays.
-   - Enqueue strictly encrypted `EncryptedPayload` ciphertexts (zero plaintext on server).
-2. **Delivery Acknowledgement & Purge Protocol:**
-   - Recipient pulls pending ciphertext from relay queue, decrypts locally, and stores into local SQLite database.
-   - Recipient dispatches delivery acknowledgement (ACK).
-   - Server permanently deletes/purges the ciphertext payload from the relay queue immediately upon ACK.
-3. **Transport Protocol Layer:**
-   - Connect `ChatService` to the ephemeral relay endpoints.
+#### Key Objectives for Phase 12:
+1. **Message State Lifecycle Transitions:**
+   - Full progression: `sending` ➔ `sent` ➔ `delivered` ➔ `read` / `failed`.
+2. **Offline Queue & Automatic Reconciliation:**
+   - Queue outbound messages locally when offline.
+   - Automatically drain and reconcile outbound queue when connectivity resumes.
+   - Retry failed dispatches with deduplication.
+3. **Local Database Verification:**
+   - Maintain SQLite as the single source of truth across network disruptions and app restarts.
 
 
 

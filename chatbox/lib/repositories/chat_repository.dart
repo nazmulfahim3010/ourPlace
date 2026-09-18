@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:chatbox/database/local_database.dart';
+import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
@@ -14,6 +16,8 @@ abstract class ChatRepository {
   Stream<List<ChatMessage>> watchMessages(String partnerId);
   Future<void> sendMessage(ChatMessage message);
   Future<ChatMessage> processIncomingMessage(ChatMessage rawMessage);
+  Future<List<ChatMessage>> syncPendingRelayMessages(String currentUserId);
+  Stream<ChatMessage> listenToIncomingRelayMessages(String currentUserId);
   Future<bool> updateMessageStatus(String messageId, MessageStatus status);
   Future<bool> deleteMessage(String messageId);
   Future<List<ChatMessage>> searchMessages(String partnerId, String query);
@@ -64,7 +68,7 @@ class LocalChatRepository implements ChatRepository {
     // 1. Immediately persist locally in cleartext (local device owns conversation history)
     await _database.saveMessage(message);
 
-    // 2. Dispatch via transport service (Phase 10 E2EE & Phase 11 Relay)
+    // 2. Encrypt plaintext for transport via Phase 10 E2EE
     ChatMessage outboundMessage = message;
     final enc = _encryptionService;
     if (enc != null) {
@@ -80,7 +84,11 @@ class LocalChatRepository implements ChatRepository {
       }
     }
 
+    // 3. Dispatch to temporary relay (Phase 11 Ephemeral Queue)
     await _chatService.sendMessage(outboundMessage);
+
+    // 4. Update local state to sent
+    await _database.updateMessageStatus(message.id, MessageStatus.sent);
   }
 
   @override
@@ -91,7 +99,16 @@ class LocalChatRepository implements ChatRepository {
       try {
         final senderAccount =
             await _database.getAccountByUsername(rawMessage.senderId);
-        final senderKey = senderAccount?.publicIdentityKey ?? '';
+        String senderKey = senderAccount?.publicIdentityKey ?? '';
+
+        // If local database has not stored sender key yet, extract from envelope
+        if (senderKey.isEmpty) {
+          try {
+            final envelope = EncryptedPayload.deserialize(rawMessage.text);
+            senderKey = envelope.senderPublicKey;
+          } catch (_) {}
+        }
+
         final cleartext = await enc.decryptPayload(
           rawMessage.text,
           senderKey,
@@ -104,6 +121,66 @@ class LocalChatRepository implements ChatRepository {
 
     await _database.saveMessage(decryptedMessage);
     return decryptedMessage;
+  }
+
+  @override
+  Future<List<ChatMessage>> syncPendingRelayMessages(
+      String currentUserId) async {
+    final pendingEnvelopes =
+        await _chatService.fetchPendingRelayEnvelopes(currentUserId);
+    final processedMessages = <ChatMessage>[];
+
+    for (final envelope in pendingEnvelopes) {
+      final raw = ChatMessage(
+        id: envelope.id,
+        senderId: envelope.senderId,
+        recipientId: envelope.recipientId,
+        text: envelope.ciphertextPayload,
+        timestamp: envelope.timestamp,
+        status: MessageStatus.delivered,
+      );
+
+      final decrypted = await processIncomingMessage(raw);
+      processedMessages.add(decrypted);
+
+      // Immediately issue delivery ACK and purge ciphertext from remote relay
+      await _chatService.acknowledgeAndPurge(envelope.id,
+          recipientId: currentUserId);
+    }
+
+    return processedMessages;
+  }
+
+  @override
+  Stream<ChatMessage> listenToIncomingRelayMessages(
+      String currentUserId) async* {
+    final seenIds = <String>{};
+
+    await for (final envelopes
+        in _chatService.watchPendingRelayEnvelopes(currentUserId)) {
+      for (final envelope in envelopes) {
+        if (!seenIds.contains(envelope.id)) {
+          seenIds.add(envelope.id);
+
+          final raw = ChatMessage(
+            id: envelope.id,
+            senderId: envelope.senderId,
+            recipientId: envelope.recipientId,
+            text: envelope.ciphertextPayload,
+            timestamp: envelope.timestamp,
+            status: MessageStatus.delivered,
+          );
+
+          final decrypted = await processIncomingMessage(raw);
+
+          // Acknowledge and purge immediately
+          await _chatService.acknowledgeAndPurge(envelope.id,
+              recipientId: currentUserId);
+
+          yield decrypted;
+        }
+      }
+    }
   }
 
   @override
@@ -138,3 +215,4 @@ class LocalChatRepository implements ChatRepository {
     return _database.saveMessages(initialMessages);
   }
 }
+
