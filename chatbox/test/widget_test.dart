@@ -28,8 +28,12 @@ import 'package:chatbox/widgets/conversation_tile.dart';
 import 'package:chatbox/widgets/numeric_keypad.dart';
 import 'package:chatbox/widgets/passcode_dots.dart';
 import 'package:chatbox/core/utils/recovery_key_utils.dart';
+import 'package:chatbox/core/utils/crypto_key_utils.dart';
+import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/services/access_throttling_service.dart';
 import 'package:chatbox/services/auth_security_service.dart';
+import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
@@ -1178,6 +1182,410 @@ void main() {
       expect(find.text('Security Audit Log'), findsOneWidget);
     });
   });
+
+  group('Phase 10: EncryptedPayload Domain Model Tests', () {
+    test('serialize and deserialize preserves all envelope attributes', () {
+      final now = DateTime.now();
+      final payload = EncryptedPayload(
+        version: 1,
+        senderPublicKey: 'c2VuZGVyX3B1YmxpY19rZXlfMTIz',
+        nonce: 'bm9uY2VfMTIzNDU2Nzg5MA==',
+        ciphertext: 'Y2lwaGVydGV4dF9kYXRhX2FiY2RlZg==',
+        mac: 'bWFjX3RhZ18xMjM0NTY3OA==',
+        createdAt: now,
+      );
+
+      final serialized = payload.serialize();
+      final deserialized = EncryptedPayload.deserialize(serialized);
+
+      expect(deserialized.version, equals(1));
+      expect(deserialized.senderPublicKey, equals(payload.senderPublicKey));
+      expect(deserialized.nonce, equals(payload.nonce));
+      expect(deserialized.ciphertext, equals(payload.ciphertext));
+      expect(deserialized.mac, equals(payload.mac));
+      expect(
+        deserialized.createdAt.millisecondsSinceEpoch,
+        equals(now.millisecondsSinceEpoch),
+      );
+    });
+
+    test('fromJson defaults version to 1 and parses successfully', () {
+      final json = {
+        'sender_pub': 'pub_key',
+        'nonce': 'nonce_val',
+        'ct': 'ct_val',
+        'mac': 'mac_val',
+      };
+
+      final payload = EncryptedPayload.fromJson(json);
+      expect(payload.version, equals(1));
+      expect(payload.senderPublicKey, equals('pub_key'));
+      expect(payload.createdAt, isNotNull);
+    });
+  });
+
+  group('Phase 10: CryptoKeyUtils Cryptographic Primitives Tests', () {
+    test('generateX25519KeyPair creates valid distinct keypairs', () async {
+      final pair1 = await CryptoKeyUtils.generateX25519KeyPair();
+      final pair2 = await CryptoKeyUtils.generateX25519KeyPair();
+
+      final pub1 = await CryptoKeyUtils.encodePublicKey(pair1);
+      final pub2 = await CryptoKeyUtils.encodePublicKey(pair2);
+
+      expect(pub1, isNotEmpty);
+      expect(pub2, isNotEmpty);
+      expect(pub1, isNot(equals(pub2)));
+    });
+
+    test('encodePublicKey and decodePublicKey round-trip preserves key', () async {
+      final pair = await CryptoKeyUtils.generateX25519KeyPair();
+      final pubBase64 = await CryptoKeyUtils.encodePublicKey(pair);
+
+      final decoded = CryptoKeyUtils.decodePublicKey(pubBase64);
+      final reEncoded = CryptoKeyUtils.encodePublicKeyBytes(decoded.bytes);
+
+      expect(reEncoded, equals(pubBase64));
+    });
+
+    test('encodePrivateKey and reconstructKeyPair restores keypair', () async {
+      final originalPair = await CryptoKeyUtils.generateX25519KeyPair();
+      final privBase64 = await CryptoKeyUtils.encodePrivateKey(originalPair);
+      final pubBase64 = await CryptoKeyUtils.encodePublicKey(originalPair);
+
+      final restored = CryptoKeyUtils.reconstructKeyPair(
+        base64PrivateKey: privBase64,
+        base64PublicKey: pubBase64,
+      );
+
+      final restoredPubBase64 = await CryptoKeyUtils.encodePublicKey(restored);
+      final restoredPrivBase64 = await CryptoKeyUtils.encodePrivateKey(restored);
+
+      expect(restoredPubBase64, equals(pubBase64));
+      expect(restoredPrivBase64, equals(privBase64));
+    });
+
+    test('ECDH Shared Secret Agreement: Alice and Bob compute identical shared secret', () async {
+      final alicePair = await CryptoKeyUtils.generateX25519KeyPair();
+      final bobPair = await CryptoKeyUtils.generateX25519KeyPair();
+
+      final alicePub = await alicePair.extractPublicKey();
+      final bobPub = await bobPair.extractPublicKey();
+
+      final secretAlice = await CryptoKeyUtils.computeSharedSecret(
+        localKeyPair: alicePair,
+        remotePublicKey: bobPub,
+      );
+
+      final secretBob = await CryptoKeyUtils.computeSharedSecret(
+        localKeyPair: bobPair,
+        remotePublicKey: alicePub,
+      );
+
+      final aliceSecretBytes = await secretAlice.extractBytes();
+      final bobSecretBytes = await secretBob.extractBytes();
+
+      expect(aliceSecretBytes, equals(bobSecretBytes));
+    });
+
+    test('deriveMessageKey derives identical 256-bit symmetric key from shared secret', () async {
+      final alicePair = await CryptoKeyUtils.generateX25519KeyPair();
+      final bobPair = await CryptoKeyUtils.generateX25519KeyPair();
+
+      final secretAlice = await CryptoKeyUtils.computeSharedSecret(
+        localKeyPair: alicePair,
+        remotePublicKey: await bobPair.extractPublicKey(),
+      );
+      final secretBob = await CryptoKeyUtils.computeSharedSecret(
+        localKeyPair: bobPair,
+        remotePublicKey: await alicePair.extractPublicKey(),
+      );
+
+      final keyAlice = await CryptoKeyUtils.deriveMessageKey(sharedSecret: secretAlice);
+      final keyBob = await CryptoKeyUtils.deriveMessageKey(sharedSecret: secretBob);
+
+      final bytesAlice = await keyAlice.extractBytes();
+      final bytesBob = await keyBob.extractBytes();
+
+      expect(bytesAlice.length, equals(32)); // 256 bits
+      expect(bytesAlice, equals(bytesBob));
+    });
+
+    test('encryptAesGcm and decryptAesGcm round-trips plaintext correctly', () async {
+      final pair = await CryptoKeyUtils.generateX25519KeyPair();
+      final secret = await CryptoKeyUtils.computeSharedSecret(
+        localKeyPair: pair,
+        remotePublicKey: await pair.extractPublicKey(),
+      );
+      final key = await CryptoKeyUtils.deriveMessageKey(sharedSecret: secret);
+
+      const plaintext = 'Secret love letter for ourPlace 💌';
+      final secretBox = await CryptoKeyUtils.encryptAesGcm(
+        plaintext: plaintext,
+        secretKey: key,
+      );
+
+      expect(secretBox.cipherText, isNotEmpty);
+      expect(secretBox.nonce.length, equals(12));
+      expect(secretBox.mac.bytes.length, equals(16));
+
+      final decrypted = await CryptoKeyUtils.decryptAesGcm(
+        ciphertext: secretBox.cipherText,
+        nonce: secretBox.nonce,
+        mac: secretBox.mac.bytes,
+        secretKey: key,
+      );
+
+      expect(decrypted, equals(plaintext));
+    });
+
+    test('Tamper Resistance: Decryption throws SecurityException when ciphertext is modified', () async {
+      final pair = await CryptoKeyUtils.generateX25519KeyPair();
+      final secret = await CryptoKeyUtils.computeSharedSecret(
+        localKeyPair: pair,
+        remotePublicKey: await pair.extractPublicKey(),
+      );
+      final key = await CryptoKeyUtils.deriveMessageKey(sharedSecret: secret);
+
+      final secretBox = await CryptoKeyUtils.encryptAesGcm(
+        plaintext: 'Authentic message',
+        secretKey: key,
+      );
+
+      // Corrupt one byte of ciphertext
+      final tamperedCiphertext = List<int>.from(secretBox.cipherText);
+      tamperedCiphertext[0] ^= 0xFF;
+
+      expect(
+        () async => await CryptoKeyUtils.decryptAesGcm(
+          ciphertext: tamperedCiphertext,
+          nonce: secretBox.nonce,
+          mac: secretBox.mac.bytes,
+          secretKey: key,
+        ),
+        throwsA(isA<SecurityException>()),
+      );
+    });
+
+    test('Tamper Resistance: Decryption throws SecurityException when MAC tag is corrupted', () async {
+      final pair = await CryptoKeyUtils.generateX25519KeyPair();
+      final secret = await CryptoKeyUtils.computeSharedSecret(
+        localKeyPair: pair,
+        remotePublicKey: await pair.extractPublicKey(),
+      );
+      final key = await CryptoKeyUtils.deriveMessageKey(sharedSecret: secret);
+
+      final secretBox = await CryptoKeyUtils.encryptAesGcm(
+        plaintext: 'Protected message',
+        secretKey: key,
+      );
+
+      final tamperedMac = List<int>.from(secretBox.mac.bytes);
+      tamperedMac[tamperedMac.length - 1] ^= 0x01;
+
+      expect(
+        () async => await CryptoKeyUtils.decryptAesGcm(
+          ciphertext: secretBox.cipherText,
+          nonce: secretBox.nonce,
+          mac: tamperedMac,
+          secretKey: key,
+        ),
+        throwsA(isA<SecurityException>()),
+      );
+    });
+  });
+
+  group('Phase 10: StandardE2EEEncryptionService Tests', () {
+    late InMemorySecureStorageService storageAlice;
+    late InMemorySecureStorageService storageBob;
+    late InMemorySecureStorageService storageCharlie;
+    late StandardE2EEEncryptionService aliceService;
+    late StandardE2EEEncryptionService bobService;
+    late StandardE2EEEncryptionService charlieService;
+
+    setUp(() {
+      storageAlice = InMemorySecureStorageService();
+      storageBob = InMemorySecureStorageService();
+      storageCharlie = InMemorySecureStorageService();
+
+      aliceService = StandardE2EEEncryptionService(secureStorage: storageAlice);
+      bobService = StandardE2EEEncryptionService(secureStorage: storageBob);
+      charlieService = StandardE2EEEncryptionService(secureStorage: storageCharlie);
+    });
+
+    test('initializeUserKeys stores keypair in hardware secure storage', () async {
+      await aliceService.initializeUserKeys('alice_user');
+      expect(await aliceService.hasKeysConfigured(), isTrue);
+
+      final pubKey = await aliceService.getPublicIdentityKey();
+      expect(pubKey, isNotEmpty);
+
+      final storedPriv = await storageAlice.read('e2ee_priv_key_alice_user');
+      final storedPub = await storageAlice.read('e2ee_pub_key_alice_user');
+
+      expect(storedPriv, isNotNull);
+      expect(storedPub, equals(pubKey));
+    });
+
+    test('Re-initialization restores existing keypair without regeneration', () async {
+      await aliceService.initializeUserKeys('persistent_user');
+      final firstPubKey = await aliceService.getPublicIdentityKey();
+
+      // Second init
+      await aliceService.initializeUserKeys('persistent_user');
+      final secondPubKey = await aliceService.getPublicIdentityKey();
+
+      expect(secondPubKey, equals(firstPubKey));
+    });
+
+    test('Alice and Bob E2EE Message Flow: Encrypt and Decrypt successfully', () async {
+      await aliceService.initializeUserKeys('alice');
+      final alicePub = await aliceService.getPublicIdentityKey();
+
+      await bobService.initializeUserKeys('bob');
+      final bobPub = await bobService.getPublicIdentityKey();
+
+      const cleartext = "Hey Bob! This message is end-to-end encrypted 🔐❤️";
+
+      // Alice encrypts for Bob
+      final envelope = await aliceService.encryptPayload(cleartext, bobPub);
+      expect(envelope, isNot(contains(cleartext)));
+
+      // Bob decrypts Alice's envelope
+      final decrypted = await bobService.decryptPayload(envelope, alicePub);
+      expect(decrypted, equals(cleartext));
+    });
+
+    test('Unauthorized third party Charlie fails to decrypt Alice-Bob message', () async {
+      await aliceService.initializeUserKeys('alice');
+      final alicePub = await aliceService.getPublicIdentityKey();
+
+      await bobService.initializeUserKeys('bob');
+      final bobPub = await bobService.getPublicIdentityKey();
+
+      await charlieService.initializeUserKeys('charlie');
+
+      final envelope = await aliceService.encryptPayload('Secret plans', bobPub);
+
+      // Charlie attempts to decrypt with Alice's public key
+      expect(
+        () async => await charlieService.decryptPayload(envelope, alicePub),
+        throwsA(isA<SecurityException>()),
+      );
+    });
+
+    test('Malformed ciphertext envelope throws SecurityException', () async {
+      await aliceService.initializeUserKeys('alice');
+      expect(
+        () async => await aliceService.decryptPayload('invalid_json_string', 'some_pub_key'),
+        throwsA(isA<SecurityException>()),
+      );
+    });
+  });
+
+  group('Phase 10: LocalChatRepository E2EE Integration Tests', () {
+    late AppDatabase inMemoryDb;
+    late LocalDatabase localDb;
+    late InMemorySecureStorageService storage;
+    late StandardE2EEEncryptionService encryptionService;
+    late MockChatTransportService mockTransport;
+    late LocalChatRepository chatRepository;
+
+    setUp(() async {
+      inMemoryDb = AppDatabase(NativeDatabase.memory());
+      localDb = LocalDatabase(database: inMemoryDb);
+      storage = InMemorySecureStorageService();
+      encryptionService = StandardE2EEEncryptionService(secureStorage: storage);
+      mockTransport = MockChatTransportService();
+
+      chatRepository = LocalChatRepository(
+        database: localDb,
+        chatService: mockTransport,
+        encryptionService: encryptionService,
+      );
+
+      // Initialize local user keys
+      await encryptionService.initializeUserKeys('current_user');
+    });
+
+    tearDown(() async {
+      await localDb.close();
+    });
+
+    test('sendMessage saves cleartext locally and sends ciphertext via transport', () async {
+      // Setup partner with public key in database
+      final bobKeypair = await CryptoKeyUtils.generateX25519KeyPair();
+      final bobPubBase64 = await CryptoKeyUtils.encodePublicKey(bobKeypair);
+
+      final bobAccount = UserAccount.create(
+        accountId: 'acc_bob',
+        username: '@bob',
+        plaintextPassword: 'password123',
+        publicIdentityKey: bobPubBase64,
+      );
+      await localDb.saveAccount(bobAccount);
+
+      final message = ChatMessage(
+        id: 'msg_e2ee_01',
+        senderId: 'current_user',
+        recipientId: '@bob',
+        text: 'Top secret rendezvous at 9 PM',
+        timestamp: DateTime.now(),
+        type: MessageType.text,
+        status: MessageStatus.sending,
+      );
+
+      await chatRepository.sendMessage(message);
+
+      // 1. Local SQLite holds cleartext (local-first ownership)
+      final storedMessages = await localDb.getMessagesForPartner('@bob');
+      expect(storedMessages.length, equals(1));
+      expect(storedMessages.first.text, equals('Top secret rendezvous at 9 PM'));
+
+      // 2. Transport received encrypted ciphertext
+      expect(mockTransport.lastDispatchedMessage, isNotNull);
+      expect(mockTransport.lastDispatchedMessage!.text, isNot(equals('Top secret rendezvous at 9 PM')));
+      expect(mockTransport.lastDispatchedMessage!.text, contains('"ct":'));
+    });
+
+    test('processIncomingMessage decrypts transport payload and persists cleartext', () async {
+      // Setup Alice partner
+      final aliceStorage = InMemorySecureStorageService();
+      final aliceEncService = StandardE2EEEncryptionService(secureStorage: aliceStorage);
+      await aliceEncService.initializeUserKeys('alice');
+      final alicePub = await aliceEncService.getPublicIdentityKey();
+
+      final aliceAccount = UserAccount.create(
+        accountId: 'acc_alice',
+        username: '@alice',
+        plaintextPassword: 'password123',
+        publicIdentityKey: alicePub,
+      );
+      await localDb.saveAccount(aliceAccount);
+
+      final currentUserPub = await encryptionService.getPublicIdentityKey();
+      const originalText = "Hello from Alice through E2EE!";
+      final ciphertextEnvelope = await aliceEncService.encryptPayload(originalText, currentUserPub);
+
+      final incomingMessage = ChatMessage(
+        id: 'msg_incoming_01',
+        senderId: '@alice',
+        recipientId: 'current_user',
+        text: ciphertextEnvelope,
+        timestamp: DateTime.now(),
+        type: MessageType.text,
+        status: MessageStatus.delivered,
+      );
+
+      final processed = await chatRepository.processIncomingMessage(incomingMessage);
+
+      expect(processed.text, equals(originalText));
+
+      // Check stored in local database as cleartext
+      final stored = await localDb.getMessagesForPartner('@alice');
+      expect(stored.length, equals(1));
+      expect(stored.first.text, equals(originalText));
+    });
+  });
 }
 
 /// Helper mock implementation for AppLockService during widget/unit tests
@@ -1305,5 +1713,41 @@ class MockAppLockService implements AppLockService {
     lockApp();
   }
 }
+
+/// Mock chat transport capturing messages for E2EE testing
+class MockChatTransportService implements ChatService {
+  ChatMessage? lastDispatchedMessage;
+
+  @override
+  Future<ChatMessage> sendMessage(ChatMessage message) async {
+    lastDispatchedMessage = message;
+    return message;
+  }
+
+  @override
+  Future<List<ChatMessage>> fetchMessages({
+    required String partnerId,
+    int limit = 50,
+  }) async =>
+      [];
+
+  @override
+  Future<void> sendLuv({required String partnerId}) async {}
+
+  @override
+  Future<void> markMessagesAsRead({required String partnerId}) async {}
+
+  @override
+  Future<bool> deleteMessage({required String messageId}) async => true;
+
+  @override
+  Future<ChatMessage?> editMessage({
+    required String messageId,
+    required String newContent,
+  }) async =>
+      null;
+}
+
+
 
 

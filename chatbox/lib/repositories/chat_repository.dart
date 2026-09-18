@@ -1,6 +1,7 @@
 import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
+import 'package:chatbox/services/encryption_service.dart';
 
 /// Abstract contract for chat messaging operations
 abstract class ChatRepository {
@@ -12,6 +13,7 @@ abstract class ChatRepository {
   });
   Stream<List<ChatMessage>> watchMessages(String partnerId);
   Future<void> sendMessage(ChatMessage message);
+  Future<ChatMessage> processIncomingMessage(ChatMessage rawMessage);
   Future<bool> updateMessageStatus(String messageId, MessageStatus status);
   Future<bool> deleteMessage(String messageId);
   Future<List<ChatMessage>> searchMessages(String partnerId, String query);
@@ -20,16 +22,19 @@ abstract class ChatRepository {
   Future<void> seedInitialMessages(List<ChatMessage> initialMessages);
 }
 
-/// Primary implementation coordinating local SQLite storage and chat transport
+/// Primary implementation coordinating local SQLite storage, E2EE, and chat transport
 class LocalChatRepository implements ChatRepository {
   final LocalDatabase _database;
   final ChatService _chatService;
+  final EncryptionService? _encryptionService;
 
   LocalChatRepository({
     LocalDatabase? database,
     ChatService? chatService,
+    EncryptionService? encryptionService,
   })  : _database = database ?? LocalDatabase(),
-        _chatService = chatService ?? ChatService();
+        _chatService = chatService ?? ChatService(),
+        _encryptionService = encryptionService;
 
   @override
   Future<List<ChatMessage>> getMessages(String partnerId) {
@@ -56,11 +61,49 @@ class LocalChatRepository implements ChatRepository {
 
   @override
   Future<void> sendMessage(ChatMessage message) async {
-    // 1. Immediately persist locally (local-first truth)
+    // 1. Immediately persist locally in cleartext (local device owns conversation history)
     await _database.saveMessage(message);
 
-    // 2. Dispatch via transport service (Phase 9 Relay)
-    await _chatService.sendMessage(message);
+    // 2. Dispatch via transport service (Phase 10 E2EE & Phase 11 Relay)
+    ChatMessage outboundMessage = message;
+    final enc = _encryptionService;
+    if (enc != null) {
+      final recipientAccount =
+          await _database.getAccountByUsername(message.recipientId);
+      final recipientKey = recipientAccount?.publicIdentityKey;
+      if (recipientKey != null && recipientKey.isNotEmpty) {
+        final ciphertext = await enc.encryptPayload(
+          message.text,
+          recipientKey,
+        );
+        outboundMessage = message.copyWith(text: ciphertext);
+      }
+    }
+
+    await _chatService.sendMessage(outboundMessage);
+  }
+
+  @override
+  Future<ChatMessage> processIncomingMessage(ChatMessage rawMessage) async {
+    ChatMessage decryptedMessage = rawMessage;
+    final enc = _encryptionService;
+    if (enc != null) {
+      try {
+        final senderAccount =
+            await _database.getAccountByUsername(rawMessage.senderId);
+        final senderKey = senderAccount?.publicIdentityKey ?? '';
+        final cleartext = await enc.decryptPayload(
+          rawMessage.text,
+          senderKey,
+        );
+        decryptedMessage = rawMessage.copyWith(text: cleartext);
+      } catch (_) {
+        // Fallback to raw text if decryption fails or message is unencrypted
+      }
+    }
+
+    await _database.saveMessage(decryptedMessage);
+    return decryptedMessage;
   }
 
   @override

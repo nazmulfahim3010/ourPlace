@@ -7,6 +7,7 @@ import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/user.dart';
 import 'package:chatbox/models/user_account.dart';
 import 'package:chatbox/services/access_throttling_service.dart';
+import 'package:chatbox/services/encryption_service.dart';
 
 /// Abstract service contract for anonymous identity authentication (Phase 6 & 9)
 abstract class AuthService {
@@ -40,6 +41,7 @@ class LocalAuthService implements AuthService {
   factory LocalAuthService({
     LocalDatabase? database,
     AccessThrottlingService? throttlingService,
+    EncryptionService? encryptionService,
     bool resetSession = false,
   }) {
     if (database != null) {
@@ -47,6 +49,9 @@ class LocalAuthService implements AuthService {
     }
     if (throttlingService != null) {
       _instance._throttlingService = throttlingService;
+    }
+    if (encryptionService != null) {
+      _instance._encryptionService = encryptionService;
     }
     if (resetSession) {
       _instance.resetDefaultSession();
@@ -69,6 +74,7 @@ class LocalAuthService implements AuthService {
   LocalDatabase get _db => _database ?? LocalDatabase();
 
   AccessThrottlingService _throttlingService = AccessThrottlingService();
+  EncryptionService _encryptionService = StandardE2EEEncryptionService();
 
   String? _lastRegisteredRecoveryKey;
 
@@ -145,11 +151,16 @@ class LocalAuthService implements AuthService {
     final recoverySalt = HashUtils.generateSalt();
     final recoveryHash = RecoveryKeyUtils.hashRecoveryKey(phrase, recoverySalt);
 
+    // 5b. Generate and store E2EE X25519 identity keypair in hardware secure storage
+    await _encryptionService.initializeUserKeys(accountId);
+    final publicIdentityKey = await _encryptionService.getPublicIdentityKey();
+
     // 6. Create secure UserAccount (salted hash verifiers, never plaintext)
     final account = UserAccount.create(
       accountId: accountId,
       username: normalized,
       plaintextPassword: password,
+      publicIdentityKey: publicIdentityKey,
       recoveryKeyHash: recoveryHash,
       recoveryKeySalt: recoverySalt,
     );
@@ -158,7 +169,7 @@ class LocalAuthService implements AuthService {
     await _db.saveAccount(account);
     await _db.logSecurityEvent(
       'account_created',
-      'New anonymous account registered: $normalized',
+      'New anonymous account registered: $normalized with E2EE identity key',
       severity: 'info',
     );
 
@@ -222,6 +233,10 @@ class LocalAuthService implements AuthService {
 
     // 4. Clear throttling on successful login
     _throttlingService.recordSuccessfulLogin(normalized);
+
+    // 4b. Load E2EE keys for authenticated session
+    await _encryptionService.initializeUserKeys(account.accountId);
+
     await _db.logSecurityEvent(
       'login_success',
       'Successful authentication for: $normalized',
@@ -299,6 +314,7 @@ class LocalAuthService implements AuthService {
         severity: 'info',
       );
     }
+    await _encryptionService.clearKeys();
     _currentUser = null;
     _authStateController.add(null);
   }

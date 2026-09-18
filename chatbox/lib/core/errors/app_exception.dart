@@ -29,3 +29,9 @@ class AuthException extends AppException {
 class EncryptionException extends AppException {
   const EncryptionException(super.message, {super.code, super.details});
 }
+
+/// Security & Tamper detection failures (Phase 9 & 10)
+class SecurityException extends AppException {
+  const SecurityException(super.message, {super.code, super.details});
+}
+
