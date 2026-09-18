@@ -23,6 +23,9 @@ class EphemeralRelayEnvelope {
   /// Expiration timestamp (TTL) after which the relay automatically purges the message
   final DateTime expiresAt;
 
+  /// Type of relay envelope: message, delivery_receipt, or read_receipt (Phase 12)
+  final String envelopeType;
+
   const EphemeralRelayEnvelope({
     required this.id,
     required this.senderId,
@@ -30,6 +33,7 @@ class EphemeralRelayEnvelope {
     required this.ciphertextPayload,
     required this.timestamp,
     required this.expiresAt,
+    this.envelopeType = 'message',
   });
 
   /// Factory constructor to create an envelope with a standard 48-hour default TTL
@@ -38,6 +42,7 @@ class EphemeralRelayEnvelope {
     required String senderId,
     required String recipientId,
     required String ciphertextPayload,
+    String envelopeType = 'message',
     DateTime? timestamp,
     Duration ttl = const Duration(hours: 48),
   }) {
@@ -49,8 +54,62 @@ class EphemeralRelayEnvelope {
       ciphertextPayload: ciphertextPayload,
       timestamp: now,
       expiresAt: now.add(ttl),
+      envelopeType: envelopeType,
     );
   }
+
+  /// Create a delivery receipt envelope notifying sender that message was received
+  factory EphemeralRelayEnvelope.deliveryReceipt({
+    required String messageId,
+    required String senderId,
+    required String recipientId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'receipt_del_${messageId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: messageId,
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'delivery_receipt',
+    );
+  }
+
+  /// Create a read receipt envelope notifying sender that message was opened/read
+  factory EphemeralRelayEnvelope.readReceipt({
+    required String messageId,
+    required String senderId,
+    required String recipientId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'receipt_read_${messageId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: messageId,
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'read_receipt',
+    );
+  }
+
+  /// Whether this envelope is a status receipt rather than a content payload
+  bool get isReceipt =>
+      envelopeType == 'delivery_receipt' || envelopeType == 'read_receipt';
+
+  /// Whether this envelope is a delivery receipt
+  bool get isDeliveryReceipt => envelopeType == 'delivery_receipt';
+
+  /// Whether this envelope is a read receipt
+  bool get isReadReceipt => envelopeType == 'read_receipt';
+
+  /// Target message ID for receipt envelopes
+  String get targetMessageId => ciphertextPayload;
 
   /// Whether this envelope has expired past its TTL
   bool isExpired([DateTime? now]) {
@@ -65,6 +124,7 @@ class EphemeralRelayEnvelope {
       'sender_id': senderId,
       'recipient_id': recipientId,
       'ciphertext': ciphertextPayload,
+      'type': envelopeType,
       'timestamp': timestamp.toIso8601String(),
       'expires_at': expiresAt.toIso8601String(),
     };
@@ -77,6 +137,7 @@ class EphemeralRelayEnvelope {
       senderId: json['sender_id'] as String,
       recipientId: json['recipient_id'] as String,
       ciphertextPayload: json['ciphertext'] as String,
+      envelopeType: json['type'] as String? ?? 'message',
       timestamp: DateTime.parse(json['timestamp'] as String),
       expiresAt: DateTime.parse(json['expires_at'] as String),
     );
@@ -93,5 +154,6 @@ class EphemeralRelayEnvelope {
 
   @override
   String toString() =>
-      'EphemeralRelayEnvelope(id: $id, from: $senderId, to: $recipientId, ctLength: ${ciphertextPayload.length}, expires: $expiresAt)';
+      'EphemeralRelayEnvelope(id: $id, type: $envelopeType, from: $senderId, to: $recipientId, expires: $expiresAt)';
 }
+

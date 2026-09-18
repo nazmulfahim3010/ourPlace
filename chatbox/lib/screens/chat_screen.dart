@@ -80,6 +80,11 @@ class _ChatScreenState extends State<ChatScreen> {
           });
         }
       }
+      // Phase 12: Mark conversation as read and emit read receipts
+      await _chatRepository.markConversationAsRead(
+        widget.partnerId,
+        currentUserId: _currentUserId,
+      );
     } catch (e) {
       if (mounted) {
         setState(() {

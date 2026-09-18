@@ -1919,7 +1919,269 @@ void main() {
       expect(bobMessages.first.text, equals(cleartextMessage));
       expect(bobMessages.first.senderId, equals('@alice'));
     });
+  });
 
+  group('Phase 12: Message Lifecycle & Monotonic Status State Machine', () {
+    test('ChatMessage canTransitionTo validates legal forward progression', () {
+      final base = ChatMessage(
+        id: 'msg_status_01',
+        senderId: '@alice',
+        recipientId: '@bob',
+        text: 'Progressive status test',
+        timestamp: DateTime.now(),
+        status: MessageStatus.sending,
+      );
+
+      // sending -> sent, failed, or stay sending (cannot jump to delivered/read directly)
+      expect(base.canTransitionTo(MessageStatus.sent), isTrue);
+      expect(base.canTransitionTo(MessageStatus.failed), isTrue);
+      expect(base.canTransitionTo(MessageStatus.sending), isTrue);
+      expect(base.canTransitionTo(MessageStatus.delivered), isFalse);
+      expect(base.canTransitionTo(MessageStatus.read), isFalse);
+
+      final sentMsg = base.copyWithStatus(MessageStatus.sent);
+      expect(sentMsg.canTransitionTo(MessageStatus.delivered), isTrue);
+      expect(sentMsg.canTransitionTo(MessageStatus.read), isTrue);
+      expect(sentMsg.canTransitionTo(MessageStatus.sending), isFalse); // cannot regress
+
+      final deliveredMsg = base.copyWithStatus(MessageStatus.delivered);
+      expect(deliveredMsg.canTransitionTo(MessageStatus.read), isTrue);
+      expect(deliveredMsg.canTransitionTo(MessageStatus.sent), isFalse); // cannot regress
+      expect(deliveredMsg.canTransitionTo(MessageStatus.sending), isFalse); // cannot regress
+
+      final readMsg = base.copyWithStatus(MessageStatus.read);
+      expect(readMsg.isTerminal, isTrue);
+      expect(readMsg.canTransitionTo(MessageStatus.read), isTrue);
+      expect(readMsg.canTransitionTo(MessageStatus.delivered), isFalse); // cannot regress
+      expect(readMsg.canTransitionTo(MessageStatus.sent), isFalse); // cannot regress
+
+      final failedMsg = base.copyWithStatus(MessageStatus.failed);
+      expect(failedMsg.isPendingOutbound, isTrue);
+      expect(failedMsg.canTransitionTo(MessageStatus.sending), isTrue); // can retry
+    });
+  });
+
+  group('Phase 12: Offline Queueing, Reconciliation & Receipts Flow', () {
+    late AppDatabase aliceDb;
+    late LocalDatabase aliceLocalDb;
+    late AppDatabase bobDb;
+    late LocalDatabase bobLocalDb;
+    late InMemoryFirebaseRelayService sharedRelay;
+    late StandardE2EEEncryptionService aliceEnc;
+    late StandardE2EEEncryptionService bobEnc;
+    late LocalChatRepository aliceRepo;
+    late LocalChatRepository bobRepo;
+
+    setUp(() async {
+      aliceDb = AppDatabase(NativeDatabase.memory());
+      aliceLocalDb = LocalDatabase(database: aliceDb);
+
+      bobDb = AppDatabase(NativeDatabase.memory());
+      bobLocalDb = LocalDatabase(database: bobDb);
+
+      sharedRelay = InMemoryFirebaseRelayService.isolated();
+
+      final aliceStorage = InMemorySecureStorageService();
+      aliceEnc = StandardE2EEEncryptionService(secureStorage: aliceStorage);
+      await aliceEnc.initializeUserKeys('@alice');
+      final alicePub = await aliceEnc.getPublicIdentityKey();
+
+      final bobStorage = InMemorySecureStorageService();
+      bobEnc = StandardE2EEEncryptionService(secureStorage: bobStorage);
+      await bobEnc.initializeUserKeys('@bob');
+      final bobPub = await bobEnc.getPublicIdentityKey();
+
+      // Alice registers Bob's public key locally
+      await aliceLocalDb.saveAccount(UserAccount.create(
+        accountId: 'acc_bob_on_alice',
+        username: '@bob',
+        plaintextPassword: 'password123',
+        publicIdentityKey: bobPub,
+      ));
+
+      // Bob registers Alice's public key locally
+      await bobLocalDb.saveAccount(UserAccount.create(
+        accountId: 'acc_alice_on_bob',
+        username: '@alice',
+        plaintextPassword: 'password123',
+        publicIdentityKey: alicePub,
+      ));
+
+      aliceRepo = LocalChatRepository(
+        database: aliceLocalDb,
+        chatService: ChatService(relayService: sharedRelay),
+        encryptionService: aliceEnc,
+      );
+
+      bobRepo = LocalChatRepository(
+        database: bobLocalDb,
+        chatService: ChatService(relayService: sharedRelay),
+        encryptionService: bobEnc,
+      );
+    });
+
+    tearDown(() async {
+      sharedRelay.dispose();
+      await aliceDb.close();
+      await bobDb.close();
+    });
+
+    test('Offline sending queues message locally with failed status and flushOutboundQueue drains when online', () async {
+      // 1. Simulate Alice offline
+      aliceRepo.syncService.setOnline(false);
+      expect(aliceRepo.syncService.isOnline, isFalse);
+
+      final msg = ChatMessage(
+        id: 'offline_msg_01',
+        senderId: '@alice',
+        recipientId: '@bob',
+        text: 'Message typed in a tunnel 🚇',
+        timestamp: DateTime.now(),
+        type: MessageType.text,
+        status: MessageStatus.sending,
+      );
+
+      await aliceRepo.sendMessage(msg);
+
+      // Local database retains cleartext with status 'failed'
+      final storedAlice = await aliceLocalDb.getMessageById('offline_msg_01');
+      expect(storedAlice, isNotNull);
+      expect(storedAlice!.text, equals('Message typed in a tunnel 🚇'));
+      expect(storedAlice.status, equals(MessageStatus.failed));
+
+      // Ephemeral relay received nothing because Alice was offline
+      expect(await sharedRelay.getPendingQueueCount('@bob'), equals(0));
+
+      // 2. Unsent messages query confirms it is queued
+      final unsent = await aliceLocalDb.getUnsentMessages(currentUserId: '@alice');
+      expect(unsent.length, equals(1));
+      expect(unsent.first.id, equals('offline_msg_01'));
+
+      // 3. Alice comes back online and flushes outbound queue
+      aliceRepo.syncService.setOnline(true);
+      final flushedCount = await aliceRepo.syncService.flushOutboundQueue(currentUserId: '@alice');
+      expect(flushedCount, equals(1));
+
+      // 4. Stored message status transitioned to 'sent'
+      final updatedAlice = await aliceLocalDb.getMessageById('offline_msg_01');
+      expect(updatedAlice!.status, equals(MessageStatus.sent));
+
+      // 5. Ephemeral relay now holds the encrypted ciphertext for Bob
+      expect(await sharedRelay.getPendingQueueCount('@bob'), equals(1));
+    });
+
+    test('retryMessage successfully resends failed message once connectivity is restored', () async {
+      aliceRepo.syncService.setOnline(false);
+
+      final msg = ChatMessage(
+        id: 'retry_msg_01',
+        senderId: '@alice',
+        recipientId: '@bob',
+        text: 'Will retry this later',
+        timestamp: DateTime.now(),
+        type: MessageType.text,
+        status: MessageStatus.sending,
+      );
+
+      await aliceRepo.sendMessage(msg);
+      expect((await aliceLocalDb.getMessageById('retry_msg_01'))!.status, equals(MessageStatus.failed));
+
+      // Alice reconnects and triggers retry
+      aliceRepo.syncService.setOnline(true);
+      final retrySuccess = await aliceRepo.retryMessage('retry_msg_01', currentUserId: '@alice');
+      expect(retrySuccess, isTrue);
+
+      final retried = await aliceLocalDb.getMessageById('retry_msg_01');
+      expect(retried!.status, equals(MessageStatus.sent));
+      expect(await sharedRelay.getPendingQueueCount('@bob'), equals(1));
+    });
+
+    test('Full End-to-End Delivery and Read Receipt Synchronization (Alice <-> Bob)', () async {
+      // 1. Alice sends message to Bob while online
+      final message = ChatMessage(
+        id: 'e2ee_receipt_msg',
+        senderId: '@alice',
+        recipientId: '@bob',
+        text: 'Are you free tonight? 🍣',
+        timestamp: DateTime.now(),
+        type: MessageType.text,
+        status: MessageStatus.sending,
+      );
+
+      await aliceRepo.sendMessage(message);
+
+      // Alice's local status is 'sent'
+      final aliceMsgSent = await aliceLocalDb.getMessageById('e2ee_receipt_msg');
+      expect(aliceMsgSent!.status, equals(MessageStatus.sent));
+
+      // 2. Bob syncs inbound envelopes (message delivery)
+      final receivedByBob = await bobRepo.syncPendingRelayMessages('@bob');
+      expect(receivedByBob.length, equals(1));
+      expect(receivedByBob.first.text, equals('Are you free tonight? 🍣'));
+      expect(receivedByBob.first.status, equals(MessageStatus.delivered));
+
+      // Bob's sync automatic delivery receipt dispatch puts a receipt envelope for Alice into relay
+      expect(await sharedRelay.getPendingQueueCount('@alice'), equals(1));
+      final aliceEnvelopes = await sharedRelay.fetchPendingMessages('@alice');
+      expect(aliceEnvelopes.first.isDeliveryReceipt, isTrue);
+      expect(aliceEnvelopes.first.targetMessageId, equals('e2ee_receipt_msg'));
+
+      // 3. Alice syncs inbound envelopes -> processes delivery receipt
+      await aliceRepo.syncPendingRelayMessages('@alice');
+
+      // Alice's local message status has now progressed to 'delivered'!
+      final aliceMsgDelivered = await aliceLocalDb.getMessageById('e2ee_receipt_msg');
+      expect(aliceMsgDelivered!.status, equals(MessageStatus.delivered));
+
+      // 4. Bob opens/reads conversation with Alice
+      final markedCount = await bobRepo.markConversationAsRead('@alice', currentUserId: '@bob');
+      expect(markedCount, equals(1));
+
+      // Bob's message in local SQLite is now 'read'
+      final bobStored = await bobLocalDb.getMessageById('e2ee_receipt_msg');
+      expect(bobStored!.status, equals(MessageStatus.read));
+
+      // Read receipt is dispatched into the ephemeral relay for Alice
+      expect(await sharedRelay.getPendingQueueCount('@alice'), equals(1));
+      final aliceReceipts = await sharedRelay.fetchPendingMessages('@alice');
+      expect(aliceReceipts.first.isReadReceipt, isTrue);
+      expect(aliceReceipts.first.targetMessageId, equals('e2ee_receipt_msg'));
+
+      // 5. Alice syncs inbound envelopes -> processes read receipt
+      await aliceRepo.syncPendingRelayMessages('@alice');
+
+      // Alice's message status has now progressed to 'read' (double blue ticks)!
+      final aliceMsgRead = await aliceLocalDb.getMessageById('e2ee_receipt_msg');
+      expect(aliceMsgRead!.status, equals(MessageStatus.read));
+
+      // 6. Zero server footprint: all queues are completely clean
+      expect(await sharedRelay.getPendingQueueCount('@alice'), equals(0));
+      expect(await sharedRelay.getPendingQueueCount('@bob'), equals(0));
+    });
+
+    test('reconcile performs bidirectional drain: syncs incoming receipts & flushes outgoing offline messages', () async {
+      // Alice sends while offline
+      aliceRepo.syncService.setOnline(false);
+      final offlineMsg = ChatMessage(
+        id: 'reconcile_out_01',
+        senderId: '@alice',
+        recipientId: '@bob',
+        text: 'Sync on reconnect',
+        timestamp: DateTime.now(),
+        type: MessageType.text,
+        status: MessageStatus.sending,
+      );
+      await aliceRepo.sendMessage(offlineMsg);
+      expect((await aliceLocalDb.getMessageById('reconcile_out_01'))!.status, equals(MessageStatus.failed));
+
+      // Reconnect and reconcile
+      aliceRepo.syncService.setOnline(true);
+      await aliceRepo.reconcile(currentUserId: '@alice');
+
+      // Message dispatched and updated to sent
+      expect((await aliceLocalDb.getMessageById('reconcile_out_01'))!.status, equals(MessageStatus.sent));
+      expect(await sharedRelay.getPendingQueueCount('@bob'), equals(1));
+    });
   });
 }
 

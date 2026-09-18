@@ -4,6 +4,7 @@ import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/sync_service.dart';
 
 /// Abstract contract for chat messaging operations
 abstract class ChatRepository {
@@ -24,6 +25,12 @@ abstract class ChatRepository {
   Future<void> clearConversation(String partnerId);
   Future<int> getMessageCount(String partnerId);
   Future<void> seedInitialMessages(List<ChatMessage> initialMessages);
+
+  // Phase 12 Message Synchronization additions
+  Future<bool> retryMessage(String messageId, {required String currentUserId});
+  Future<int> markConversationAsRead(String partnerId, {required String currentUserId});
+  Future<void> reconcile({required String currentUserId});
+  SyncService get syncService;
 }
 
 /// Primary implementation coordinating local SQLite storage, E2EE, and chat transport
@@ -31,14 +38,25 @@ class LocalChatRepository implements ChatRepository {
   final LocalDatabase _database;
   final ChatService _chatService;
   final EncryptionService? _encryptionService;
+  final SyncService _syncService;
 
   LocalChatRepository({
     LocalDatabase? database,
     ChatService? chatService,
     EncryptionService? encryptionService,
+    SyncService? syncService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
-        _encryptionService = encryptionService;
+        _encryptionService = encryptionService,
+        _syncService = syncService ??
+            DefaultSyncService(
+              database: database ?? LocalDatabase(),
+              chatService: chatService ?? ChatService(),
+              encryptionService: encryptionService,
+            );
+
+  @override
+  SyncService get syncService => _syncService;
 
   @override
   Future<List<ChatMessage>> getMessages(String partnerId) {
@@ -65,30 +83,38 @@ class LocalChatRepository implements ChatRepository {
 
   @override
   Future<void> sendMessage(ChatMessage message) async {
-    // 1. Immediately persist locally in cleartext (local device owns conversation history)
-    await _database.saveMessage(message);
+    // 1. Immediately persist locally in cleartext with initial 'sending' state
+    final initial = message.copyWithStatus(MessageStatus.sending);
+    await _database.saveMessage(initial);
 
     // 2. Encrypt plaintext for transport via Phase 10 E2EE
-    ChatMessage outboundMessage = message;
+    ChatMessage outboundMessage = initial;
     final enc = _encryptionService;
     if (enc != null) {
       final recipientAccount =
-          await _database.getAccountByUsername(message.recipientId);
+          await _database.getAccountByUsername(initial.recipientId);
       final recipientKey = recipientAccount?.publicIdentityKey;
       if (recipientKey != null && recipientKey.isNotEmpty) {
         final ciphertext = await enc.encryptPayload(
-          message.text,
+          initial.text,
           recipientKey,
         );
-        outboundMessage = message.copyWith(text: ciphertext);
+        outboundMessage = initial.copyWith(text: ciphertext);
       }
     }
 
     // 3. Dispatch to temporary relay (Phase 11 Ephemeral Queue)
-    await _chatService.sendMessage(outboundMessage);
-
-    // 4. Update local state to sent
-    await _database.updateMessageStatus(message.id, MessageStatus.sent);
+    try {
+      if (!_syncService.isOnline) {
+        throw Exception('Device is offline');
+      }
+      await _chatService.sendMessage(outboundMessage);
+      // 4. Update local state to sent
+      await _database.updateMessageStatusIfProgressing(message.id, MessageStatus.sent);
+    } catch (_) {
+      // 5. If dispatch fails or offline, update to failed for offline retry
+      await _database.updateMessageStatus(message.id, MessageStatus.failed);
+    }
   }
 
   @override
@@ -126,29 +152,7 @@ class LocalChatRepository implements ChatRepository {
   @override
   Future<List<ChatMessage>> syncPendingRelayMessages(
       String currentUserId) async {
-    final pendingEnvelopes =
-        await _chatService.fetchPendingRelayEnvelopes(currentUserId);
-    final processedMessages = <ChatMessage>[];
-
-    for (final envelope in pendingEnvelopes) {
-      final raw = ChatMessage(
-        id: envelope.id,
-        senderId: envelope.senderId,
-        recipientId: envelope.recipientId,
-        text: envelope.ciphertextPayload,
-        timestamp: envelope.timestamp,
-        status: MessageStatus.delivered,
-      );
-
-      final decrypted = await processIncomingMessage(raw);
-      processedMessages.add(decrypted);
-
-      // Immediately issue delivery ACK and purge ciphertext from remote relay
-      await _chatService.acknowledgeAndPurge(envelope.id,
-          recipientId: currentUserId);
-    }
-
-    return processedMessages;
+    return _syncService.processInboundEnvelopes(currentUserId: currentUserId);
   }
 
   @override
@@ -161,6 +165,24 @@ class LocalChatRepository implements ChatRepository {
       for (final envelope in envelopes) {
         if (!seenIds.contains(envelope.id)) {
           seenIds.add(envelope.id);
+
+          if (envelope.isDeliveryReceipt) {
+            await _database.updateMessageStatusIfProgressing(
+              envelope.targetMessageId,
+              MessageStatus.delivered,
+            );
+            await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+            continue;
+          }
+
+          if (envelope.isReadReceipt) {
+            await _database.updateMessageStatusIfProgressing(
+              envelope.targetMessageId,
+              MessageStatus.read,
+            );
+            await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+            continue;
+          }
 
           final raw = ChatMessage(
             id: envelope.id,
@@ -177,10 +199,32 @@ class LocalChatRepository implements ChatRepository {
           await _chatService.acknowledgeAndPurge(envelope.id,
               recipientId: currentUserId);
 
+          // Emit delivery receipt
+          await _syncService.sendDeliveryReceipt(
+            messageId: envelope.id,
+            recipientId: envelope.senderId,
+            senderId: currentUserId,
+          );
+
           yield decrypted;
         }
       }
     }
+  }
+
+  @override
+  Future<bool> retryMessage(String messageId, {required String currentUserId}) {
+    return _syncService.retryMessage(messageId, currentUserId: currentUserId);
+  }
+
+  @override
+  Future<int> markConversationAsRead(String partnerId, {required String currentUserId}) {
+    return _syncService.markConversationAsRead(partnerId, currentUserId: currentUserId);
+  }
+
+  @override
+  Future<void> reconcile({required String currentUserId}) {
+    return _syncService.reconcile(currentUserId: currentUserId);
   }
 
   @override

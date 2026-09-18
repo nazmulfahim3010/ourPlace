@@ -1,5 +1,5 @@
 # ourPlace — Architectural & Technical Diagrams Specification
-> **Document Version:** 1.2.0  
+> **Document Version:** 1.3.0  
 > **Last Updated:** 2026-09-18  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Companion Document:** [`docts.md`](file:///e:/ourPlace/docts.md)
@@ -17,6 +17,7 @@
 8. [Love Connection & One-Time Love Code Sharing Flow](#8-love-connection--one-time-love-code-sharing-flow)
 9. [Local Database Schema & Entity Relationships](#9-local-database-schema--entity-relationships)
 10. [Security Enclave & Cryptographic Trust Boundaries](#10-security-enclave--cryptographic-trust-boundaries)
+11. [Message State Lifecycle & Synchronization Flow](#11-message-state-lifecycle--synchronization-flow)
 
 ---
 
@@ -521,3 +522,98 @@ flowchart LR
     RAM <-->|Protected Key-Value Operations| Keystore
     RAM <-->|LocalAuthentication Prompt| BiometricSensor
 ```
+
+---
+
+## 11. Message State Lifecycle & Synchronization Flow
+
+### 11.1. Monotonic Unidirectional State Machine
+Messages follow a strictly monotonic forward lifecycle. No regression is permitted, and `read` status is terminal.
+
+```mermaid
+stateDiagram-v2
+    [*] --> sending: User taps send (saved locally)
+    sending --> sent: Dispatched to Ephemeral Relay
+    sending --> failed: Network offline / error
+    failed --> sending: Retry message (manual or sync)
+    failed --> sent: Reconnection queue flush
+    sent --> delivered: Ephemeral Delivery Receipt received
+    delivered --> read: Ephemeral Read Receipt received
+    sent --> read: Read Receipt (batched / fast open)
+    read --> [*]: Terminal state (immutable)
+```
+
+### 11.2. Offline Queueing and Reconnection Sequence
+When offline, outbound messages are persisted in local SQLite with `failed` status. When network connectivity resumes, `flushOutboundQueue` drains all unsent messages to the relay.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Alice Device (Offline)
+    participant LocalDB as Alice Local SQLite
+    participant Sync as Alice SyncService
+    participant Relay as Firebase Ephemeral Relay
+    actor Bob as Bob Device
+
+    Alice->>LocalDB: 1. Save cleartext message (status: sending)
+    Alice->>Sync: 2. Attempt dispatch
+    Note over Sync: Network offline detected
+    Sync->>LocalDB: 3. Update status: failed (queued)
+    Note over Alice: User sees red error tick & offline indicator
+
+    Note over Alice, Relay: Connectivity restored (online: true)
+    Alice->>Sync: 4. Trigger reconcile() / flushOutboundQueue()
+    Sync->>LocalDB: 5. Query getUnsentMessages()
+    LocalDB-->>Sync: Return [offline_msg_01]
+    Sync->>Relay: 6. Dispatch E2EE ciphertext envelope
+    Relay-->>Sync: Relay HTTP 200 / ACK
+    Sync->>LocalDB: 7. updateMessageStatusIfProgressing(sent)
+    Note over Alice: Single check tick (sent) renders in UI
+
+    Bob->>Relay: 8. fetchPendingRelayEnvelopes()
+    Relay-->>Bob: Deliver ciphertext
+    Bob->>Relay: 9. acknowledgeAndPurge() (atomic wipe)
+```
+
+### 11.3. End-to-End Delivery & Read Receipt Flow
+Receipts are transmitted as ephemeral wire envelopes through the relay and purged immediately upon receipt.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Alice Device
+    participant AliceDB as Alice Local SQLite
+    participant Relay as Firebase Ephemeral Relay
+    participant BobDB as Bob Local SQLite
+    actor Bob as Bob Device
+
+    Alice->>AliceDB: Save cleartext (status: sending)
+    Alice->>Relay: Dispatch E2EE ciphertext envelope
+    Alice->>AliceDB: updateMessageStatusIfProgressing(sent)
+
+    Note over Bob: Bob comes online / connects
+    Bob->>Relay: fetchPendingRelayEnvelopes("@bob")
+    Relay-->>Bob: Return ciphertext envelope
+    Bob->>Bob: Decrypt payload using Alice's public key
+    Bob->>BobDB: Save cleartext (status: delivered)
+    Bob->>Relay: acknowledgeAndPurge(messageId) (erases ciphertext from cloud)
+    Bob->>Relay: sendDeliveryReceipt(targetMessageId, recipient: "@alice")
+
+    Note over Alice: Alice syncs / listens
+    Alice->>Relay: fetchPendingRelayEnvelopes("@alice")
+    Relay-->>Alice: Return Delivery Receipt envelope
+    Alice->>AliceDB: updateMessageStatusIfProgressing(delivered)
+    Alice->>Relay: acknowledgeAndPurge(receiptEnvelopeId)
+    Note over Alice: Double gray check ticks render in UI
+
+    Note over Bob: Bob opens conversation screen
+    Bob->>BobDB: markConversationAsRead("@alice") (status: read)
+    Bob->>Relay: sendReadReceipt(targetMessageId, recipient: "@alice")
+
+    Alice->>Relay: fetchPendingRelayEnvelopes("@alice")
+    Relay-->>Alice: Return Read Receipt envelope
+    Alice->>AliceDB: updateMessageStatusIfProgressing(read)
+    Alice->>Relay: acknowledgeAndPurge(receiptEnvelopeId)
+    Note over Alice: Double blue check ticks render in UI
+```
+

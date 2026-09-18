@@ -180,6 +180,63 @@ class LocalDatabase {
     return count > 0;
   }
 
+  /// Retrieve a message by its unique ID
+  Future<ChatMessage?> getMessageById(String messageId) async {
+    final row = await (db.select(db.messages)
+          ..where((tbl) => tbl.id.equals(messageId)))
+        .getSingleOrNull();
+    return row != null ? _rowToMessage(row) : null;
+  }
+
+  /// Update message status strictly if moving forward in the lifecycle (Phase 12)
+  Future<bool> updateMessageStatusIfProgressing(
+    String messageId,
+    MessageStatus newStatus,
+  ) async {
+    final message = await getMessageById(messageId);
+    if (message == null) return false;
+    if (!message.canTransitionTo(newStatus)) return false;
+
+    return updateMessageStatus(messageId, newStatus);
+  }
+
+  /// Retrieve all unsent / failed messages pending offline transmission
+  Future<List<ChatMessage>> getUnsentMessages({
+    String? partnerId,
+    String currentUserId = 'current_user',
+  }) async {
+    final query = db.select(db.messages)
+      ..where((tbl) {
+        final senderCheck = tbl.senderId.equals(currentUserId) |
+            tbl.senderId.equals('current_user');
+        final statusCheck = tbl.status.equals(MessageStatus.sending.name) |
+            tbl.status.equals(MessageStatus.failed.name);
+        if (partnerId != null && partnerId.isNotEmpty) {
+          return senderCheck & statusCheck & tbl.recipientId.equals(partnerId);
+        }
+        return senderCheck & statusCheck;
+      })
+      ..orderBy([(tbl) => OrderingTerm.asc(tbl.timestamp)]);
+
+    final rows = await query.get();
+    return rows.map(_rowToMessage).toList();
+  }
+
+  /// Mark all unread incoming messages from partner as read (Phase 12)
+  Future<int> markConversationAsRead(
+    String partnerId, {
+    String currentUserId = 'current_user',
+  }) async {
+    final count = await (db.update(db.messages)
+          ..where((tbl) =>
+              tbl.senderId.equals(partnerId) &
+              (tbl.recipientId.equals(currentUserId) |
+                  tbl.recipientId.equals('current_user')) &
+              tbl.status.equals(MessageStatus.read.name).not()))
+        .write(MessagesCompanion(status: Value(MessageStatus.read.name)));
+    return count;
+  }
+
   /// Clear all messages for a partner
   Future<void> clearMessagesForPartner(
     String partnerId, {

@@ -1,5 +1,5 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.3.0  
+> **Document Version:** 3.4.0  
 > **Last Updated:** 2026-09-18  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 11 — Temporary Firebase Relay** |
-| **Current Status** | **COMPLETED** (Ready for Phase 12: Message Synchronization) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay) |
-| **Next Phase** | **Phase 12 — Message Synchronization** |
+| **Current Phase** | **Phase 12 — Message Synchronization** |
+| **Current Status** | **COMPLETED** (Ready for Phase 13: Real-Time Features) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization) |
+| **Next Phase** | **Phase 13 — Real-Time Features** |
 
 ---
 
@@ -57,11 +57,11 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           │
                                                                           ▼
 [Phase 12: Message Sync] ◄──  [Phase 11: Temp Relay]    ◄──  [Phase 10: E2EE Layer]
-       (NEXT)                          (COMPLETED)                     (COMPLETED)
+       (COMPLETED)                     (COMPLETED)                     (COMPLETED)
           │
           ▼
 [Phase 13: Real-Time]    ──►  [Phase 14: Push Notifs]   ──►  [Phase 15: Media]
-       (PLANNED)                       (PLANNED)                     (PLANNED)
+       (NEXT)                          (PLANNED)                     (PLANNED)
                                                                           │
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
@@ -168,9 +168,15 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Upgraded `ChatService` and `LocalChatRepository` with relay transport and sync methods
   - [x] Comprehensive test suite (71/71 tests passing, 0 analyzer issues)
 
-- [ ] **Phase 12 — Message Synchronization**
-  - [ ] State transitions (`sending` ➔ `sent` ➔ `delivered` ➔ `read` / `failed`)
-  - [ ] Offline queue handling and reconciliation
+- [x] **Phase 12 — Message Synchronization**
+  - [x] Unidirectional state machine validation (`sending` ➔ `sent` ➔ `delivered` ➔ `read` / `failed`)
+  - [x] Regressive status transitions blocked; `read` terminal state enforced
+  - [x] Offline outbound message queueing in local SQLite with `failed` status
+  - [x] Automatic queue flushing and bidirectional reconciliation on reconnection (`flushOutboundQueue`, `reconcile`)
+  - [x] Ephemeral delivery and read receipt dispatch without persisting receipts in remote storage
+  - [x] Manual single-message retry protocol (`retryMessage`)
+  - [x] Conversation mark-as-read integration emitting read receipts to original sender
+  - [x] Comprehensive test suite (76/76 tests passing, 0 analyzer issues)
 
 - [ ] **Phase 13 — Real-Time Features**
   - [ ] Real-time typing indicators with debounce
@@ -714,12 +720,70 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ---
 
+### 7.7. Phase 12 Completion Report — Message Synchronization
+
+- **Current Phase:** Phase 12 — Message Synchronization
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. **Unidirectional Status State Machine (`ChatMessage`):**
+   - Implemented `canTransitionTo(MessageStatus nextStatus)`:
+     - `sending` ➔ `sent` or `failed`
+     - `failed` ➔ `sending` (retry) or `sent`
+     - `sent` ➔ `delivered` or `read`
+     - `delivered` ➔ `read`
+     - `read` ➔ Terminal (no state can overwrite `read`)
+   - Added getters `isTerminal` and `isPendingOutbound`.
+2. **Local Database Monotonic Progression (`LocalDatabase`):**
+   - Added `updateMessageStatusIfProgressing(id, nextStatus)` to guarantee no regressive updates overwrite newer delivery states in SQLite.
+   - Added `getMessageById(id)` for individual message state inspection and retries.
+   - Added `getUnsentMessages(currentUserId)` to retrieve all `sending` and `failed` outbound messages queued offline.
+   - Added `markConversationAsRead(partnerId, currentUserId)` updating incoming partner messages to `read`.
+3. **Receipt Wire Envelopes (`EphemeralRelayEnvelope`):**
+   - Added `envelopeType` distinguishing `'message'`, `'delivery_receipt'`, and `'read_receipt'`.
+   - Added factory constructors `EphemeralRelayEnvelope.deliveryReceipt` and `EphemeralRelayEnvelope.readReceipt`.
+   - Added `targetMessageId` to associate receipts with the original message without revealing message content.
+4. **Synchronization Service Layer (`SyncService` & `DefaultSyncService`):**
+   - Built `SyncService` contract and `DefaultSyncService` managing:
+     - `isOnline` flag and `setOnline(bool)` for network connectivity awareness and offline simulation.
+     - `flushOutboundQueue`: Drains unsent offline messages, encrypts payloads, dispatches to ephemeral relay, and transitions local status to `sent`.
+     - `processInboundEnvelopes`: Pulls envelopes from relay, handles delivery receipts (updating sender message to `delivered`), handles read receipts (updating sender message to `read`), and decrypts new incoming messages, persisting cleartext in SQLite, issuing delivery ACK, and sending an ephemeral delivery receipt back to the sender.
+     - `sendDeliveryReceipt` & `sendReadReceipt`: Emits lightweight ephemeral receipt envelopes through the relay.
+     - `reconcile`: Performs bidirectional sync (draining inbound envelopes then flushing outbound queue).
+     - `retryMessage`: Retries an individual failed message.
+     - `markConversationAsRead`: Marks messages locally and emits read receipts to the remote partner.
+5. **Repository & UI Integration (`LocalChatRepository` & `ChatScreen`):**
+   - Integrated `SyncService` into `LocalChatRepository`.
+   - Updated `sendMessage` to save cleartext with `sending` status, attempt dispatch, transition to `sent` or mark `failed` if offline.
+   - Updated `ChatScreen` to trigger `markConversationAsRead` upon message load.
+6. **Automated Test Suite Expansion (5 New Tests):**
+   - Status State Machine progression and regression rejection.
+   - Offline queueing with `failed` status and `flushOutboundQueue` on reconnection.
+   - `retryMessage` manual retry flow.
+   - Full End-to-End Delivery and Read Receipt Synchronization (Alice ➔ Bob ➔ Alice).
+   - `reconcile` bidirectional drain.
+   - Test suite elevated from **71 to 76 tests (100% passing)** with **0 analyzer issues**.
+
+#### Files Created
+- `chatbox/lib/services/sync_service.dart`: SyncService contract and DefaultSyncService implementation.
+
+#### Files Modified
+- `chatbox/lib/models/ephemeral_relay_envelope.dart`: Added receipt types and factory constructors.
+- `chatbox/lib/models/message.dart`: Added `canTransitionTo`, `isTerminal`, and `isPendingOutbound`.
+- `chatbox/lib/database/local_database.dart`: Added `updateMessageStatusIfProgressing`, `getMessageById`, `getUnsentMessages`, and `markConversationAsRead`.
+- `chatbox/lib/repositories/chat_repository.dart`: Integrated SyncService, retry, mark-as-read, and reconcile.
+- `chatbox/lib/screens/chat_screen.dart`: Connected `markConversationAsRead` on load.
+- `chatbox/test/widget_test.dart`: Added 5 unit & integration tests (76 tests total).
+- `docts.md`: Updated master documentation to Version 3.4.0.
+
+---
+
 ## 8. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
 - **Test Command:** `flutter test`
-- **Results:** `71 / 71 tests passing` (100% pass rate)
-- **Analyzer Check:** `flutter analyze` ➔ `No issues found! (ran in 3.3s)`
+- **Results:** `76 / 76 tests passing` (100% pass rate)
+- **Analyzer Check:** `flutter analyze` ➔ `No issues found!`
 
 ### Comprehensive Test Coverage Breakdown
 
@@ -747,25 +811,29 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 | **Phase 11: InMemoryFirebaseRelayService** | 4 | Multi-user recipient isolation, expired envelope pruning on fetch, reactive stream emission, cross-queue expired message purge |
 | **Phase 11: Delivery ACK & Purge Protocol** | 2 | Delivery ACK immediately and permanently purging ciphertext from queue (count ➔ 0), unknown message handling |
 | **Phase 11: End-to-End Relay Integration** | 1 | Full Alice ➔ Relay ➔ Bob delivery flow: Local SQLite cleartext on both devices, zero plaintext in relay queue, immediate post-ACK purge |
-| **Total Test Suite** | **71** | **100% Passing — Zero Analyzer Issues** |
+| **Phase 12: Message Lifecycle & Monotonic Status** | 1 | Unidirectional progression validation (`sending` ➔ `sent` ➔ `delivered` ➔ `read`), rejection of regressive transitions, terminal read state |
+| **Phase 12: Offline Queueing & Reconciliation** | 4 | Offline sending queueing with `failed` status & `flushOutboundQueue` drain, single-message `retryMessage` flow, End-to-End Delivery & Read receipt synchronization (Alice ➔ Bob ➔ Alice), bidirectional `reconcile` |
+| **Total Test Suite** | **76** | **100% Passing — Zero Analyzer Issues** |
 
 ---
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Next Phase: Phase 12 — Message Synchronization
+### Next Phase: Phase 13 — Real-Time Features
 
-Phase 12 builds upon the Phase 11 transport relay to manage real-world delivery states and network disconnects.
+Phase 13 builds upon Phase 12 synchronization to introduce live interactivity while preserving zero-telemetry and battery efficiency.
 
-#### Key Objectives for Phase 12:
-1. **Message State Lifecycle Transitions:**
-   - Full progression: `sending` ➔ `sent` ➔ `delivered` ➔ `read` / `failed`.
-2. **Offline Queue & Automatic Reconciliation:**
-   - Queue outbound messages locally when offline.
-   - Automatically drain and reconcile outbound queue when connectivity resumes.
-   - Retry failed dispatches with deduplication.
-3. **Local Database Verification:**
-   - Maintain SQLite as the single source of truth across network disruptions and app restarts.
+#### Key Objectives for Phase 13:
+1. **Real-Time Typing Indicators:**
+   - Ephemeral, debounced typing event emission (3-second auto-expiry).
+   - Zero-payload wire format (e.g. `{"type": "typing", "senderId": "@alice"}`).
+   - Purged immediately upon send or idle.
+2. **Ephemeral Presence (Online / Last Seen):**
+   - Active heartbeat without logging user tracking history.
+   - User-configurable presence privacy (hide online status).
+3. **Live UI Status Transitions:**
+   - Real-time animated ticks (single tick ➔ double tick ➔ blue double tick) reactive to receipt streams.
+
 
 
 

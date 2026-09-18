@@ -110,6 +110,35 @@ class ChatMessage {
     return copyWith(status: newStatus);
   }
 
+  /// Whether the current message can legally transition to [nextStatus]
+  ///
+  /// Prevents regressions (e.g. read messages cannot regress to delivered or sent)
+  bool canTransitionTo(MessageStatus nextStatus) {
+    if (status == nextStatus) return true;
+    switch (status) {
+      case MessageStatus.sending:
+        return nextStatus == MessageStatus.sent ||
+            nextStatus == MessageStatus.failed;
+      case MessageStatus.failed:
+        return nextStatus == MessageStatus.sending ||
+            nextStatus == MessageStatus.sent;
+      case MessageStatus.sent:
+        return nextStatus == MessageStatus.delivered ||
+            nextStatus == MessageStatus.read;
+      case MessageStatus.delivered:
+        return nextStatus == MessageStatus.read;
+      case MessageStatus.read:
+        return false; // Read is terminal
+    }
+  }
+
+  /// Whether this message is in a terminal status
+  bool get isTerminal => status == MessageStatus.read;
+
+  /// Whether this message is waiting for offline transmission
+  bool get isPendingOutbound =>
+      status == MessageStatus.sending || status == MessageStatus.failed;
+
   @override
   String toString() {
     return 'ChatMessage(id: $id, senderId: $senderId, recipientId: $recipientId, '

@@ -1,0 +1,266 @@
+import 'dart:async';
+import 'package:chatbox/database/local_database.dart';
+import 'package:chatbox/models/encrypted_payload.dart';
+import 'package:chatbox/models/ephemeral_relay_envelope.dart';
+import 'package:chatbox/models/message.dart';
+import 'package:chatbox/services/chat_service.dart';
+import 'package:chatbox/services/encryption_service.dart';
+
+/// Abstract service contract for message synchronization and offline queueing (Phase 12)
+abstract class SyncService {
+  /// Whether the network connectivity is active
+  bool get isOnline;
+
+  /// Update online state (supports live connectivity monitoring and test simulation)
+  void setOnline(bool online);
+
+  /// Drain and flush all unsent / failed messages queued offline
+  Future<int> flushOutboundQueue({required String currentUserId});
+
+  /// Pull and process incoming messages and delivery/read receipts from the ephemeral relay
+  Future<List<ChatMessage>> processInboundEnvelopes({required String currentUserId});
+
+  /// Dispatch an ephemeral delivery receipt back to the original sender
+  Future<void> sendDeliveryReceipt({
+    required String messageId,
+    required String recipientId,
+    required String senderId,
+  });
+
+  /// Dispatch an ephemeral read receipt back to the original sender
+  Future<void> sendReadReceipt({
+    required String messageId,
+    required String recipientId,
+    required String senderId,
+  });
+
+  /// Perform bidirectional synchronization: drain inbound queue then flush outbound queue
+  Future<void> reconcile({required String currentUserId});
+
+  /// Manually retry sending an individual failed message
+  Future<bool> retryMessage(String messageId, {required String currentUserId});
+
+  /// Mark all incoming messages from partner as read and dispatch read receipts
+  Future<int> markConversationAsRead(String partnerId, {required String currentUserId});
+}
+
+/// Primary implementation of [SyncService] coordinating SQLite and the ephemeral relay
+class DefaultSyncService implements SyncService {
+  final LocalDatabase _database;
+  final ChatService _chatService;
+  final EncryptionService? _encryptionService;
+
+  bool _isOnline = true;
+
+  DefaultSyncService({
+    LocalDatabase? database,
+    ChatService? chatService,
+    EncryptionService? encryptionService,
+  })  : _database = database ?? LocalDatabase(),
+        _chatService = chatService ?? ChatService(),
+        _encryptionService = encryptionService;
+
+  @override
+  bool get isOnline => _isOnline;
+
+  @override
+  void setOnline(bool online) {
+    _isOnline = online;
+  }
+
+  @override
+  Future<int> flushOutboundQueue({required String currentUserId}) async {
+    if (!_isOnline) return 0;
+
+    final unsent = await _database.getUnsentMessages(currentUserId: currentUserId);
+    int flushedCount = 0;
+
+    for (final message in unsent) {
+      final success = await _dispatchOutboundMessage(message);
+      if (success) {
+        flushedCount++;
+      }
+    }
+
+    return flushedCount;
+  }
+
+  Future<bool> _dispatchOutboundMessage(ChatMessage message) async {
+    if (!_isOnline) {
+      await _database.updateMessageStatus(message.id, MessageStatus.failed);
+      return false;
+    }
+
+    try {
+      ChatMessage outbound = message;
+      final enc = _encryptionService;
+      if (enc != null) {
+        final recipientAccount =
+            await _database.getAccountByUsername(message.recipientId);
+        final recipientKey = recipientAccount?.publicIdentityKey;
+        if (recipientKey != null && recipientKey.isNotEmpty) {
+          final ciphertext = await enc.encryptPayload(message.text, recipientKey);
+          outbound = message.copyWith(text: ciphertext);
+        }
+      }
+
+      await _chatService.sendMessage(outbound);
+      await _database.updateMessageStatusIfProgressing(message.id, MessageStatus.sent);
+      return true;
+    } catch (_) {
+      await _database.updateMessageStatus(message.id, MessageStatus.failed);
+      return false;
+    }
+  }
+
+  @override
+  Future<List<ChatMessage>> processInboundEnvelopes({required String currentUserId}) async {
+    if (!_isOnline) return const [];
+
+    final envelopes = await _chatService.fetchPendingRelayEnvelopes(currentUserId);
+    final processedMessages = <ChatMessage>[];
+
+    for (final envelope in envelopes) {
+      if (envelope.isDeliveryReceipt) {
+        // Handle delivery receipt
+        await _database.updateMessageStatusIfProgressing(
+          envelope.targetMessageId,
+          MessageStatus.delivered,
+        );
+        await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+      } else if (envelope.isReadReceipt) {
+        // Handle read receipt
+        await _database.updateMessageStatusIfProgressing(
+          envelope.targetMessageId,
+          MessageStatus.read,
+        );
+        await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+      } else {
+        // Standard incoming message
+        final raw = ChatMessage(
+          id: envelope.id,
+          senderId: envelope.senderId,
+          recipientId: envelope.recipientId,
+          text: envelope.ciphertextPayload,
+          timestamp: envelope.timestamp,
+          status: MessageStatus.delivered,
+        );
+
+        ChatMessage decryptedMessage = raw;
+        final enc = _encryptionService;
+        if (enc != null) {
+          try {
+            final senderAccount =
+                await _database.getAccountByUsername(raw.senderId);
+            String senderKey = senderAccount?.publicIdentityKey ?? '';
+            if (senderKey.isEmpty) {
+              try {
+                final ep = EncryptedPayload.deserialize(raw.text);
+                senderKey = ep.senderPublicKey;
+              } catch (_) {}
+            }
+            final cleartext = await enc.decryptPayload(raw.text, senderKey);
+            decryptedMessage = raw.copyWith(text: cleartext);
+          } catch (_) {
+            // Decryption fallback
+          }
+        }
+
+        // Persist cleartext locally (local device owns history)
+        await _database.saveMessage(decryptedMessage);
+        processedMessages.add(decryptedMessage);
+
+        // Acknowledge and purge ciphertext from remote relay
+        await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+
+        // Dispatch ephemeral delivery receipt back to original sender
+        await sendDeliveryReceipt(
+          messageId: envelope.id,
+          recipientId: envelope.senderId,
+          senderId: currentUserId,
+        );
+      }
+    }
+
+    return processedMessages;
+  }
+
+  @override
+  Future<void> sendDeliveryReceipt({
+    required String messageId,
+    required String recipientId,
+    required String senderId,
+  }) async {
+    final receipt = EphemeralRelayEnvelope.deliveryReceipt(
+      messageId: messageId,
+      senderId: senderId,
+      recipientId: recipientId,
+    );
+    await _chatService.sendEphemeralEnvelope(receipt);
+  }
+
+  @override
+  Future<void> sendReadReceipt({
+    required String messageId,
+    required String recipientId,
+    required String senderId,
+  }) async {
+    final receipt = EphemeralRelayEnvelope.readReceipt(
+      messageId: messageId,
+      senderId: senderId,
+      recipientId: recipientId,
+    );
+    await _chatService.sendEphemeralEnvelope(receipt);
+  }
+
+  @override
+  Future<void> reconcile({required String currentUserId}) async {
+    if (!_isOnline) return;
+
+    // 1. Process all pending inbound messages and receipts
+    await processInboundEnvelopes(currentUserId: currentUserId);
+
+    // 2. Flush any pending outbound messages queued while offline
+    await flushOutboundQueue(currentUserId: currentUserId);
+  }
+
+  @override
+  Future<bool> retryMessage(String messageId, {required String currentUserId}) async {
+    final message = await _database.getMessageById(messageId);
+    if (message == null) return false;
+
+    // Reset status to sending before attempt
+    await _database.updateMessageStatus(messageId, MessageStatus.sending);
+    return await _dispatchOutboundMessage(message);
+  }
+
+  @override
+  Future<int> markConversationAsRead(
+    String partnerId, {
+    required String currentUserId,
+  }) async {
+    final unreadMessages = await _database.getMessagesForPartner(
+      partnerId,
+      currentUserId: currentUserId,
+    );
+
+    // Update local database
+    final count = await _database.markConversationAsRead(
+      partnerId,
+      currentUserId: currentUserId,
+    );
+
+    // Send read receipts for incoming messages that weren't already read
+    for (final msg in unreadMessages) {
+      if (msg.senderId == partnerId && msg.status != MessageStatus.read) {
+        await sendReadReceipt(
+          messageId: msg.id,
+          recipientId: partnerId,
+          senderId: currentUserId,
+        );
+      }
+    }
+
+    return count;
+  }
+}
