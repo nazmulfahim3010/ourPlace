@@ -5,6 +5,7 @@ import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/notification_service.dart';
 
 /// Abstract service contract for message synchronization and offline queueing (Phase 12)
 abstract class SyncService {
@@ -49,6 +50,7 @@ class DefaultSyncService implements SyncService {
   final LocalDatabase _database;
   final ChatService _chatService;
   final EncryptionService? _encryptionService;
+  final NotificationService? _notificationService;
 
   bool _isOnline = true;
 
@@ -56,9 +58,11 @@ class DefaultSyncService implements SyncService {
     LocalDatabase? database,
     ChatService? chatService,
     EncryptionService? encryptionService,
+    NotificationService? notificationService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
-        _encryptionService = encryptionService;
+        _encryptionService = encryptionService,
+        _notificationService = notificationService;
 
   @override
   bool get isOnline => _isOnline;
@@ -169,6 +173,13 @@ class DefaultSyncService implements SyncService {
         // Persist cleartext locally (local device owns history)
         await _database.saveMessage(decryptedMessage);
         processedMessages.add(decryptedMessage);
+
+        // Notify user locally using privacy-preserving settings (zero leak)
+        await _notificationService?.showLocalAlert(
+          title: decryptedMessage.senderId,
+          body: decryptedMessage.text,
+          conversationId: decryptedMessage.senderId,
+        );
 
         // Acknowledge and purge ciphertext from remote relay
         await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);

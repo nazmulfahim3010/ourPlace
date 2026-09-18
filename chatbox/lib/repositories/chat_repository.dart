@@ -4,6 +4,7 @@ import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/services/sync_service.dart';
 
@@ -35,6 +36,9 @@ abstract class ChatRepository {
 
   // Phase 13 Real-Time Features additions
   RealtimeService get realtimeService;
+
+  // Phase 14 Push Notifications additions
+  NotificationService get notificationService;
 }
 
 /// Primary implementation coordinating local SQLite storage, E2EE, and chat transport
@@ -44,6 +48,7 @@ class LocalChatRepository implements ChatRepository {
   final EncryptionService? _encryptionService;
   final SyncService _syncService;
   final RealtimeService _realtimeService;
+  final NotificationService _notificationService;
 
   LocalChatRepository({
     LocalDatabase? database,
@@ -51,14 +56,17 @@ class LocalChatRepository implements ChatRepository {
     EncryptionService? encryptionService,
     SyncService? syncService,
     RealtimeService? realtimeService,
+    NotificationService? notificationService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
         _encryptionService = encryptionService,
+        _notificationService = notificationService ?? DefaultNotificationService(),
         _syncService = syncService ??
             DefaultSyncService(
               database: database ?? LocalDatabase(),
               chatService: chatService ?? ChatService(),
               encryptionService: encryptionService,
+              notificationService: notificationService ?? DefaultNotificationService(),
             ),
         _realtimeService = realtimeService ??
             DefaultRealtimeService(
@@ -70,6 +78,9 @@ class LocalChatRepository implements ChatRepository {
 
   @override
   RealtimeService get realtimeService => _realtimeService;
+
+  @override
+  NotificationService get notificationService => _notificationService;
 
   @override
   Future<List<ChatMessage>> getMessages(String partnerId) {

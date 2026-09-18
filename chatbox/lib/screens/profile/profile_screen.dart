@@ -8,6 +8,7 @@ import 'package:chatbox/models/user.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
 
 import 'package:chatbox/services/app_lock_service.dart';
+import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/screens/auth/app_lock_screen.dart';
 import 'package:chatbox/screens/auth/passcode_setup_screen.dart';
@@ -18,6 +19,7 @@ class ProfileScreen extends StatefulWidget {
   final AuthRepository? authRepository;
   final AppLockService? appLockService;
   final RealtimeService? realtimeService;
+  final NotificationService? notificationService;
 
   const ProfileScreen({
     super.key,
@@ -25,6 +27,7 @@ class ProfileScreen extends StatefulWidget {
     this.authRepository,
     this.appLockService,
     this.realtimeService,
+    this.notificationService,
   });
 
   @override
@@ -36,14 +39,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _biometricsEnabled = false;
   bool _biometricsAvailable = false;
   late final RealtimeService _realtimeService;
+  late final NotificationService _notificationService;
   bool _presenceSharingEnabled = true;
   bool _typingSharingEnabled = true;
+  bool _notificationsEnabled = true;
+  bool _discreetModeEnabled = true;
+  bool _soundEnabled = true;
 
   @override
   void initState() {
     super.initState();
     _realtimeService = widget.realtimeService ?? DefaultRealtimeService();
+    _notificationService =
+        widget.notificationService ?? DefaultNotificationService();
+    _notificationsEnabled = _notificationService.settings.enabled;
+    _discreetModeEnabled =
+        _notificationService.settings.hidePreviewOnLockScreen;
+    _soundEnabled = _notificationService.settings.soundEnabled;
     _loadSecuritySettings();
+  }
+
+  Future<void> _updateNotificationSettings() async {
+    final updated = _notificationService.settings.copyWith(
+      enabled: _notificationsEnabled,
+      hidePreviewOnLockScreen: _discreetModeEnabled,
+      soundEnabled: _soundEnabled,
+    );
+    await _notificationService.updateSettings(updated);
+  }
+
+  void _handleTestNotification() {
+    _notificationService.showLocalAlert(
+      title: widget.currentUser?.displayName ?? 'ourPlace Partner',
+      body: '❤️ This is a private test message.',
+      conversationId: widget.currentUser?.id ?? '@partner',
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _discreetModeEnabled
+              ? 'Discreet alert triggered: "ourPlace • New private message received"'
+              : 'Alert triggered with cleartext preview.',
+        ),
+        backgroundColor: const Color(0xFF2E2E2E),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _loadSecuritySettings() async {
@@ -764,6 +805,119 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         });
                         await _realtimeService.setTypingSharingEnabled(val);
                       },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              /// Notifications & Privacy Card (Phase 14)
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF242424),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                padding: const EdgeInsets.all(18.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.notifications_active_outlined, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Notifications & Privacy (Phase 14)',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Zero Plaintext • Silent wake-up pings & lock screen privacy',
+                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Push Notifications',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      subtitle: const Text(
+                        'Allow silent wake-up signals when the app is in background.',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                      ),
+                      value: _notificationsEnabled,
+                      activeThumbColor: const Color(0xFF00E676),
+                      onChanged: (val) async {
+                        setState(() {
+                          _notificationsEnabled = val;
+                        });
+                        await _updateNotificationSettings();
+                      },
+                    ),
+                    const Divider(color: Color(0xFF333333), height: 16),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Discreet Mode',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      subtitle: const Text(
+                        'Hide sender & message preview on lock screen. Displays "New private message".',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                      ),
+                      value: _discreetModeEnabled,
+                      activeThumbColor: const Color(0xFFFFB300),
+                      onChanged: (val) async {
+                        setState(() {
+                          _discreetModeEnabled = val;
+                        });
+                        await _updateNotificationSettings();
+                      },
+                    ),
+                    const Divider(color: Color(0xFF333333), height: 16),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Sound & Haptics',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      subtitle: const Text(
+                        'Play discrete alert sound and subtle vibration on new messages.',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                      ),
+                      value: _soundEnabled,
+                      activeThumbColor: Colors.white70,
+                      onChanged: (val) async {
+                        setState(() {
+                          _soundEnabled = val;
+                        });
+                        await _updateNotificationSettings();
+                      },
+                    ),
+                    const Divider(color: Color(0xFF333333), height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 42,
+                      child: OutlinedButton.icon(
+                        onPressed: _handleTestNotification,
+                        icon: const Icon(Icons.notifications_none_rounded, color: Colors.white70, size: 16),
+                        label: const Text(
+                          'Test Private Notification',
+                          style: TextStyle(color: Colors.white, fontSize: 13.5),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF444444)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),

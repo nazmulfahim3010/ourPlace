@@ -1,5 +1,5 @@
 # ourPlace — Architectural & Technical Diagrams Specification
-> **Document Version:** 1.4.0  
+> **Document Version:** 1.5.0  
 > **Last Updated:** 2026-09-18  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Companion Document:** [`docts.md`](file:///e:/ourPlace/docts.md)
@@ -19,6 +19,7 @@
 10. [Security Enclave & Cryptographic Trust Boundaries](#10-security-enclave--cryptographic-trust-boundaries)
 11. [Message State Lifecycle & Synchronization Flow](#11-message-state-lifecycle--synchronization-flow)
 12. [Real-Time Typing Indicators & Ephemeral Presence Flow](#12-real-time-typing-indicators--ephemeral-presence-flow)
+13. [Push Notification Silent Wake-up & Privacy Alerts Flow](#13-push-notification-silent-wake-up--privacy-alerts-flow)
 
 ---
 
@@ -695,5 +696,77 @@ sequenceDiagram
         RealtimeA->>Relay: dispatchEphemeralEnvelope(type: "presence", isOnline: false)
         Relay-->>RealtimeB: Forward offline signal
         Note over Bob: Bob sees Alice as offline with last seen frozen
+    end
+```
+
+---
+
+## 13. Push Notification Silent Wake-up & Privacy Alerts Flow
+
+Push notifications in `ourPlace` adhere strictly to the zero-telemetry invariant. Outgoing push notifications via FCM/APNs never carry plaintext, sender identities, or sensitive metadata. Decryption happens strictly inside the recipient device sandbox, and lock screen presentation defaults to Discreet Mode.
+
+### 13.1 Silent Background Wake-up & Inbound Decryption Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Alice Device
+    participant Relay as Ephemeral Relay (Cloud)
+    participant FCM as Push Gateway (FCM / APNs)
+    participant BobOS as Bob Operating System
+    participant BobSync as Bob SyncService
+    participant BobEnc as Bob E2EE Engine
+    participant BobDB as Bob Local SQLite
+    participant BobNotif as Bob NotificationService
+
+    Alice->>Relay: enqueueMessage(E2EE Ciphertext, recipient: "@bob")
+    Alice->>FCM: dispatchPushWakeup(type: "wakeup", recipientId: "@bob")
+    Note over FCM: Zero Plaintext • Zero Sender Info • Pure Data Ping
+
+    FCM-->>BobOS: Deliver silent background push payload
+    Note over BobOS: OS wakes up ourPlace in background
+
+    BobOS->>BobSync: handleSilentWakeup(signal) -> processInboundEnvelopes()
+    BobSync->>Relay: fetchPendingRelayEnvelopes("@bob")
+    Relay-->>BobSync: Return E2EE ciphertext envelope
+    BobSync->>BobEnc: decryptPayload(ciphertext, alicePubKey)
+    BobEnc-->>BobSync: Cleartext message
+    BobSync->>BobDB: saveMessage(cleartext) (local ownership)
+    BobSync->>Relay: acknowledgeAndPurge(envelopeId) (erased from cloud)
+
+    BobSync->>BobNotif: showLocalAlert(title: "@alice", body: cleartext)
+    alt Discreet Mode Enabled (Default)
+        Note over BobNotif: Mask content & sender
+        BobNotif->>BobOS: Display Local Alert: "ourPlace • New private message received"
+    else Discreet Mode Disabled
+        BobNotif->>BobOS: Display Local Alert: "@alice • <decrypted snippet>"
+    end
+```
+
+### 13.2 Notification Tap & Locked Device Deep-Linking Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Bob as Bob User
+    participant BobOS as Device Lock Screen
+    participant NotifService as NotificationService
+    participant AuthGate as App AuthGate / Lock Enclave
+    participant AppLock as AppLockScreen
+    participant ChatView as ChatScreen (@alice)
+
+    Bob->>BobOS: Tap notification banner
+    BobOS->>NotifService: Launch app with payload (conversationId: "@alice")
+    NotifService->>NotifService: bufferPendingRoute("@alice")
+
+    alt App is Passcode Locked (AppLockService.isAppUnlocked == false)
+        NotifService->>AuthGate: Route request
+        AuthGate->>AppLock: Display AppLockScreen (Passcode / Biometrics)
+        Note over Bob,AppLock: Bob enters 4-digit device passcode or uses fingerprint
+        AppLock->>AuthGate: unlockApp() verified!
+        AuthGate->>NotifService: consumePendingRoute() -> returns "@alice"
+        AuthGate->>ChatView: Push ChatScreen(partner: "@alice")
+    else App is already unlocked
+        NotifService->>ChatView: Open ChatScreen(partner: "@alice") directly
     end
 ```

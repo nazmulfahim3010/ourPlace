@@ -1,5 +1,5 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.5.0  
+> **Document Version:** 3.6.0  
 > **Last Updated:** 2026-09-18  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 13 — Real-Time Features** |
-| **Current Status** | **COMPLETED** (Ready for Phase 14: Push Notifications) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features) |
-| **Next Phase** | **Phase 14 — Push Notifications** |
+| **Current Phase** | **Phase 14 — Push Notifications** |
+| **Current Status** | **COMPLETED** (Ready for Phase 15: Media Messaging) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications) |
+| **Next Phase** | **Phase 15 — Media Messaging** |
 
 ---
 
@@ -61,7 +61,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
           │
           ▼
 [Phase 13: Real-Time]    ──►  [Phase 14: Push Notifs]   ──►  [Phase 15: Media]
-       (COMPLETED)                     (NEXT)                          (PLANNED)
+       (COMPLETED)                     (COMPLETED)                     (NEXT)
                                                                           │
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
@@ -186,9 +186,15 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Reactive SQLite message status stream in ChatScreen (🕒 ➔ ✓ ➔ ✓✓ ➔ ✓✓ blue)
   - [x] Comprehensive test suite (85/85 tests passing, 0 analyzer issues)
 
-- [ ] **Phase 14 — Push Notifications**
-  - [ ] Privacy-preserving notification payloads (no plaintext leaks)
-  - [ ] Background notification routing
+- [x] **Phase 14 — Push Notifications**
+  - [x] Privacy-preserving notification payloads (zero plaintext leaks, zero sender username leaks)
+  - [x] Data-only silent wake-up signals (`PushWakeupSignal`) triggering background decryption
+  - [x] Discreet Mode by default (displays generic "ourPlace • New private message received")
+  - [x] `DefaultNotificationService` with custom sound, vibration, and deep-link route buffering
+  - [x] Integration with `SyncService` inbound message decryption pipeline
+  - [x] Notifications & Privacy settings card in `ProfileScreen` with live test notification action
+  - [x] Deep-linking deferred through `AppLockScreen` verification when app is locked
+  - [x] Comprehensive test suite (95/95 tests passing, 0 analyzer issues)
 
 - [ ] **Phase 15 — Media Messaging**
   - [ ] Encrypted images, voice notes, and video attachments
@@ -880,21 +886,33 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Next Phase: Phase 14 — Push Notifications
+### Phase 14: Push Notifications (COMPLETED ✅ — 2026-09-18)
+- Zero-knowledge `PushWakeupSignal` data pings implemented.
+- `DefaultNotificationService` with Discreet Mode masking ("ourPlace • New private message received").
+- Full integration with `SyncService` inbound decryption pipeline.
+- `ProfileScreen` Notifications & Privacy settings card with interactive test alert button.
+- 95/95 automated unit and widget tests passing with 0 analyzer issues.
 
-Phase 14 connects Firebase Cloud Messaging (FCM) to deliver background wakeups and incoming message notifications without leaking cleartext contents or compromising user anonymity.
+---
 
-#### Key Objectives for Phase 14:
-1. **FCM Token Registration & Signaling:**
-   - Ephemeral device registration associating the current user account with an FCM device token.
-   - Zero telemetry: FCM token stored ephemerally with automatic rotation.
-2. **Silent Wakeup Signals:**
-   - Data-only notification payloads that wake up the app in the background to pull and decrypt ciphertexts.
-3. **Privacy-Preserving Notification Previews:**
-   - Avoid exposing sensitive plaintext message content or sender identities in system notifications.
-   - Displays generic alert: *"New private message received"*.
-4. **Deep Linking to Conversation:**
-   - Tapping the notification securely routes the user to the correct conversation once local device passcode verification succeeds.
+### Next Phase: Phase 15 — Media Messaging
+
+Phase 15 adds end-to-end encrypted media messaging (images, voice notes, and video clips) following the same strict privacy philosophy: the server never sees plaintext files, and media copies are never permanently retained in cloud storage.
+
+#### Key Objectives for Phase 15:
+1. **Client-Side Media Encryption:**
+   - Encrypt image, voice note, and video files locally before upload using ephemeral AES-256-GCM symmetric keys.
+   - Encrypt the symmetric media key with recipient's public identity key (X25519) and embed it inside the E2EE message envelope.
+2. **Ephemeral Media Relay Transfer:**
+   - Upload encrypted binary blobs to temporary cloud storage (Firebase Storage / S3) with short-lived access URLs.
+   - Enforce 24-hour auto-deletion TTL rules on cloud storage buckets.
+3. **Local Decryption & Sandbox Storage:**
+   - Recipient downloads ciphertext blob, decrypts it using the embedded media key, and saves it into the device's secure local sandbox.
+   - Purge cloud media immediately following successful delivery acknowledgement (ACK).
+4. **Audio Messaging & Voice Waveform:**
+   - Record and playback compressed AAC/Opus audio with visual waveform scrubbers.
+5. **Private Media Gallery / In-Chat Media Viewer:**
+   - Fullscreen zoomable photo/video viewer with secure temporary caching that prevents leakage into public device photo albums unless explicitly exported.
 
 
 

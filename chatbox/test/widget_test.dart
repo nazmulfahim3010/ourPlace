@@ -40,6 +40,9 @@ import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/services/relay_service.dart';
 import 'package:chatbox/models/user_presence.dart';
 import 'package:chatbox/services/realtime_service.dart';
+import 'package:chatbox/models/notification_settings.dart';
+import 'package:chatbox/services/notification_service.dart';
+import 'package:chatbox/services/sync_service.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
@@ -2450,6 +2453,206 @@ void main() {
       expect(find.text('Privacy & Presence (Phase 13)'), findsOneWidget);
       expect(find.text('Share Online Status & Last Seen'), findsOneWidget);
       expect(find.text('Share Typing Indicator'), findsOneWidget);
+    });
+  });
+
+  group('Phase 14: NotificationSettings & PushWakeupSignal Domain Tests', () {
+    test('NotificationSettings defaults to privacy-preserving Discreet Mode', () {
+      const settings = NotificationSettings();
+      expect(settings.enabled, isTrue);
+      expect(settings.hidePreviewOnLockScreen, isTrue);
+      expect(settings.hideSenderIdentity, isFalse);
+      expect(settings.soundEnabled, isTrue);
+      expect(settings.vibrationEnabled, isTrue);
+    });
+
+    test('NotificationSettings copyWith and serialization preserves values', () {
+      const initial = NotificationSettings();
+      final updated = initial.copyWith(
+        enabled: false,
+        hidePreviewOnLockScreen: false,
+        soundEnabled: false,
+      );
+      expect(updated.enabled, isFalse);
+      expect(updated.hidePreviewOnLockScreen, isFalse);
+      expect(updated.soundEnabled, isFalse);
+
+      final json = updated.toJson();
+      final restored = NotificationSettings.fromJson(json);
+      expect(restored.enabled, isFalse);
+      expect(restored.hidePreviewOnLockScreen, isFalse);
+      expect(restored.soundEnabled, isFalse);
+    });
+
+    test('PushWakeupSignal enforces zero telemetry and zero plaintext leakage', () {
+      final signal = PushWakeupSignal(
+        recipientId: '@bob',
+        timestamp: 1774000000000,
+      );
+
+      expect(signal.signalType, equals('wakeup'));
+      expect(signal.recipientId, equals('@bob'));
+      expect(signal.hasZeroLeakage, isTrue);
+
+      final json = signal.toJson();
+      expect(json.containsKey('text'), isFalse);
+      expect(json.containsKey('body'), isFalse);
+      expect(json.containsKey('senderName'), isFalse);
+      expect(json['recipientId'], equals('@bob'));
+
+      final restored = PushWakeupSignal.fromJson(json);
+      expect(restored.recipientId, equals('@bob'));
+    });
+  });
+
+  group('Phase 14: DefaultNotificationService Privacy & Wakeup Tests', () {
+    late DefaultNotificationService service;
+
+    setUp(() {
+      service = DefaultNotificationService();
+      service.clearLogs();
+    });
+
+    tearDown(() {
+      service.clearLogs();
+    });
+
+    test('Discreet Mode displays generic title and body', () async {
+      await service.updateSettings(const NotificationSettings(hidePreviewOnLockScreen: true));
+      await service.showLocalAlert(
+        title: '@alice',
+        body: 'Secret romantic message 💕',
+        conversationId: '@alice',
+      );
+
+      expect(service.displayedAlerts.length, equals(1));
+      final alert = service.displayedAlerts.first;
+      expect(alert['title'], equals('ourPlace'));
+      expect(alert['body'], equals('New private message received'));
+      expect(alert['isDiscreet'], isTrue);
+    });
+
+    test('Cleartext mode preserves actual title and body when discreet is off', () async {
+      await service.updateSettings(const NotificationSettings(hidePreviewOnLockScreen: false));
+      await service.showLocalAlert(
+        title: '@alice',
+        body: 'Secret romantic message 💕',
+        conversationId: '@alice',
+      );
+
+      expect(service.displayedAlerts.length, equals(1));
+      final alert = service.displayedAlerts.first;
+      expect(alert['title'], equals('@alice'));
+      expect(alert['body'], equals('Secret romantic message 💕'));
+      expect(alert['isDiscreet'], isFalse);
+    });
+
+    test('Notifications disabled suppresses all alerts', () async {
+      await service.updateSettings(const NotificationSettings(enabled: false));
+      await service.showLocalAlert(
+        title: '@alice',
+        body: 'Should not show',
+      );
+
+      expect(service.displayedAlerts, isEmpty);
+    });
+
+    test('handleSilentWakeup triggers background sync callback', () async {
+      bool syncCalled = false;
+      final signal = PushWakeupSignal(recipientId: '@bob', timestamp: 12345);
+
+      await service.handleSilentWakeup(
+        signal,
+        onSync: () async {
+          syncCalled = true;
+        },
+      );
+
+      expect(syncCalled, isTrue);
+    });
+
+    test('Route buffering and consumption for locked device deep linking', () {
+      service.bufferPendingRoute('@twilight');
+      expect(service.consumePendingRoute(), equals('@twilight'));
+      // Consuming again returns null (single use)
+      expect(service.consumePendingRoute(), isNull);
+    });
+  });
+
+  group('Phase 14: SyncService & Inbound Notification Integration Tests', () {
+    test('Inbound message decryption triggers showLocalAlert on NotificationService', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: db);
+      final relay = InMemoryFirebaseRelayService.isolated();
+      final notificationService = DefaultNotificationService();
+      notificationService.clearLogs();
+      await notificationService.updateSettings(const NotificationSettings(hidePreviewOnLockScreen: true));
+
+      final syncService = DefaultSyncService(
+        database: localDb,
+        chatService: ChatService(relayService: relay),
+        notificationService: notificationService,
+      );
+
+      // Put an inbound message for @bob in the relay
+      await relay.enqueueMessage(EphemeralRelayEnvelope(
+        id: 'inbound_notif_01',
+        senderId: '@alice',
+        recipientId: '@bob',
+        ciphertextPayload: 'Hello Bob from relay!',
+        timestamp: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(hours: 48)),
+      ));
+
+      final processed = await syncService.processInboundEnvelopes(currentUserId: '@bob');
+      expect(processed.length, equals(1));
+      expect(notificationService.displayedAlerts.length, equals(1));
+      expect(notificationService.displayedAlerts.first['title'], equals('ourPlace'));
+      expect(notificationService.displayedAlerts.first['body'], equals('New private message received'));
+
+      relay.dispose();
+      await db.close();
+    });
+  });
+
+  group('Phase 14: ProfileScreen Notifications UI Widget Tests', () {
+    testWidgets('ProfileScreen renders Notifications & Privacy card with toggles and test button', (tester) async {
+      final notificationService = DefaultNotificationService();
+      notificationService.clearLogs();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ProfileScreen(
+            currentUser: User(
+              id: 'test_user',
+              username: '@alex',
+              displayName: 'Alex',
+              createdAt: DateTime.now(),
+            ),
+            appLockService: MockAppLockService(),
+            realtimeService: DefaultRealtimeService(
+              storage: InMemorySecureStorageService(),
+            ),
+            notificationService: notificationService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Notifications & Privacy (Phase 14)'), findsOneWidget);
+      expect(find.text('Push Notifications'), findsOneWidget);
+      expect(find.text('Discreet Mode'), findsOneWidget);
+      expect(find.text('Sound & Haptics'), findsOneWidget);
+      expect(find.text('Test Private Notification'), findsOneWidget);
+
+      // Scroll into view and tap test button
+      await tester.ensureVisible(find.text('Test Private Notification'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Test Private Notification'));
+      await tester.pumpAndSettle();
+
+      expect(notificationService.displayedAlerts.length, equals(1));
+      expect(find.byType(SnackBar), findsOneWidget);
     });
   });
 }
