@@ -56,16 +56,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Ephemeral Relay Queue
-    // The server only holds ciphertext temporarily; no permanent history
+    // Server only holds ciphertext temporarily; no permanent history
     match /ephemeral_relays/{recipientId}/messages/{messageId} {
-      // Any authenticated user can enqueue encrypted ciphertext for a recipient
-      allow create: if request.resource.data.ciphertext != null 
-                    && request.resource.data.senderId != null;
-      
-      // Recipient can read and purge (delete) pending ciphertext
+      // Allow enqueueing encrypted ciphertext for recipient
+      allow create: if 'ciphertext' in request.resource.data
+                    && 'sender_id' in request.resource.data;
+
+      // Allow recipient to read and purge (delete) pending ciphertext
       allow read, delete: if true;
-      
-      // Updates are strictly forbidden (messages are immutable)
+
+      // Disallow edits/updates (messages are immutable)
       allow update: if false;
     }
   }
