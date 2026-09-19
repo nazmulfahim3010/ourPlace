@@ -9,6 +9,7 @@ class ChatHeader extends StatelessWidget {
   final String? currentUsername;
   final bool isTyping;
   final String? presenceText;
+  final VoidCallback? onShareConversation;
 
   const ChatHeader({
     super.key,
@@ -19,6 +20,7 @@ class ChatHeader extends StatelessWidget {
     this.currentUsername,
     this.isTyping = false,
     this.presenceText,
+    this.onShareConversation,
   });
 
   @override
@@ -133,6 +135,17 @@ class ChatHeader extends StatelessWidget {
                   ],
                 ),
               ),
+
+              /// Optional Share Conversation Action (Phase 17)
+              if (onShareConversation != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.share_outlined, color: Colors.pinkAccent, size: 18),
+                  tooltip: 'Share with Partner ❤️',
+                  onPressed: onShareConversation,
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+              ],
 
               /// Send Luv Button
               TextButton(

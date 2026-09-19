@@ -12,6 +12,7 @@ import 'package:chatbox/widgets/chat_header.dart';
 import 'package:chatbox/widgets/date_divider.dart';
 import 'package:chatbox/widgets/message_bubble.dart';
 import 'package:chatbox/widgets/chat_input_field.dart';
+import 'package:chatbox/widgets/love_code_sheet.dart';
 
 /// Main Chat Screen Widget (Phase 6 - Supporting Anonymous User Context & Sign Out)
 class ChatScreen extends StatefulWidget {
@@ -477,6 +478,42 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _handleShareConversation() async {
+    try {
+      final conn = await _chatRepository.loveConnectionService.getLoveConnection(
+        currentUserId: _currentUserId,
+      );
+      if (!mounted) return;
+
+      if (conn == null || !conn.isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You need an active Love Connection to share conversations. Connect with your partner in Profile ❤️'),
+            backgroundColor: Color(0xFF383838),
+          ),
+        );
+        return;
+      }
+
+      await LoveCodeSheet.show(
+        context,
+        conversationPartner: widget.partnerName,
+        currentUserId: _currentUserId,
+        currentUsername: _currentUsername,
+        lovePartnerUsername: conn.partnerUsername,
+        sharingService: _chatRepository.conversationSharingService,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to share: $e'),
+          backgroundColor: const Color(0xFF2E1A1A),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -490,6 +527,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             isTyping: _isPartnerTyping,
             presenceText: _partnerPresence?.statusText,
             onSendLuv: _sendLuv,
+            onShareConversation: _handleShareConversation,
             onSignOut: widget.authRepository != null
                 ? () async {
                     await widget.authRepository!.signOut();

@@ -90,6 +90,23 @@ class LocalDatabase {
     });
   }
 
+  /// Ingest shared conversation messages from partner with deduplication (Phase 17)
+  ///
+  /// Uses [insertAllOnConflictUpdate] so that re-importing messages or partial overlaps
+  /// will update existing message rows rather than creating duplicates or throwing errors.
+  /// Returns the number of messages processed.
+  Future<int> importSharedMessages(List<ChatMessage> messages) async {
+    if (messages.isEmpty) return 0;
+    await db.batch((batch) {
+      batch.insertAllOnConflictUpdate(
+        db.messages,
+        messages.map(_messageToCompanion).toList(),
+      );
+    });
+    return messages.length;
+  }
+
+
   /// Retrieve all messages for a partner, newest first (matching reverse list)
   Future<List<ChatMessage>> getMessagesForPartner(
     String partnerId, {

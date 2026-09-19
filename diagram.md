@@ -393,7 +393,7 @@ graph TD
 
 ## 8. Love Connection & One-Time Love Code Sharing Flow
 
-In **Phase 17**, users can selectively grant their partner access to view a specific conversation thread using an ephemeral 60-second authorization code:
+In **Phase 17 (Completed)**, users can selectively grant their partner access to view a specific conversation thread using an ephemeral 60-second authorization code:
 
 ```mermaid
 sequenceDiagram

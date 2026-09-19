@@ -1,5 +1,5 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.8.0  
+> **Document Version:** 3.9.0  
 > **Last Updated:** 2026-09-19  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 16 — Love Connection** |
-| **Current Status** | **COMPLETED** (Ready for Phase 17: One-Time Love Code & Conversation Sharing) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications), **Phase 15** (Media Messaging), **Phase 16** (Love Connection) |
-| **Next Phase** | **Phase 17 — One-Time Love Code & Conversation Sharing** |
+| **Current Phase** | **Phase 17 — One-Time Love Code & Conversation Sharing** |
+| **Current Status** | **COMPLETED** (Ready for Phase 18: Couple-Specific Features) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications), **Phase 15** (Media Messaging), **Phase 16** (Love Connection), **Phase 17** (One-Time Love Code & Conversation Sharing) |
+| **Next Phase** | **Phase 18 — Couple-Specific Features** |
 
 ---
 
@@ -65,7 +65,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           │
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
-       (PLANNED)                       (NEXT)                          (COMPLETED)
+       (NEXT)                          (COMPLETED)                     (COMPLETED)
 ```
 
 #### Detailed Phase Progress Breakdown
@@ -218,9 +218,16 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Graceful unlink / disconnect flow preserving device-local SQLite chat history while demoting couple privileges
   - [x] Comprehensive test suite (132/132 tests passing, 0 analyzer issues)
 
-- [ ] **Phase 17 — One-Time Love Code & Conversation Sharing**
-  - [ ] Generate 60-second single-use Love Code for explicit sharing authorization
-  - [ ] E2EE conversation data transfer to partner device
+- [x] **Phase 17 — One-Time Love Code & Conversation Sharing**
+  - [x] 60-second strict single-use One-Time Love Code (OTC) generator with `Random.secure()`
+  - [x] Single-use replay protection (code invalidated immediately upon first claim or timeout)
+  - [x] Explicit mutual consent requirement (only authorized for connected Love Partner)
+  - [x] Client-side E2EE conversation packaging (`SharedConversationBundle`) with zero cloud plaintext
+  - [x] Ephemeral relay wire envelopes (`love_share_claim`, `love_share_reject`, `love_share_bundle`, `love_share_ack`) with immediate delivery ACK purge
+  - [x] Partner device local SQLite database message ingestion & deduplication (`importSharedMessages`)
+  - [x] Romantic `LoveCodeSheet` UI with 6-digit code display, animated countdown bar, and copy action
+  - [x] `ClaimLoveCodeDialog` UI with 6-digit PIN input, validation, and success confirmation
+  - [x] Comprehensive test suite (147/147 tests passing, 0 analyzer issues)
 
 - [ ] **Phase 18 — Couple-Specific Features**
   - [ ] "Send luv" animated micro-interactions and reactions
@@ -263,18 +270,20 @@ e:\ourPlace\
     │   │   ├── conversation.dart            # Conversation model with Love Connection support
     │   │   ├── encrypted_payload.dart       # E2EE ciphertext envelope (version, pubKey, nonce, ct, mac)
     │   │   ├── ephemeral_relay_envelope.dart # Ephemeral wire envelope with Love signaling factories
+    │   │   ├── love_code_session.dart       # 60-second ephemeral Love Code session domain model
     │   │   ├── love_connection.dart         # Love Connection domain model, status lifecycle & visibility
     │   │   ├── media_attachment.dart        # Encrypted media metadata, Base64 keys, waveforms, and file sizes
     │   │   ├── message.dart                 # ChatMessage domain model & enums
     │   │   ├── notification_settings.dart   # Notification preferences & Discreet Mode
     │   │   ├── push_wakeup_signal.dart      # Zero-knowledge silent background wakeup signal
     │   │   ├── security_log.dart            # Device-local security event audit model
+    │   │   ├── shared_conversation_bundle.dart # E2EE conversation transfer bundle model
     │   │   ├── user.dart                    # Anonymous User domain model
     │   │   ├── user_account.dart            # UserAccount credentials & verification
     │   │   └── user_presence.dart           # User online status, relative last seen, and formatting
     │   ├── repositories/
     │   │   ├── auth_repository.dart         # AuthRepository contract & default implementation
-    │   │   ├── chat_repository.dart         # ChatRepository contract & LocalChatRepository (E2EE + Relay + Media)
+    │   │   ├── chat_repository.dart         # ChatRepository contract & LocalChatRepository (E2EE + Relay + Media + Sharing)
     │   │   └── conversation_repository.dart # ConversationRepository & LocalConversationRepository
     │   ├── screens/
     │   │   ├── auth/
@@ -289,13 +298,14 @@ e:\ourPlace\
     │   │   │   └── private_media_viewer_screen.dart # Fullscreen private media viewer with zoom & audio
     │   │   ├── profile/
     │   │   │   └── profile_screen.dart      # User Profile, Love Connection Card, Security/Passcode & Audit Log
-    │   │   └── chat_screen.dart             # Modular ChatScreen widget with active user context
+    │   │   └── chat_screen.dart             # Modular ChatScreen widget with Love Code sharing integration
     │   ├── services/
     │   │   ├── access_throttling_service.dart # Exponential backoff & login rate-limiting service
     │   │   ├── app_lock_service.dart        # Device passcode & biometric authentication service
     │   │   ├── auth_security_service.dart   # Zero-knowledge challenge-response protocol engine
     │   │   ├── auth_service.dart            # AuthService contract & LocalAuthService (E2EE Keygen)
     │   │   ├── chat_service.dart            # Chat transport service coordinating with RelayService
+    │   │   ├── conversation_sharing_service.dart # Ephemeral Love Code generation, validation & E2EE sharing
     │   │   ├── encryption_service.dart      # StandardE2EEEncryptionService (X25519 + AES-GCM) & NoOp
     │   │   ├── love_connection_service.dart # 1-to-1 couple invariant, invitation handshake & unlink service
     │   │   ├── media_encryption_service.dart # Binary AES-256-GCM media encryption service
@@ -307,10 +317,12 @@ e:\ourPlace\
     │   │   ├── secure_storage_service.dart  # Hardware-backed encrypted key-value storage (with test mode)
     │   │   └── sync_service.dart            # Offline queueing, receipts, E2EE sync & love signal routing
     │   └── widgets/
-    │       ├── chat_header.dart             # Floating pill header with back button, user & partner
+    │       ├── chat_header.dart             # Floating pill header with back button, user, partner & share button
     │       ├── chat_input_field.dart        # Message input bar, attachments & voice recording bar
+    │       ├── claim_love_code_dialog.dart  # Dialog for entering 6-digit Love Code to claim shared conversation
     │       ├── conversation_tile.dart       # Reusable conversation tile component
     │       ├── date_divider.dart            # Date group divider ("Today", "Yesterday")
+    │       ├── love_code_sheet.dart         # Bottom sheet displaying 6-digit code with 60s countdown timer
     │       ├── message_bubble.dart          # Chat message bubble container (text, media, audio)
     │       ├── numeric_keypad.dart          # Tactile dark numeric keypad with biometric button
     │       ├── passcode_dots.dart           # Animated passcode dots indicator with shake feedback
@@ -997,6 +1009,73 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ---
 
+### 7.12. Phase 17 Completion Report — One-Time Love Code & Conversation Sharing
+
+- **Current Phase:** Phase 17 — One-Time Love Code & Conversation Sharing
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. **Domain Models (`LoveCodeSession` & `SharedConversationBundle`):**
+   - Created `LoveCodeSession` domain model with 60-second strict TTL, single-use `isUsed` tracking, `remainingSeconds` calculation, JSON serialization, and convenience getters (`isValid`, `isExpired`).
+   - Created `SharedConversationBundle` domain model packaging conversation messages with E2EE metadata, total counts, and JSON string roundtrip.
+   - Added `ConversationSharingException` to centralized exception hierarchy.
+2. **Wire Protocol & Ephemeral Envelopes:**
+   - Extended `EphemeralRelayEnvelope` with specialized love sharing envelope factories:
+     - `loveCodeClaim`: Partner submits code to authorized user.
+     - `loveCodeReject`: Dispatched if code is expired, incorrect, already used, or unauthorized.
+     - `loveShareBundle`: Encrypted conversation messages payload.
+     - `loveShareAck`: Delivery acknowledgement triggering immediate relay queue purge.
+   - Added `isLoveShareSignal` discriminator with clean segregation from Phase 16 handshake signals.
+3. **Cryptographic One-Time Code Generator & Local SQLite Deduplication:**
+   - Added `CryptoKeyUtils.generateLoveCode()` producing cryptographically random 6-digit numeric codes via `Random.secure()`.
+   - Implemented `LocalDatabase.importSharedMessages(List<ChatMessage> messages)` using Drift's `insertAllOnConflictUpdate` to ingest shared messages with deduplication.
+4. **Conversation Sharing Service Layer:**
+   - Built `ConversationSharingService`, `DefaultConversationSharingService`, and `InMemoryConversationSharingService`.
+   - Enforces active Love Connection requirement: Only connected partners can generate or claim Love Codes.
+   - Implemented 60-second real-time countdown timer broadcasting active session state via stream.
+   - Implemented single-use replay protection: Once claimed, code is immediately marked as used and subsequent redemption attempts are rejected with `CODE_USED`.
+   - Full Alice ➔ Bob E2EE sharing flow: Encrypts bundle for partner, transmits over ephemeral relay, decrypts on partner device, and merges into SQLite.
+5. **SyncService & Repository Integration:**
+   - Updated `DefaultSyncService` to intercept `envelope.isLoveShareSignal` in `processInboundEnvelopes` and delegate to `ConversationSharingService` with immediate delivery ACK purge.
+   - Exposed `conversationSharingService` on `ChatRepository` and `LocalChatRepository`.
+6. **UI Components & User Experience:**
+   - `LoveCodeSheet`: Romantic modal bottom sheet displaying 6-digit code in dark rounded boxes, animated progress countdown bar, remaining seconds indicator (`52s`), copy to clipboard button, and live status.
+   - `ClaimLoveCodeDialog`: Minimalist dark dialog for entering partner's 6-digit code with formatted PIN input, validation, loading spinner, and success confirmation displaying imported message count.
+   - `ChatHeader` & `ChatScreen`: Wired "Share with Partner ❤️" action opening the Love Code generator for any active chat.
+   - `ProfileScreen`: Added "Redeem Partner's Love Code" button inside the connected Love Connection card.
+7. **Automated Test Suite Expansion (15 New Tests):**
+   - `LoveCodeSession` domain model tests (60s TTL, remaining seconds, copyWith, JSON serialization).
+   - `SharedConversationBundle` serialization and message preservation.
+   - `CryptoKeyUtils.generateLoveCode` 6-digit numeric format validation.
+   - `EphemeralRelayEnvelope` sharing factories and `isLoveShareSignal` validation.
+   - `LocalDatabase.importSharedMessages` deduplication without primary key collision.
+   - `ConversationSharingService`: Love connection validation, 60s session timer, single-use replay protection, expired code rejection, incorrect code rejection, unauthorized claimant rejection, full Alice-Bob E2EE handshake, and cancel flow.
+   - UI Widget tests for `LoveCodeSheet` and `ClaimLoveCodeDialog`.
+   - Test suite elevated from **132 to 147 tests (100% passing)** with **0 analyzer issues**.
+
+#### Files Created
+- `chatbox/lib/models/love_code_session.dart`: Domain model for 60-second single-use Love Code sessions.
+- `chatbox/lib/models/shared_conversation_bundle.dart`: Domain model for encrypted conversation bundles.
+- `chatbox/lib/services/conversation_sharing_service.dart`: Ephemeral Love Code generation, validation & E2EE sharing service.
+- `chatbox/lib/widgets/love_code_sheet.dart`: Bottom sheet displaying 6-digit code with countdown timer.
+- `chatbox/lib/widgets/claim_love_code_dialog.dart`: Dialog for redeeming partner's Love Code.
+
+#### Files Modified
+- `chatbox/lib/core/errors/app_exception.dart`: Added `ConversationSharingException`.
+- `chatbox/lib/core/utils/crypto_key_utils.dart`: Added `generateLoveCode()`.
+- `chatbox/lib/models/ephemeral_relay_envelope.dart`: Added love sharing envelope factories and discriminators.
+- `chatbox/lib/database/local_database.dart`: Added `importSharedMessages()` with deduplication.
+- `chatbox/lib/services/sync_service.dart`: Injected `ConversationSharingService` and handled love share envelopes.
+- `chatbox/lib/repositories/chat_repository.dart`: Exposed `conversationSharingService`.
+- `chatbox/lib/widgets/chat_header.dart`: Added `onShareConversation` action button.
+- `chatbox/lib/screens/chat_screen.dart`: Wired `LoveCodeSheet` to header share button.
+- `chatbox/lib/screens/profile/profile_screen.dart`: Added "Redeem Partner's Love Code" button.
+- `chatbox/lib/services/love_connection_service.dart`: Added `setMockConnection` test helper.
+- `chatbox/test/widget_test.dart`: Added 15 new tests (147 tests total).
+- `docts.md`: Updated master documentation to Version 3.9.0.
+
+---
+
 ## 8. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
@@ -1056,41 +1135,46 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 | **Phase 16: SyncService & Relay Purge** | 1 | Inbound love signal handling and immediate relay signaling envelope purge (zero metadata footprint) |
 | **Phase 16: ConversationRepository Couple Demotion** | 1 | Demoting love connection status without clearing messages |
 | **Phase 16: Love Connection UI Widget Tests** | 2 | `ProfileScreen` Love Connection card with status states & dialogs; `InboxScreen` pinned Love Connection section with invitation card |
-| **Total Test Suite** | **132** | **100% Passing — Zero Analyzer Issues** |
+| **Phase 17: LoveCodeSession & Bundle Domain Models** | 3 | 60s expiration, remaining seconds calculation, copyWith, single-use flag, JSON roundtrip |
+| **Phase 17: CryptoKeyUtils OTC & Ephemeral Envelopes** | 2 | 6-digit cryptographically secure code generation, wire envelope factories, and discriminator checks |
+| **Phase 17: LocalDatabase Ingestion & Deduplication** | 1 | `importSharedMessages` inserting and updating duplicate message IDs without SQLite collision |
+| **Phase 17: ConversationSharingService Replay Protection & E2EE Flow** | 6 | Love connection prerequisite validation, 60s session timer, cancel flow, non-partner rejection, wrong code rejection, full Alice-Bob transfer, and single-use replay rejection |
+| **Phase 17: UI Widget Tests (LoveCodeSheet & ClaimLoveCodeDialog)** | 3 | `LoveCodeSheet` rendering 6-digit code, timer & actions; `ClaimLoveCodeDialog` input validation and successful conversation import confirmation |
+| **Total Test Suite** | **147** | **100% Passing — Zero Analyzer Issues** |
 
 ---
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Phase 16: Love Connection (COMPLETED ✅ — 2026-09-19)
-- Mutually accepted 1-to-1 couple connection strictly enforcing the 0 or 1 active connection invariant.
-- Partner discovery via anonymous `@username` search (zero PII, no email/phone lookup).
-- Ephemeral relay signaling handshake (`love_request`, `love_accept`, `love_decline`, `love_cancel`, `love_unlink`) with immediate delivery ACK purge.
-- SQLite Drift schema upgraded to v5 (`LoveConnections` table with reactive streams).
-- Graceful unlink / disconnect flow preserving device-local SQLite chat history.
-- Romantic Love Connection card in `ProfileScreen` and top pinned `❤️ LOVE CONNECTION` section in `InboxScreen`.
-- 132/132 automated unit and widget tests passing with 0 analyzer issues.
+### Phase 17: One-Time Love Code & Conversation Sharing (COMPLETED ✅ — 2026-09-19)
+- Cryptographically secure 6-digit One-Time Love Code (OTC) generator with 60-second strict TTL.
+- Single-use replay protection: code invalidated immediately upon first claim or timeout.
+- Explicit mutual consent authorization: sharing strictly limited to the connected Love Partner.
+- Client-side E2EE conversation transfer bundle (`SharedConversationBundle`) with zero cloud plaintext.
+- Ephemeral relay wire envelopes with immediate delivery ACK purge (zero server metadata footprint).
+- Local SQLite database message ingestion with duplicate key conflict resolution.
+- UI components: `LoveCodeSheet` with live countdown timer and `ClaimLoveCodeDialog`.
+- 147/147 automated unit and widget tests passing with 0 analyzer issues.
 
 ---
 
-### Next Phase: Phase 17 — One-Time Love Code & Conversation Sharing
+### Next Phase: Phase 18 — Couple-Specific Features
 
-Phase 17 implements cryptographic single-use session authorization for selective conversation sharing between connected partners.
+Phase 18 completes the core couple messaging experience of `ourPlace` with romantic, couple-exclusive micro-interactions and shared relationship spaces.
 
-#### Key Objectives for Phase 17:
-1. **60-Second Single-Use Love Code Generator:**
-   - Cryptographically random 6-digit or alphanumeric one-time code (OTC) with 60-second strict expiration.
-   - Single-use replay protection: code is invalidated immediately upon first redemption or upon timeout.
-2. **Selective Conversation Sharing Authorization:**
-   - Explicit user consent workflow before initiating transfer.
-   - Choice of sharing specific conversation history or full timeline with the Love Partner.
-3. **End-to-End Encrypted Data Transfer:**
-   - Secure payload packaging and asymmetric key agreement using the one-time code and partner's X25519 identity.
-   - Ephemeral chunking and transfer over relay with immediate post-transfer purge.
-4. **Partner Device Ingestion & Deduplication:**
-   - Partner device validates code, decrypts transfer package, and merges conversation messages into local SQLite database without duplication.
-5. **UI & Security Controls:**
-   - Love Code generation dialog / bottom sheet in `ProfileScreen` and `ChatScreen`.
-   - Real-time countdown progress bar / visual timer for the 60-second expiration.
-   - Comprehensive unit and widget tests for code generation, expiry, replay rejection, and E2EE transfer.
+#### Key Objectives for Phase 18:
+1. **"Send luv" Animated Micro-Interactions & Reactions:**
+   - Tactile heart burst animation, floating hearts canvas, and customized couple haptic feedback patterns.
+   - Message reaction picker with couple emoji reactions (`❤️`, `💕`, `🔥`, `🥰`, `✨`).
+2. **Shared Memory Gallery:**
+   - Filtered media gallery showing all photos, voice notes, and videos exchanged exclusively between the Love Connection pair.
+   - Timeline chronological grouping and search.
+3. **Relationship Timeline & Milestones:**
+   - "Together Since" milestone counter and anniversary tracking.
+   - First message milestone marker and memory moments.
+4. **Encrypted Love Letters / Notes:**
+   - Dedicated private space for special long-form notes with unlock animations and romantic themes.
+5. **Final Polish & Multi-Device Validation:**
+   - End-to-end verification across the entire 18-phase application roadmap.
+   - Production APK build and release validation.
 

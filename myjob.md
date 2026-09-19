@@ -12,7 +12,8 @@ This guide contains all external, manual tasks you need to complete for the proj
 - [x] **Phase 14: Push Notifications (COMPLETED ✅ — 2026-09-18, Zero Manual Action Needed; Zero-Knowledge Silent Wakeup & Discreet Alerts)**
 - [x] **Phase 15: Media Messaging (COMPLETED ✅ — 2026-09-19, Zero Manual Action Needed; In-Memory Sandbox & Ephemeral Cloud Blobs)**
 - [x] **Phase 16: Love Connection (COMPLETED ✅ — 2026-09-19, Zero Manual Action Needed; Mutually Accepted 1-to-1 Ephemeral Handshake)**
-- [ ] **Phase 17–18: Physical Two-Device Testing & Production Release**
+- [x] **Phase 17: One-Time Love Code & Conversation Sharing (COMPLETED ✅ — 2026-09-19, Zero Manual Action Needed; Pure Client-Side E2EE Sharing)**
+- [ ] **Phase 18: Couple-Specific Features & Production Release**
 
 ---
 
@@ -69,7 +70,17 @@ For sharing end-to-end encrypted photos and voice notes:
 
 ---
 
-## 5. Multi-Device Real Testing & APK Generation
+## 5. Phase 17: One-Time Love Code & Conversation Sharing (COMPLETED ✅)
+
+Zero manual configuration was needed from you! The cryptographic single-use session authorization protocol was built and fully verified:
+- **60-Second One-Time Love Code (OTC):** Tap **"Share with Partner ❤️"** from any conversation header to generate an ephemeral 6-digit PIN with a live countdown bar.
+- **Single-Use Replay Protection:** The code is immediately invalidated upon first redemption or timeout, blocking unauthorized replays.
+- **E2EE Transfer:** Conversation packages are encrypted client-side with the partner's public key; ephemeral relay records are permanently purged upon delivery ACK.
+- **SQLite Ingestion & Deduplication:** When redeemed, messages are idempotently merged into the partner's device-local SQLite database without collisions.
+
+---
+
+## 6. Multi-Device Real Testing & APK Generation
 
 Once we finish the core phases, here is how you install and test it between two phones:
 

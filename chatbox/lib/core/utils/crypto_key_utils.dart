@@ -237,5 +237,15 @@ class CryptoKeyUtils {
   static SecretKey secretKeyFromBytes(List<int> bytes) {
     return SecretKey(bytes);
   }
+
+  /// Generate a cryptographically secure 6-digit numeric Love Code (Phase 17)
+  ///
+  /// Uses [Random.secure()] to produce a value between 100000 and 999999 inclusive.
+  static String generateLoveCode() {
+    final rng = Random.secure();
+    final code = 100000 + rng.nextInt(900000);
+    return code.toString();
+  }
 }
+
 

@@ -256,6 +256,99 @@ class EphemeralRelayEnvelope {
     );
   }
 
+  /// Create an ephemeral love code claim envelope (Phase 17)
+  factory EphemeralRelayEnvelope.loveCodeClaim({
+    required String senderId,
+    required String recipientId,
+    required String code,
+    DateTime? timestamp,
+    Duration ttl = const Duration(minutes: 2),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'love_sh_clm_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: jsonEncode({
+        'type': 'love_share_claim',
+        'code': code,
+        'sender_username': senderId,
+      }),
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_share_claim',
+    );
+  }
+
+  /// Create an ephemeral love code reject envelope (Phase 17)
+  factory EphemeralRelayEnvelope.loveCodeReject({
+    required String senderId,
+    required String recipientId,
+    required String reason,
+    DateTime? timestamp,
+    Duration ttl = const Duration(minutes: 2),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'love_sh_rej_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: jsonEncode({
+        'type': 'love_share_reject',
+        'reason': reason,
+        'sender_username': senderId,
+      }),
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_share_reject',
+    );
+  }
+
+  /// Create an ephemeral love share bundle envelope (Phase 17)
+  factory EphemeralRelayEnvelope.loveShareBundle({
+    required String senderId,
+    required String recipientId,
+    required String encryptedPayload,
+    required String shareId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(minutes: 10),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'love_sh_bnd_${shareId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: encryptedPayload,
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_share_bundle',
+    );
+  }
+
+  /// Create an ephemeral love share delivery ACK envelope (Phase 17)
+  factory EphemeralRelayEnvelope.loveShareAck({
+    required String senderId,
+    required String recipientId,
+    required String shareId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(minutes: 2),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'love_sh_ack_${shareId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: jsonEncode({
+        'type': 'love_share_ack',
+        'share_id': shareId,
+        'sender_username': senderId,
+      }),
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_share_ack',
+    );
+  }
+
   /// Whether this envelope is a status receipt rather than a content payload
   bool get isReceipt =>
       envelopeType == 'delivery_receipt' || envelopeType == 'read_receipt';
@@ -275,8 +368,23 @@ class EphemeralRelayEnvelope {
   /// Whether this envelope is an ephemeral presence heartbeat
   bool get isPresenceSignal => envelopeType == 'presence';
 
-  /// Whether this envelope is an ephemeral Love Connection signal (Phase 16)
-  bool get isLoveSignal => envelopeType.startsWith('love_');
+  /// Whether this envelope is an ephemeral Love Connection handshake signal (Phase 16)
+  bool get isLoveConnectionSignal =>
+      envelopeType == 'love_request' ||
+      envelopeType == 'love_accept' ||
+      envelopeType == 'love_decline' ||
+      envelopeType == 'love_cancel' ||
+      envelopeType == 'love_unlink';
+
+  /// Whether this envelope is an ephemeral Love Conversation Sharing signal (Phase 17)
+  bool get isLoveShareSignal =>
+      envelopeType == 'love_share_claim' ||
+      envelopeType == 'love_share_reject' ||
+      envelopeType == 'love_share_bundle' ||
+      envelopeType == 'love_share_ack';
+
+  /// Whether this envelope is any ephemeral Love subsystem signal (Phase 16 & Phase 17)
+  bool get isLoveSignal => isLoveConnectionSignal || isLoveShareSignal;
 
   /// Target message ID for receipt envelopes
   String get targetMessageId => ciphertextPayload;

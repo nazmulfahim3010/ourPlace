@@ -6,6 +6,7 @@ import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
+import 'package:chatbox/services/conversation_sharing_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/love_connection_service.dart';
 import 'package:chatbox/services/media_encryption_service.dart';
@@ -61,6 +62,7 @@ class DefaultSyncService implements SyncService {
   final MediaStorageService? _mediaStorageService;
   final MediaEncryptionService? _mediaEncryptionService;
   final LoveConnectionService? _loveConnectionService;
+  final ConversationSharingService? _conversationSharingService;
 
   bool _isOnline = true;
 
@@ -73,6 +75,7 @@ class DefaultSyncService implements SyncService {
     MediaStorageService? mediaStorageService,
     MediaEncryptionService? mediaEncryptionService,
     LoveConnectionService? loveConnectionService,
+    ConversationSharingService? conversationSharingService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
         _encryptionService = encryptionService,
@@ -80,9 +83,11 @@ class DefaultSyncService implements SyncService {
         _mediaRelayService = mediaRelayService,
         _mediaStorageService = mediaStorageService,
         _mediaEncryptionService = mediaEncryptionService,
-        _loveConnectionService = loveConnectionService;
+        _loveConnectionService = loveConnectionService,
+        _conversationSharingService = conversationSharingService;
 
   LoveConnectionService? get loveConnectionService => _loveConnectionService;
+  ConversationSharingService? get conversationSharingService => _conversationSharingService;
   MediaEncryptionService? get mediaEncryptionService => _mediaEncryptionService;
   MediaRelayService? get mediaRelayService => _mediaRelayService;
   MediaStorageService? get mediaStorageService => _mediaStorageService;
@@ -157,13 +162,18 @@ class DefaultSyncService implements SyncService {
     final processedMessages = <ChatMessage>[];
 
     for (final envelope in envelopes) {
-      if (envelope.isLoveSignal) {
+      if (envelope.isLoveConnectionSignal) {
         if (_loveConnectionService != null) {
           await _loveConnectionService.processInboundLoveEnvelope(
             envelope,
             currentUserId: currentUserId,
             currentUsername: currentUserId,
           );
+        }
+        await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+      } else if (envelope.isLoveShareSignal) {
+        if (_conversationSharingService != null) {
+          await _conversationSharingService.handleInboundEnvelope(envelope);
         }
         await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
       } else if (envelope.isDeliveryReceipt) {

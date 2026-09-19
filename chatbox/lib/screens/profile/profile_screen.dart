@@ -8,7 +8,9 @@ import 'package:chatbox/models/security_log.dart';
 import 'package:chatbox/models/user.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
 import 'package:chatbox/services/app_lock_service.dart';
+import 'package:chatbox/services/conversation_sharing_service.dart';
 import 'package:chatbox/services/love_connection_service.dart';
+import 'package:chatbox/widgets/claim_love_code_dialog.dart';
 import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/screens/auth/app_lock_screen.dart';
@@ -22,6 +24,7 @@ class ProfileScreen extends StatefulWidget {
   final RealtimeService? realtimeService;
   final NotificationService? notificationService;
   final LoveConnectionService? loveConnectionService;
+  final ConversationSharingService? conversationSharingService;
 
   const ProfileScreen({
     super.key,
@@ -31,6 +34,7 @@ class ProfileScreen extends StatefulWidget {
     this.realtimeService,
     this.notificationService,
     this.loveConnectionService,
+    this.conversationSharingService,
   });
 
   @override
@@ -39,6 +43,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   late final LoveConnectionService _loveConnectionService;
+  late final ConversationSharingService _conversationSharingService;
   bool _hideLoveConnection = false;
   bool _biometricsEnabled = false;
   bool _biometricsAvailable = false;
@@ -55,6 +60,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _loveConnectionService = widget.loveConnectionService ??
         InMemoryLoveConnectionService();
+    _conversationSharingService = widget.conversationSharingService ??
+        InMemoryConversationSharingService();
     _realtimeService = widget.realtimeService ?? DefaultRealtimeService();
     _notificationService =
         widget.notificationService ?? DefaultNotificationService();
@@ -1237,6 +1244,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
                 const Divider(color: Color(0xFF383838), height: 24),
+
+                // Phase 17: Redeem Partner's Love Code action
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.download_rounded, color: Colors.black, size: 16),
+                    label: const Text(
+                      'Redeem Partner\'s Love Code',
+                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.pinkAccent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    onPressed: () {
+                      ClaimLoveCodeDialog.show(
+                        context,
+                        currentUserId: currentUserId,
+                        currentUsername: currentUsername,
+                        lovePartnerUsername: conn.partnerUsername,
+                        sharingService: _conversationSharingService,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+
                 // Disconnect action
                 SizedBox(
                   width: double.infinity,

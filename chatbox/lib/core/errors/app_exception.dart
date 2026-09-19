@@ -40,3 +40,8 @@ class LoveConnectionException extends AppException {
   const LoveConnectionException(super.message, {super.code, super.details});
 }
 
+/// Conversation Sharing failures (Phase 17)
+class ConversationSharingException extends AppException {
+  const ConversationSharingException(super.message, {super.code, super.details});
+}
+

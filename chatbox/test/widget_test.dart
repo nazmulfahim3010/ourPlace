@@ -51,6 +51,11 @@ import 'package:chatbox/services/media_encryption_service.dart';
 import 'package:chatbox/screens/media/private_media_viewer_screen.dart';
 import 'package:chatbox/models/love_connection.dart';
 import 'package:chatbox/services/love_connection_service.dart';
+import 'package:chatbox/models/love_code_session.dart';
+import 'package:chatbox/models/shared_conversation_bundle.dart';
+import 'package:chatbox/services/conversation_sharing_service.dart';
+import 'package:chatbox/widgets/love_code_sheet.dart';
+import 'package:chatbox/widgets/claim_love_code_dialog.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
@@ -3993,6 +3998,520 @@ void main() {
       expect(find.text('Sweetheart'), findsOneWidget);
       expect(find.text('CONVERSATIONS (1)'), findsOneWidget);
       expect(find.text('Bob'), findsOneWidget);
+    });
+  });
+
+  // ===========================================================================
+  // PHASE 17: ONE-TIME LOVE CODE & CONVERSATION SHARING TESTS
+  // ===========================================================================
+
+  group('Phase 17 — LoveCodeSession & SharedConversationBundle Domain Tests', () {
+    test('LoveCodeSession creates with 60s expiration, valid status, and remaining seconds', () {
+      final now = DateTime.now().toUtc();
+      final session = LoveCodeSession.create(
+        code: '849201',
+        conversationPartner: '@sarah',
+        ownerUsername: '@alex',
+        targetLovePartner: '@twilight',
+        ttl: const Duration(seconds: 60),
+        now: now,
+      );
+
+      expect(session.code, equals('849201'));
+      expect(session.conversationPartner, equals('@sarah'));
+      expect(session.ownerUsername, equals('@alex'));
+      expect(session.targetLovePartner, equals('@twilight'));
+      expect(session.isUsed, isFalse);
+      expect(session.isExpired, isFalse);
+      expect(session.isValid, isTrue);
+      expect(session.remainingSeconds, inInclusiveRange(55, 60));
+
+      final usedSession = session.copyWith(isUsed: true);
+      expect(usedSession.isUsed, isTrue);
+      expect(usedSession.isValid, isFalse);
+    });
+
+    test('LoveCodeSession serialization and deserialization preserves all fields', () {
+      final now = DateTime.now().toUtc();
+      final session = LoveCodeSession.create(
+        code: '123456',
+        conversationPartner: '@sarah',
+        ownerUsername: '@alex',
+        targetLovePartner: '@twilight',
+        now: now,
+      );
+
+      final json = session.toJson();
+      final restored = LoveCodeSession.fromJson(json);
+
+      expect(restored.code, equals('123456'));
+      expect(restored.conversationPartner, equals('@sarah'));
+      expect(restored.ownerUsername, equals('@alex'));
+      expect(restored.targetLovePartner, equals('@twilight'));
+      expect(restored.isUsed, isFalse);
+      expect(restored.createdAt.toIso8601String(), equals(session.createdAt.toIso8601String()));
+      expect(restored.expiresAt.toIso8601String(), equals(session.expiresAt.toIso8601String()));
+    });
+
+    test('SharedConversationBundle serialization and JSON roundtrip', () {
+      final messages = [
+        ChatMessage(
+          id: 'msg_share_1',
+          senderId: '@sarah',
+          recipientId: '@alex',
+          text: 'Project update looks great!',
+          timestamp: DateTime.now().toUtc(),
+        ),
+        ChatMessage(
+          id: 'msg_share_2',
+          senderId: '@alex',
+          recipientId: '@sarah',
+          text: 'Thanks! Sending over the files.',
+          timestamp: DateTime.now().toUtc(),
+        ),
+      ];
+
+      final bundle = SharedConversationBundle.create(
+        shareId: 'share_001',
+        senderUsername: '@alex',
+        conversationPartner: '@sarah',
+        messages: messages,
+      );
+
+      expect(bundle.totalCount, equals(2));
+      final jsonStr = bundle.toJsonString();
+      final restored = SharedConversationBundle.fromJsonString(jsonStr);
+
+      expect(restored.shareId, equals('share_001'));
+      expect(restored.senderUsername, equals('@alex'));
+      expect(restored.conversationPartner, equals('@sarah'));
+      expect(restored.totalCount, equals(2));
+      expect(restored.messages.length, equals(2));
+      expect(restored.messages[0].text, equals('Project update looks great!'));
+      expect(restored.messages[1].text, equals('Thanks! Sending over the files.'));
+    });
+  });
+
+  group('Phase 17 — CryptoKeyUtils Love Code Generation & Ephemeral Envelopes', () {
+    test('CryptoKeyUtils.generateLoveCode generates valid 6-digit numeric string', () {
+      final code = CryptoKeyUtils.generateLoveCode();
+      expect(code.length, equals(6));
+      expect(RegExp(r'^[1-9][0-9]{5}$').hasMatch(code), isTrue);
+
+      final code2 = CryptoKeyUtils.generateLoveCode();
+      expect(code2.length, equals(6));
+    });
+
+    test('EphemeralRelayEnvelope love sharing factories and isLoveShareSignal discriminator', () {
+      final claim = EphemeralRelayEnvelope.loveCodeClaim(
+        senderId: '@twilight',
+        recipientId: '@alex',
+        code: '849201',
+      );
+      expect(claim.envelopeType, equals('love_share_claim'));
+      expect(claim.isLoveShareSignal, isTrue);
+      expect(claim.isLoveConnectionSignal, isFalse);
+      expect(claim.isLoveSignal, isTrue);
+
+      final reject = EphemeralRelayEnvelope.loveCodeReject(
+        senderId: '@alex',
+        recipientId: '@twilight',
+        reason: 'Code expired',
+      );
+      expect(reject.envelopeType, equals('love_share_reject'));
+      expect(reject.isLoveShareSignal, isTrue);
+
+      final bundle = EphemeralRelayEnvelope.loveShareBundle(
+        senderId: '@alex',
+        recipientId: '@twilight',
+        encryptedPayload: '{"messages":[]}',
+        shareId: 'sh_01',
+      );
+      expect(bundle.envelopeType, equals('love_share_bundle'));
+      expect(bundle.isLoveShareSignal, isTrue);
+
+      final ack = EphemeralRelayEnvelope.loveShareAck(
+        senderId: '@twilight',
+        recipientId: '@alex',
+        shareId: 'sh_01',
+      );
+      expect(ack.envelopeType, equals('love_share_ack'));
+      expect(ack.isLoveShareSignal, isTrue);
+    });
+  });
+
+  group('Phase 17 — LocalDatabase Ingestion & Deduplication', () {
+    late AppDatabase driftDb;
+    late LocalDatabase localDb;
+
+    setUp(() async {
+      driftDb = AppDatabase(NativeDatabase.memory());
+      localDb = LocalDatabase(database: driftDb);
+      await localDb.initialize();
+    });
+
+    tearDown(() async {
+      await driftDb.close();
+    });
+
+    test('importSharedMessages inserts messages and updates duplicate IDs without collision', () async {
+      final msg1 = ChatMessage(
+        id: 'dup_msg_1',
+        senderId: '@sarah',
+        recipientId: '@alex',
+        text: 'Initial message',
+        timestamp: DateTime.now().toUtc(),
+      );
+      final msg2 = ChatMessage(
+        id: 'dup_msg_2',
+        senderId: '@alex',
+        recipientId: '@sarah',
+        text: 'Reply message',
+        timestamp: DateTime.now().toUtc(),
+      );
+
+      final count = await localDb.importSharedMessages([msg1, msg2]);
+      expect(count, equals(2));
+
+      final retrieved = await localDb.getMessagesForPartner('@sarah', currentUserId: '@alex');
+      expect(retrieved.length, equals(2));
+
+      // Re-importing with updated text should overwrite without duplicating rows
+      final updatedMsg1 = msg1.copyWith(text: 'Updated message via sync');
+      final reCount = await localDb.importSharedMessages([updatedMsg1]);
+      expect(reCount, equals(1));
+
+      final retrievedAfter = await localDb.getMessagesForPartner('@sarah', currentUserId: '@alex');
+      expect(retrievedAfter.length, equals(2)); // Still 2 messages, not 3!
+      final match = retrievedAfter.firstWhere((m) => m.id == 'dup_msg_1');
+      expect(match.text, equals('Updated message via sync'));
+    });
+  });
+
+  group('Phase 17 — ConversationSharingService Replay Protection, Validation & E2EE Flow', () {
+    late AppDatabase driftDb;
+    late LocalDatabase localDb;
+    late InMemoryFirebaseRelayService relay;
+    late InMemoryLoveConnectionService loveConnService;
+    late DefaultConversationSharingService sharingService;
+
+    setUp(() async {
+      driftDb = AppDatabase(NativeDatabase.memory());
+      localDb = LocalDatabase(database: driftDb);
+      await localDb.initialize();
+      relay = InMemoryFirebaseRelayService.isolated();
+      loveConnService = InMemoryLoveConnectionService();
+      sharingService = DefaultConversationSharingService(
+        relayService: relay,
+        localDatabase: localDb,
+        loveConnectionService: loveConnService,
+      );
+    });
+
+    tearDown(() async {
+      sharingService.dispose();
+      relay.dispose();
+      await driftDb.close();
+    });
+
+    test('generateLoveCode rejects generation when user has no active Love Connection', () async {
+      // No connection exists
+      expect(
+        () => sharingService.generateLoveCode(
+          conversationPartner: '@sarah',
+          currentUserId: 'alex_id',
+          currentUsername: '@alex',
+          lovePartnerUsername: '@twilight',
+        ),
+        throwsA(isA<ConversationSharingException>()),
+      );
+    });
+
+    test('generateLoveCode generates 6-digit code and starts active session stream', () async {
+      // Connect Alex and Twilight
+      loveConnService.setMockConnection(LoveConnection(
+        id: 'conn_test_1',
+        userId: 'alex_id',
+        partnerUsername: '@twilight',
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      ));
+
+      final session = await sharingService.generateLoveCode(
+        conversationPartner: '@sarah',
+        currentUserId: 'alex_id',
+        currentUsername: '@alex',
+        lovePartnerUsername: '@twilight',
+      );
+
+      expect(session.code.length, equals(6));
+      expect(session.isValid, isTrue);
+      expect(session.ownerUsername, equals('@alex'));
+      expect(session.targetLovePartner, equals('@twilight'));
+
+      final active = sharingService.getActiveLoveCode(currentUserId: 'alex_id');
+      expect(active, isNotNull);
+      expect(active!.code, equals(session.code));
+    });
+
+    test('cancelActiveLoveCode clears session and emits null to stream', () async {
+      loveConnService.setMockConnection(LoveConnection(
+        id: 'conn_test_1',
+        userId: 'alex_id',
+        partnerUsername: '@twilight',
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      ));
+
+      await sharingService.generateLoveCode(
+        conversationPartner: '@sarah',
+        currentUserId: 'alex_id',
+        currentUsername: '@alex',
+        lovePartnerUsername: '@twilight',
+      );
+
+      expect(sharingService.getActiveLoveCode(currentUserId: 'alex_id'), isNotNull);
+
+      await sharingService.cancelActiveLoveCode(currentUserId: 'alex_id');
+      expect(sharingService.getActiveLoveCode(currentUserId: 'alex_id'), isNull);
+    });
+
+    test('claimAndReceiveSharedConversation rejects unauthorized third-party claimant', () async {
+      loveConnService.setMockConnection(LoveConnection(
+        id: 'conn_test_1',
+        userId: 'alex_id',
+        partnerUsername: '@twilight',
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      ));
+
+      final session = await sharingService.generateLoveCode(
+        conversationPartner: '@sarah',
+        currentUserId: 'alex_id',
+        currentUsername: '@alex',
+        lovePartnerUsername: '@twilight',
+      );
+
+      // Charlie attempts to claim Alex's code
+      final charlieClaim = EphemeralRelayEnvelope.loveCodeClaim(
+        senderId: '@charlie',
+        recipientId: 'alex_id',
+        code: session.code,
+      );
+
+      await sharingService.handleInboundEnvelope(charlieClaim);
+
+      // Verify reject envelope was sent to Charlie
+      final pendingCharlie = await relay.fetchPendingMessages('@charlie');
+      expect(pendingCharlie.length, equals(1));
+      expect(pendingCharlie.first.envelopeType, equals('love_share_reject'));
+    });
+
+    test('claimAndReceiveSharedConversation rejects incorrect code', () async {
+      loveConnService.setMockConnection(LoveConnection(
+        id: 'conn_test_1',
+        userId: 'alex_id',
+        partnerUsername: '@twilight',
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      ));
+
+      await sharingService.generateLoveCode(
+        conversationPartner: '@sarah',
+        currentUserId: 'alex_id',
+        currentUsername: '@alex',
+        lovePartnerUsername: '@twilight',
+      );
+
+      // Twilight sends wrong code
+      final wrongClaim = EphemeralRelayEnvelope.loveCodeClaim(
+        senderId: '@twilight',
+        recipientId: 'alex_id',
+        code: '000000',
+      );
+
+      await sharingService.handleInboundEnvelope(wrongClaim);
+
+      final pendingTwilight = await relay.fetchPendingMessages('@twilight');
+      expect(pendingTwilight.length, equals(1));
+      expect(pendingTwilight.first.envelopeType, equals('love_share_reject'));
+    });
+
+    test('Full End-to-End Conversation Sharing Handshake & Replay Protection', () async {
+      loveConnService.setMockConnection(LoveConnection(
+        id: 'conn_test_1',
+        userId: 'alex_id',
+        partnerUsername: '@twilight',
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      ));
+
+      // Seed messages between Alex and Sarah in SQLite
+      final msg1 = ChatMessage(
+        id: 'sarah_1',
+        senderId: '@sarah',
+        recipientId: 'alex_id',
+        text: 'Confidential project details',
+        timestamp: DateTime.now().toUtc(),
+      );
+      await localDb.saveMessage(msg1);
+
+      // 1. Alex generates Love Code to share Sarah's messages with Twilight
+      final session = await sharingService.generateLoveCode(
+        conversationPartner: '@sarah',
+        currentUserId: 'alex_id',
+        currentUsername: '@alex',
+        lovePartnerUsername: '@twilight',
+      );
+
+      // 2. Twilight claims code
+      final claimEnvelope = EphemeralRelayEnvelope.loveCodeClaim(
+        senderId: '@twilight',
+        recipientId: 'alex_id',
+        code: session.code,
+      );
+
+      // 3. Alex's device processes claim
+      await sharingService.handleInboundEnvelope(claimEnvelope);
+
+      // 4. Verify bundle was dispatched to Twilight
+      final pendingTwilight = await relay.fetchPendingMessages('@twilight');
+      expect(pendingTwilight.length, equals(1));
+      expect(pendingTwilight.first.envelopeType, equals('love_share_bundle'));
+
+      final bundle = SharedConversationBundle.fromJsonString(
+        pendingTwilight.first.ciphertextPayload,
+      );
+      expect(bundle.conversationPartner, equals('@sarah'));
+      expect(bundle.totalCount, equals(1));
+      expect(bundle.messages.first.text, equals('Confidential project details'));
+
+      // 5. Ingest into Twilight's local storage
+      final imported = await sharingService.importSharedConversation(
+        bundle: bundle,
+        currentUserId: 'twilight_id',
+      );
+      expect(imported, equals(1));
+
+      // 6. SINGLE-USE REPLAY PROTECTION: Attempting to claim the code a second time fails
+      await relay.purgeExpiredMessages();
+      await sharingService.handleInboundEnvelope(claimEnvelope);
+
+      final secondAttempt = await relay.fetchPendingMessages('@twilight');
+      expect(secondAttempt.length, equals(2));
+      final reject = secondAttempt.firstWhere((e) => e.envelopeType == 'love_share_reject');
+      expect(reject.ciphertextPayload, contains('already been used'));
+    });
+  });
+
+  group('Phase 17 — UI Widget Tests (LoveCodeSheet & ClaimLoveCodeDialog)', () {
+    testWidgets('LoveCodeSheet displays 6-digit code and countdown timer', (tester) async {
+      final sharingService = InMemoryConversationSharingService();
+      await sharingService.generateLoveCode(
+        conversationPartner: '@sarah',
+        currentUserId: 'alex_id',
+        currentUsername: '@alex',
+        lovePartnerUsername: '@twilight',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LoveCodeSheet(
+              conversationPartner: '@sarah',
+              currentUserId: 'alex_id',
+              currentUsername: '@alex',
+              lovePartnerUsername: '@twilight',
+              sharingService: sharingService,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('One-Time Love Code'), findsOneWidget);
+      expect(find.text('Share @sarah with @twilight'), findsOneWidget);
+      expect(find.text('Copy Code'), findsOneWidget);
+      expect(find.text('Waiting for @twilight...'), findsOneWidget);
+      expect(find.text('Close'), findsOneWidget);
+    });
+
+    testWidgets('ClaimLoveCodeDialog renders 6-digit input and validates length', (tester) async {
+      final sharingService = InMemoryConversationSharingService();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ClaimLoveCodeDialog(
+              currentUserId: 'twilight_id',
+              currentUsername: '@twilight',
+              lovePartnerUsername: '@alex',
+              sharingService: sharingService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Redeem Love Code'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Claim & Import'), findsOneWidget);
+
+      // Tap Claim with empty input -> displays validation error
+      await tester.tap(find.text('Claim & Import'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Please enter a valid 6-digit Love Code.'), findsOneWidget);
+    });
+
+    testWidgets('ClaimLoveCodeDialog claims and shows success confirmation', (tester) async {
+      final sharingService = InMemoryConversationSharingService();
+      // Setup simulated bundle
+      sharingService.simulatedBundle = SharedConversationBundle.create(
+        shareId: 'test_sh_99',
+        senderUsername: '@alex',
+        conversationPartner: '@sarah',
+        messages: [
+          ChatMessage(
+            id: 'm1',
+            senderId: '@sarah',
+            recipientId: '@alex',
+            text: 'Hello',
+            timestamp: DateTime.now(),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ClaimLoveCodeDialog(
+              currentUserId: 'twilight_id',
+              currentUsername: '@twilight',
+              lovePartnerUsername: '@alex',
+              sharingService: sharingService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Enter 6-digit code
+      await tester.enterText(find.byType(TextField), '849201');
+      await tester.pumpAndSettle();
+
+      // Tap Claim & Import
+      await tester.tap(find.text('Claim & Import'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Conversation Imported!'), findsOneWidget);
+      expect(find.text('Done'), findsOneWidget);
     });
   });
 }

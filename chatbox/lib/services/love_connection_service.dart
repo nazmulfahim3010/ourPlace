@@ -565,4 +565,11 @@ class InMemoryLoveConnectionService implements LoveConnectionService {
     required String currentUserId,
     required String currentUsername,
   }) async {}
+
+  /// Test helper to set simulated connection state
+  void setMockConnection(LoveConnection? connection) {
+    _currentConnection = connection;
+    _controller.add(connection);
+  }
 }
+
