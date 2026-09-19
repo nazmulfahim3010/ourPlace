@@ -32,6 +32,9 @@ class ChatMessage {
   /// Media attachment metadata (for image, audio, video messages)
   final MediaAttachment? mediaAttachment;
 
+  /// Message emoji reactions (e.g., {"@alex": "❤️", "@twilight": "✨"})
+  final Map<String, String>? reactions;
+
   ChatMessage({
     required this.id,
     required this.senderId,
@@ -41,6 +44,7 @@ class ChatMessage {
     this.type = MessageType.text,
     this.status = MessageStatus.sent,
     this.mediaAttachment,
+    this.reactions,
   });
 
   /// Convenience getter: Check if message was sent by default current user
@@ -69,6 +73,7 @@ class ChatMessage {
       'type': type.toString().split('.').last,
       'status': status.toString().split('.').last,
       if (mediaAttachment != null) 'mediaAttachment': mediaAttachment!.toJson(),
+      if (reactions != null && reactions!.isNotEmpty) 'reactions': reactions,
     };
   }
 
@@ -91,6 +96,11 @@ class ChatMessage {
       mediaAttachment: json['mediaAttachment'] != null
           ? MediaAttachment.fromJson(json['mediaAttachment'] as Map<String, dynamic>)
           : null,
+      reactions: json['reactions'] != null
+          ? (json['reactions'] as Map).map(
+              (k, v) => MapEntry(k.toString(), v.toString()),
+            )
+          : null,
     );
   }
 
@@ -104,6 +114,8 @@ class ChatMessage {
     MessageType? type,
     MessageStatus? status,
     MediaAttachment? mediaAttachment,
+    Map<String, String>? reactions,
+    bool clearReactions = false,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -114,6 +126,21 @@ class ChatMessage {
       type: type ?? this.type,
       status: status ?? this.status,
       mediaAttachment: mediaAttachment ?? this.mediaAttachment,
+      reactions: clearReactions ? null : (reactions ?? this.reactions),
+    );
+  }
+
+  /// Helper to toggle or update a reaction by a specific user
+  ChatMessage withToggledReaction(String username, String emoji) {
+    final current = Map<String, String>.from(reactions ?? {});
+    if (current[username] == emoji) {
+      current.remove(username);
+    } else {
+      current[username] = emoji;
+    }
+    return copyWith(
+      reactions: current.isEmpty ? null : current,
+      clearReactions: current.isEmpty,
     );
   }
 
@@ -155,7 +182,7 @@ class ChatMessage {
   String toString() {
     return 'ChatMessage(id: $id, senderId: $senderId, recipientId: $recipientId, '
         'text: $text, timestamp: $timestamp, type: $type, status: $status, '
-        'media: ${mediaAttachment?.fileName})';
+        'media: ${mediaAttachment?.fileName}, reactions: $reactions)';
   }
 
   @override

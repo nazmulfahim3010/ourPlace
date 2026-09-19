@@ -10,6 +10,8 @@ class ChatHeader extends StatelessWidget {
   final bool isTyping;
   final String? presenceText;
   final VoidCallback? onShareConversation;
+  final VoidCallback? onOpenCoupleSpace;
+  final VoidCallback? onOpenMemories;
 
   const ChatHeader({
     super.key,
@@ -21,6 +23,8 @@ class ChatHeader extends StatelessWidget {
     this.isTyping = false,
     this.presenceText,
     this.onShareConversation,
+    this.onOpenCoupleSpace,
+    this.onOpenMemories,
   });
 
   @override
@@ -142,6 +146,28 @@ class ChatHeader extends StatelessWidget {
                   icon: const Icon(Icons.share_outlined, color: Colors.pinkAccent, size: 18),
                   tooltip: 'Share with Partner ❤️',
                   onPressed: onShareConversation,
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+              ],
+
+              /// Optional Memories Action (Phase 18)
+              if (onOpenMemories != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.photo_library_outlined, color: Color(0xFF00E676), size: 18),
+                  tooltip: 'Shared Memories',
+                  onPressed: onOpenMemories,
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+              ],
+
+              /// Optional Couple Space Action (Phase 18)
+              if (onOpenCoupleSpace != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.favorite_rounded, color: Color(0xFFFF4081), size: 18),
+                  tooltip: 'Couple Space ❤️',
+                  onPressed: onOpenCoupleSpace,
                   constraints: const BoxConstraints(),
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                 ),

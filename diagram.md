@@ -1,6 +1,6 @@
 # ourPlace — Architectural & Technical Diagrams Specification
-> **Document Version:** 1.5.0  
-> **Last Updated:** 2026-09-18  
+> **Document Version:** 1.6.0  
+> **Last Updated:** 2026-09-19  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Companion Document:** [`docts.md`](file:///e:/ourPlace/docts.md)
 
@@ -20,6 +20,7 @@
 11. [Message State Lifecycle & Synchronization Flow](#11-message-state-lifecycle--synchronization-flow)
 12. [Real-Time Typing Indicators & Ephemeral Presence Flow](#12-real-time-typing-indicators--ephemeral-presence-flow)
 13. [Push Notification Silent Wake-up & Privacy Alerts Flow](#13-push-notification-silent-wake-up--privacy-alerts-flow)
+14. [Couple-Specific Features & Ephemeral Micro-Interactions Flow](#14-couple-specific-features--ephemeral-micro-interactions-flow)
 
 ---
 
@@ -461,6 +462,7 @@ erDiagram
         INTEGER status "MessageStatus enum (0:sending, 1:sent, 2:delivered, 3:read, 4:failed)"
         DATETIME timestamp "UTC timestamp"
         TEXT media_data "Nullable JSON encrypted media attachment metadata"
+        TEXT reactions "Nullable JSON serialized user-to-emoji reaction map"
     }
 
     SECURITY_LOGS {
@@ -479,6 +481,18 @@ erDiagram
         DATETIME connected_at "Nullable timestamp when connected"
         DATETIME updated_at "Timestamp of last status mutation"
         BOOLEAN is_visible_on_profile "Profile visibility toggle"
+    }
+
+    LOVE_NOTES {
+        TEXT id PK "Unique note UUID"
+        TEXT sender_username "Author @username"
+        TEXT recipient_username "Recipient @username"
+        TEXT title "Note title"
+        TEXT body "Encrypted note body text"
+        DATETIME created_at "Creation timestamp"
+        DATETIME open_at "Nullable Open-When unlock timestamp"
+        BOOLEAN is_opened "Whether note has been unsealed"
+        TEXT tag "Category badge tag (Anniversary, Open When..., Just Because)"
     }
 
     CONVERSATION_DOMAIN {
@@ -501,6 +515,7 @@ erDiagram
 
     USER_ACCOUNTS ||--o{ USER_DOMAIN : "Hydrates"
     USER_ACCOUNTS ||--o{ SECURITY_LOGS : "Logs device security events for"
+    USER_DOMAIN ||--o{ LOVE_NOTES : "Writes / Receives"
     MESSAGES }o--|| CONVERSATION_DOMAIN : "Aggregated into"
     USER_DOMAIN ||--o{ CONVERSATION_DOMAIN : "Partner of"
 ```
@@ -780,3 +795,94 @@ sequenceDiagram
         NotifService->>ChatView: Open ChatScreen(partner: "@alice") directly
     end
 ```
+
+---
+
+## 14. Couple-Specific Features & Ephemeral Micro-Interactions Flow
+
+### 14.1 Synchronized Floating Hearts Burst Protocol
+When a user taps "Send luv" in `ChatScreen`, a physics-based heart particle cascade renders locally while an ephemeral `loveLuvBurst` envelope is transmitted across the relay to trigger an immediate cascade on the partner's screen.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Alice Device
+    participant AliceUI as Alice FloatingHeartsOverlay
+    participant AliceCouple as Alice CoupleFeaturesService
+    participant AliceSync as Alice SyncService
+    participant Relay as Firebase Ephemeral Relay
+    participant BobSync as Bob SyncService
+    participant BobCouple as Bob CoupleFeaturesService
+    participant BobUI as Bob FloatingHeartsOverlay
+    actor Bob as Bob Device
+
+    Alice->>AliceUI: Tap "Send luv" button
+    AliceUI->>AliceUI: triggerBurst(count: 14) (Local particle cascade)
+    AliceUI->>AliceCouple: sendLuvBurst(recipient: "@bob")
+    AliceCouple->>AliceSync: dispatchEphemeral(loveLuvBurst)
+    AliceSync->>Relay: POST EphemeralRelayEnvelope(type: "love_luv_burst", ttl: 30s)
+    Relay-->>AliceSync: HTTP 200 / ACK
+
+    BobSync->>Relay: fetchPendingRelayEnvelopes("@bob")
+    Relay-->>BobSync: Return envelope (isLoveLuvSignal: true)
+    BobSync->>BobCouple: emitToLuvBurstStream()
+    BobCouple->>BobUI: Trigger partner floating hearts shower!
+    BobSync->>Relay: acknowledgeAndPurge(envelopeId) (Permanently deleted)
+    Note over BobUI: Romantic floating hearts rise, sway & fade across Bob's screen
+```
+
+### 14.2 Message Emoji Reaction Synchronization Flow
+Reactions are toggled on message bubbles and synchronized via lightweight ephemeral envelopes.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Alice Device
+    participant AliceBubble as MessageBubble
+    participant AlicePicker as MessageReactionPicker
+    participant AliceDB as Alice Local SQLite
+    participant AliceSync as Alice SyncService
+    participant Relay as Firebase Ephemeral Relay
+    participant BobSync as Bob SyncService
+    participant BobDB as Bob Local SQLite
+    participant BobBubble as MessageBubble
+    actor Bob as Bob Device
+
+    Alice->>AliceBubble: Long-press message bubble
+    AliceBubble->>AlicePicker: Display dark reaction picker (❤️, 💕, 🔥, 🥰, ✨)
+    Alice->>AlicePicker: Select emoji reaction ("🔥")
+    AlicePicker->>AliceDB: updateMessageReactions(msgId, reactions: {"@alice": "🔥"})
+    AlicePicker->>AliceSync: dispatch(messageReaction)
+    AliceSync->>Relay: POST EphemeralRelayEnvelope(type: "message_reaction")
+
+    BobSync->>Relay: fetchPendingRelayEnvelopes("@bob")
+    Relay-->>BobSync: Return message_reaction envelope
+    BobSync->>BobDB: updateMessageReactions(msgId, updatedReactions)
+    BobSync->>Relay: acknowledgeAndPurge(envelopeId)
+    BobDB-->>BobBubble: Reactive query stream updates docked reaction pill ("🔥")
+```
+
+### 14.3 Sealed Love Letters / Couple Notes Flow
+Sealed romantic notes can be composed and stored with time-lock metadata and unsealed interactively.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice as Alice Device
+    participant NotesScreen as LoveNotesScreen
+    participant LocalDB as Alice Local SQLite (v6)
+    participant Relay as Ephemeral Relay
+    actor Bob as Bob Device
+
+    Alice->>NotesScreen: Tap "Write Love Note ✍️"
+    Alice->>NotesScreen: Enter Title, Body & Tag ("Open When...")
+    Alice->>LocalDB: saveLoveNote(LoveNote(status: sealed, isOpened: false))
+    Alice->>Relay: (Optional) dispatch E2EE loveNoteBundle
+    Note over NotesScreen: Renders sealed envelope card with wax seal badge
+    Bob->>NotesScreen: Open Love Notes space
+    Bob->>NotesScreen: Tap sealed letter card
+    NotesScreen->>NotesScreen: Play unsealing animation & display Love Letter Dialog
+    NotesScreen->>LocalDB: markLoveNoteOpened(noteId)
+    Note over NotesScreen: Card transitions from sealed to unsealed with timestamp
+```
+

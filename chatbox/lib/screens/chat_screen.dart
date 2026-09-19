@@ -10,9 +10,13 @@ import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/screens/media/private_media_viewer_screen.dart';
 import 'package:chatbox/widgets/chat_header.dart';
 import 'package:chatbox/widgets/date_divider.dart';
+import 'package:chatbox/widgets/floating_hearts_overlay.dart';
 import 'package:chatbox/widgets/message_bubble.dart';
+import 'package:chatbox/widgets/message_reaction_picker.dart';
 import 'package:chatbox/widgets/chat_input_field.dart';
 import 'package:chatbox/widgets/love_code_sheet.dart';
+import 'package:chatbox/screens/couple/couple_milestones_screen.dart';
+import 'package:chatbox/screens/memories/shared_memories_screen.dart';
 
 /// Main Chat Screen Widget (Phase 6 - Supporting Anonymous User Context & Sign Out)
 class ChatScreen extends StatefulWidget {
@@ -49,6 +53,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   StreamSubscription<bool>? _typingSubscription;
   StreamSubscription<UserPresence>? _presenceSubscription;
   StreamSubscription<List<ChatMessage>>? _messageSubscription;
+  StreamSubscription<String>? _luvBurstSubscription;
 
   // Phase 15: Media Messaging state
   MediaAttachment? _pendingAttachment;
@@ -117,6 +122,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       partnerId: widget.partnerId,
       isOnline: true,
     );
+
+    // 5. Phase 18: Luv burst stream
+    _luvBurstSubscription = _chatRepository.coupleFeaturesService.luvBurstStream.listen((sender) {
+      if (mounted) {
+        FloatingHeartsOverlay.burst(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❤️ $sender sent you luv!'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: const Color(0xFF2E2428),
+          ),
+        );
+      }
+    });
   }
 
   @override
@@ -136,6 +155,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _typingSubscription?.cancel();
     _presenceSubscription?.cancel();
     _messageSubscription?.cancel();
+    _luvBurstSubscription?.cancel();
     _recordingTimer?.cancel();
     _chatRepository.realtimeService.pause();
     _messageController.dispose();
@@ -467,13 +487,72 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Handle "Send luv" quick action
+  /// Handle "Send luv" quick action with floating hearts (Phase 18)
   void _sendLuv() {
+    FloatingHeartsOverlay.burst(context);
+    _chatRepository.coupleFeaturesService.sendLuvBurst(
+      partnerUsername: widget.partnerName,
+      currentUsername: _currentUsername,
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('💕 Love sent!'),
         duration: Duration(seconds: 2),
         backgroundColor: Color(0xFF383838),
+      ),
+    );
+  }
+
+  void _handleMessageReaction(ChatMessage message) async {
+    final emoji = await MessageReactionPicker.show(context);
+    if (emoji != null) {
+      await _chatRepository.coupleFeaturesService.toggleReaction(
+        messageId: message.id,
+        partnerUsername: widget.partnerName,
+        currentUsername: _currentUsername,
+        emoji: emoji,
+      );
+      final updated = await _chatRepository.getMessages(widget.partnerId);
+      if (mounted) {
+        setState(() {
+          _messages = updated;
+        });
+      }
+    }
+  }
+
+  void _openMemories() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SharedMemoriesScreen(
+          partnerUsername: widget.partnerName,
+          chatRepository: _chatRepository,
+        ),
+      ),
+    );
+  }
+
+  void _openCoupleSpace() async {
+    final conn = await _chatRepository.loveConnectionService.getLoveConnection(
+      currentUserId: _currentUserId,
+    );
+    if (!mounted) return;
+    if (conn == null || !conn.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Couple Space requires an active Love Connection ❤️ Connect in Profile.'),
+          backgroundColor: Color(0xFF383838),
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CoupleMilestonesScreen(
+          loveConnection: conn,
+          chatRepository: _chatRepository,
+          currentUsername: _currentUsername,
+        ),
       ),
     );
   }
@@ -516,44 +595,48 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Column(
-        children: [
-          /// Floating Pill-Shaped Header
-          ChatHeader(
-            partnerName: widget.partnerName,
-            currentUsername: _currentUsername,
-            isTyping: _isPartnerTyping,
-            presenceText: _partnerPresence?.statusText,
-            onSendLuv: _sendLuv,
-            onShareConversation: _handleShareConversation,
-            onSignOut: widget.authRepository != null
-                ? () async {
-                    await widget.authRepository!.signOut();
-                  }
-                : null,
-          ),
+    return FloatingHeartsOverlay(
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Column(
+          children: [
+            /// Floating Pill-Shaped Header
+            ChatHeader(
+              partnerName: widget.partnerName,
+              currentUsername: _currentUsername,
+              isTyping: _isPartnerTyping,
+              presenceText: _partnerPresence?.statusText,
+              onSendLuv: _sendLuv,
+              onShareConversation: _handleShareConversation,
+              onOpenMemories: _openMemories,
+              onOpenCoupleSpace: _openCoupleSpace,
+              onSignOut: widget.authRepository != null
+                  ? () async {
+                      await widget.authRepository!.signOut();
+                    }
+                  : null,
+            ),
 
-          /// Chat Messages Area
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white38,
+            /// Chat Messages Area
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.white38,
+                      ),
+                    )
+                  : GestureDetector(
+                      onTap: () => FocusScope.of(context).unfocus(),
+                      behavior: HitTestBehavior.translucent,
+                      child: _ChatMessageArea(
+                        messages: _messages,
+                        scrollController: _scrollController,
+                        currentUserId: _currentUserId,
+                        onMediaTap: _openMediaViewer,
+                        onMessageReaction: _handleMessageReaction,
+                      ),
                     ),
-                  )
-                : GestureDetector(
-                    onTap: () => FocusScope.of(context).unfocus(),
-                    behavior: HitTestBehavior.translucent,
-                    child: _ChatMessageArea(
-                      messages: _messages,
-                      scrollController: _scrollController,
-                      currentUserId: _currentUserId,
-                      onMediaTap: _openMediaViewer,
-                    ),
-                  ),
-          ),
+            ),
 
           /// Bottom Input Bar
           ChatInputField(
@@ -576,8 +659,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 /// Chat message area with reverse scrolling, date grouping, and status tracking
@@ -585,13 +669,15 @@ class _ChatMessageArea extends StatelessWidget {
   final List<ChatMessage> messages;
   final ScrollController scrollController;
   final String currentUserId;
-  final ValueChanged<ChatMessage>? onMediaTap;
+  final Function(ChatMessage)? onMediaTap;
+  final Function(ChatMessage)? onMessageReaction;
 
   const _ChatMessageArea({
     required this.messages,
     required this.scrollController,
     this.currentUserId = AppConstants.currentUserId,
     this.onMediaTap,
+    this.onMessageReaction,
   });
 
   bool _isSameDay(DateTime a, DateTime b) {
@@ -642,6 +728,8 @@ class _ChatMessageArea extends StatelessWidget {
                 isSent: message.isSentBy(currentUserId),
                 showTimestamp: showTimestamp,
                 onMediaTap: onMediaTap != null ? () => onMediaTap!(message) : null,
+                onLongPress: onMessageReaction != null ? () => onMessageReaction!(message) : null,
+                onReactionTap: onMessageReaction != null ? () => onMessageReaction!(message) : null,
               ),
             ),
           ],
@@ -650,4 +738,3 @@ class _ChatMessageArea extends StatelessWidget {
     );
   }
 }
-

@@ -56,6 +56,13 @@ import 'package:chatbox/models/shared_conversation_bundle.dart';
 import 'package:chatbox/services/conversation_sharing_service.dart';
 import 'package:chatbox/widgets/love_code_sheet.dart';
 import 'package:chatbox/widgets/claim_love_code_dialog.dart';
+import 'package:chatbox/models/love_note.dart';
+import 'package:chatbox/services/couple_features_service.dart';
+import 'package:chatbox/widgets/floating_hearts_overlay.dart';
+import 'package:chatbox/widgets/message_reaction_picker.dart';
+import 'package:chatbox/screens/memories/shared_memories_screen.dart';
+import 'package:chatbox/screens/couple/couple_milestones_screen.dart';
+import 'package:chatbox/screens/couple/love_notes_screen.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
@@ -579,10 +586,14 @@ void main() {
 
     testWidgets('ChatScreen smoke test and message sending verification',
         (WidgetTester tester) async {
+      final repo = LocalChatRepository(database: localDb);
       // Build our app with direct ChatScreen
       await tester.pumpWidget(
-        const MyApp(
-          home: ChatScreen(partnerName: 'Twilight'),
+        MyApp(
+          home: ChatScreen(
+            partnerName: 'Twilight',
+            repository: repo,
+          ),
         ),
       );
       await tester.pump();
@@ -4512,6 +4523,522 @@ void main() {
 
       expect(find.text('Conversation Imported!'), findsOneWidget);
       expect(find.text('Done'), findsOneWidget);
+    });
+  });
+
+  // ===========================================================================
+  // PHASE 18: COUPLE-SPECIFIC FEATURES TESTS
+  // ===========================================================================
+
+  group('Phase 18 — ChatMessage Reactions Domain & Model Tests', () {
+    test('ChatMessage serializes and deserializes reactions map', () {
+      final msg = ChatMessage(
+        id: 'msg_react_1',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        text: 'You are amazing 💕',
+        timestamp: DateTime.parse('2026-09-19T20:00:00.000Z'),
+        reactions: {
+          '@twilight': '❤️',
+          '@alex': '✨',
+        },
+      );
+
+      final json = msg.toJson();
+      expect(json['reactions'], isNotNull);
+      expect(json['reactions']['@twilight'], equals('❤️'));
+      expect(json['reactions']['@alex'], equals('✨'));
+
+      final restored = ChatMessage.fromJson(json);
+      expect(restored.reactions, isNotNull);
+      expect(restored.reactions!['@twilight'], equals('❤️'));
+      expect(restored.reactions!['@alex'], equals('✨'));
+    });
+
+    test('ChatMessage withToggledReaction adds, updates, and removes reactions', () {
+      final msg = ChatMessage(
+        id: 'msg_react_2',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        text: 'Good night!',
+        timestamp: DateTime.now(),
+      );
+
+      // 1. Add new reaction
+      final withHeart = msg.withToggledReaction('@twilight', '❤️');
+      expect(withHeart.reactions!['@twilight'], equals('❤️'));
+
+      // 2. Change to another emoji
+      final withFlame = withHeart.withToggledReaction('@twilight', '🔥');
+      expect(withFlame.reactions!['@twilight'], equals('🔥'));
+
+      // 3. Toggle same emoji removes it
+      final removed = withFlame.withToggledReaction('@twilight', '🔥');
+      expect(removed.reactions, isNull);
+    });
+  });
+
+  group('Phase 18 — LoveNote Domain Model Tests', () {
+    test('LoveNote creation, isSealed and canOpen properties', () {
+      final now = DateTime.now();
+      final future = now.add(const Duration(days: 7));
+
+      final noteImmediate = LoveNote(
+        id: 'n1',
+        senderUsername: '@alex',
+        recipientUsername: '@twilight',
+        title: 'Forever',
+        body: 'I love you with all my heart.',
+        createdAt: now,
+        tag: 'Open right now',
+      );
+
+      expect(noteImmediate.isSealed, isTrue);
+      expect(noteImmediate.canOpen, isTrue);
+
+      final noteFuture = LoveNote(
+        id: 'n2',
+        senderUsername: '@alex',
+        recipientUsername: '@twilight',
+        title: 'Anniversary Surprise',
+        body: 'Happy Anniversary!',
+        createdAt: now,
+        openAt: future,
+        tag: 'Open on our anniversary',
+      );
+
+      expect(noteFuture.isSealed, isTrue);
+      expect(noteFuture.canOpen, isFalse);
+
+      final opened = noteImmediate.copyWith(isOpened: true);
+      expect(opened.isSealed, isFalse);
+    });
+
+    test('LoveNote serialization and deserialization preserves all fields', () {
+      final note = LoveNote(
+        id: 'n3',
+        senderUsername: '@alex',
+        recipientUsername: '@twilight',
+        title: 'My Dearest',
+        body: 'Thinking of you constantly.',
+        createdAt: DateTime.parse('2026-09-19T21:00:00.000Z'),
+        openAt: DateTime.parse('2026-09-20T00:00:00.000Z'),
+        isOpened: false,
+        tag: 'Open when you miss me',
+      );
+
+      final json = note.toJson();
+      final restored = LoveNote.fromJson(json);
+
+      expect(restored.id, equals('n3'));
+      expect(restored.senderUsername, equals('@alex'));
+      expect(restored.recipientUsername, equals('@twilight'));
+      expect(restored.title, equals('My Dearest'));
+      expect(restored.body, equals('Thinking of you constantly.'));
+      expect(restored.isOpened, isFalse);
+      expect(restored.tag, equals('Open when you miss me'));
+      expect(restored, equals(note));
+    });
+  });
+
+  group('Phase 18 — EphemeralRelayEnvelope Couple Signals', () {
+    test('loveLuvBurst, messageReaction, loveNoteBundle factories and discriminators', () {
+      final luv = EphemeralRelayEnvelope.loveLuvBurst(
+        senderId: 'alex',
+        recipientId: 'twilight',
+      );
+      expect(luv.isLoveLuvSignal, isTrue);
+      expect(luv.isCoupleFeatureSignal, isTrue);
+      expect(luv.isLoveSignal, isTrue);
+      expect(luv.ciphertextPayload, equals('luv_burst'));
+
+      final react = EphemeralRelayEnvelope.messageReaction(
+        senderId: 'alex',
+        recipientId: 'twilight',
+        messageId: 'm123',
+        emoji: '🥰',
+      );
+      expect(react.isReactionSignal, isTrue);
+      expect(react.isCoupleFeatureSignal, isTrue);
+      expect(react.isLoveSignal, isTrue);
+
+      final note = EphemeralRelayEnvelope.loveNoteBundle(
+        senderId: 'alex',
+        recipientId: 'twilight',
+        encryptedPayload: '{"title":"Love"}',
+        noteId: 'n1',
+      );
+      expect(note.isLoveNoteSignal, isTrue);
+      expect(note.isCoupleFeatureSignal, isTrue);
+      expect(note.isLoveSignal, isTrue);
+    });
+  });
+
+  group('Phase 18 — Drift SQLite v6 Migration & LocalDatabase Tests', () {
+    late AppDatabase db;
+    late LocalDatabase localDb;
+
+    setUp(() {
+      db = AppDatabase(NativeDatabase.memory());
+      localDb = LocalDatabase(database: db);
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('Messages reactions column persistence and updateMessageReactions', () async {
+      final msg = ChatMessage(
+        id: 'msg_drift_v6_1',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        text: 'Check this reaction test',
+        timestamp: DateTime.now(),
+      );
+
+      await localDb.saveMessage(msg);
+
+      // Verify initial empty reactions
+      var fetched = await localDb.getMessagesForPartner('@twilight', currentUserId: '@alex');
+      expect(fetched.first.reactions, isNull);
+
+      // Update reaction
+      await localDb.updateMessageReactions(msg.id, {'@twilight': '❤️'});
+
+      fetched = await localDb.getMessagesForPartner('@twilight', currentUserId: '@alex');
+      expect(fetched.first.reactions, isNotNull);
+      expect(fetched.first.reactions!['@twilight'], equals('❤️'));
+    });
+
+    test('LoveNotes table CRUD and markLoveNoteOpened', () async {
+      final note = LoveNote(
+        id: 'note_test_1',
+        senderUsername: '@alex',
+        recipientUsername: '@twilight',
+        title: 'Sweet Dreams',
+        body: 'Have the best dreams tonight.',
+        createdAt: DateTime.now(),
+        tag: 'Open right now',
+      );
+
+      await localDb.saveLoveNote(note);
+
+      final list = await localDb.getLoveNotes('@twilight');
+      expect(list.length, equals(1));
+      expect(list.first.title, equals('Sweet Dreams'));
+      expect(list.first.isOpened, isFalse);
+
+      await localDb.markLoveNoteOpened('note_test_1');
+
+      final updatedList = await localDb.getLoveNotes('@twilight');
+      expect(updatedList.first.isOpened, isTrue);
+    });
+
+    test('getSharedMediaMessages filters only media attachments', () async {
+      final textMsg = ChatMessage(
+        id: 'text_1',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        text: 'Pure text',
+        timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+
+      final mediaMsg = ChatMessage(
+        id: 'media_1',
+        senderId: '@alex',
+        recipientId: '@twilight',
+        text: 'photo.jpg',
+        timestamp: DateTime.now(),
+        type: MessageType.image,
+        mediaAttachment: const MediaAttachment(
+          id: 'att_1',
+          fileName: 'photo.jpg',
+          fileSizeBytes: 1024,
+          mimeType: 'image/jpeg',
+          type: MessageType.image,
+        ),
+      );
+
+      await localDb.saveMessage(textMsg);
+      await localDb.saveMessage(mediaMsg);
+
+      final mediaOnly = await localDb.getSharedMediaMessages('@twilight');
+      expect(mediaOnly.length, equals(1));
+      expect(mediaOnly.first.id, equals('media_1'));
+      expect(mediaOnly.first.mediaAttachment?.fileName, equals('photo.jpg'));
+    });
+  });
+
+  group('Phase 18 — CoupleFeaturesService Calculations & Flow', () {
+    late InMemoryCoupleFeaturesService coupleService;
+
+    setUp(() {
+      coupleService = InMemoryCoupleFeaturesService();
+    });
+
+    tearDown(() {
+      coupleService.dispose();
+    });
+
+    test('calculateMilestones computes duration, anniversary countdown, and milestone badges', () {
+      final start = DateTime.now().subtract(const Duration(days: 45));
+      final messages = List.generate(
+        15,
+        (i) => ChatMessage(
+          id: 'm_$i',
+          senderId: '@alex',
+          recipientId: '@twilight',
+          text: 'Message $i',
+          timestamp: DateTime.now(),
+        ),
+      );
+
+      final milestones = coupleService.calculateMilestones(
+        connectedAt: start,
+        messages: messages,
+      );
+
+      expect(milestones.daysTogether, equals(45));
+      expect(milestones.totalMessages, equals(15));
+      expect(milestones.badges.any((b) => b.title == 'First Spark' && b.isUnlocked), isTrue);
+      expect(milestones.badges.any((b) => b.title == 'Sweet Talkers' && b.isUnlocked), isTrue);
+    });
+
+    test('sendLuvBurst enqueues ephemeral envelope and notifies luvBurstStream', () async {
+      String? receivedSender;
+      coupleService.luvBurstStream.listen((sender) {
+        receivedSender = sender;
+      });
+
+      await coupleService.sendLuvBurst(
+        partnerUsername: '@twilight',
+        currentUsername: '@alex',
+      );
+
+      expect(coupleService.luvBurstSentCount, equals(1));
+      expect(receivedSender, equals('@alex'));
+    });
+
+    test('toggleReaction and handleInboundReaction updates reaction state', () async {
+      await coupleService.toggleReaction(
+        messageId: 'msg_99',
+        partnerUsername: '@twilight',
+        currentUsername: '@alex',
+        emoji: '❤️',
+      );
+
+      expect(coupleService.getReactions('msg_99')?['@alex'], equals('❤️'));
+
+      // Inbound reaction from partner
+      await coupleService.handleInboundReaction(
+        messageId: 'msg_99',
+        senderUsername: '@twilight',
+        emoji: '✨',
+        isRemove: false,
+      );
+
+      expect(coupleService.getReactions('msg_99')?['@twilight'], equals('✨'));
+    });
+
+    test('sendLoveNote saves locally and updates stream', () async {
+      final note = await coupleService.sendLoveNote(
+        partnerUsername: '@twilight',
+        currentUsername: '@alex',
+        title: 'Morning Sun',
+        body: 'Good morning my love.',
+        tag: 'Open right now',
+      );
+
+      expect(note.title, equals('Morning Sun'));
+      final notes = await coupleService.getLoveNotes('@twilight');
+      expect(notes.length, equals(1));
+      expect(notes.first.isOpened, isFalse);
+
+      await coupleService.markLoveNoteOpened(note.id);
+      final openedNotes = await coupleService.getLoveNotes('@twilight');
+      expect(openedNotes.first.isOpened, isTrue);
+    });
+  });
+
+  group('Phase 18 — UI Widget Tests', () {
+    testWidgets('MessageBubble renders reaction badge when reactions exist', (tester) async {
+      final msg = ChatMessage(
+        id: 'msg_bubble_react',
+        senderId: '@twilight',
+        recipientId: '@alex',
+        text: 'Romantic dinner tonight? 🍷',
+        timestamp: DateTime.now(),
+        reactions: {
+          '@alex': '❤️',
+          '@twilight': '✨',
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: msg,
+              isSent: false,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Romantic dinner tonight? 🍷'), findsOneWidget);
+      // Verify reaction badge text displays emoji
+      expect(find.textContaining('❤️'), findsOneWidget);
+      expect(find.textContaining('✨'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+    });
+
+    testWidgets('MessageReactionPicker renders default emojis and selects emoji', (tester) async {
+      String? selectedEmoji;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageReactionPicker(
+              onSelectEmoji: (emoji) {
+                selectedEmoji = emoji;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('❤️'), findsOneWidget);
+      expect(find.text('💕'), findsOneWidget);
+      expect(find.text('🔥'), findsOneWidget);
+      expect(find.text('🥰'), findsOneWidget);
+      expect(find.text('✨'), findsOneWidget);
+
+      // Tap flame emoji
+      await tester.tap(find.text('🔥'));
+      await tester.pumpAndSettle();
+
+      expect(selectedEmoji, equals('🔥'));
+    });
+
+    testWidgets('FloatingHeartsOverlay renders child and can trigger burst', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FloatingHeartsOverlay(
+              child: Builder(
+                builder: (ctx) => ElevatedButton(
+                  onPressed: () => FloatingHeartsOverlay.burst(ctx),
+                  child: const Text('Burst'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Burst'), findsOneWidget);
+
+      // Trigger burst
+      await tester.tap(find.text('Burst'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+    });
+
+    testWidgets('SharedMemoriesScreen renders filters and empty state', (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: db);
+      final repo = LocalChatRepository(database: localDb);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SharedMemoriesScreen(
+            partnerUsername: '@twilight',
+            chatRepository: repo,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Shared Memories ❤️'), findsOneWidget);
+      expect(find.text('with @twilight'), findsOneWidget);
+      expect(find.text('All'), findsOneWidget);
+      expect(find.text('Photos 📸'), findsOneWidget);
+      expect(find.text('Audio 🎙️'), findsOneWidget);
+      expect(find.text('Videos 🎥'), findsOneWidget);
+      expect(find.text('No Shared Memories Yet'), findsOneWidget);
+
+      await db.close();
+    });
+
+    testWidgets('CoupleMilestonesScreen renders couple hero, anniversary card, and badges', (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: db);
+      final repo = LocalChatRepository(database: localDb);
+
+      final conn = LoveConnection(
+        id: 'conn_test_1',
+        userId: 'alex_id',
+        partnerUsername: '@twilight',
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now().subtract(const Duration(days: 35)),
+        connectedAt: DateTime.now().subtract(const Duration(days: 30)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CoupleMilestonesScreen(
+            loveConnection: conn,
+            chatRepository: repo,
+            currentUsername: '@alex',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Couple Space ❤️'), findsOneWidget);
+      expect(find.text('@alex & @twilight'), findsOneWidget);
+      expect(find.text('TOGETHER SINCE'), findsOneWidget);
+      expect(find.text('Shared Memories'), findsOneWidget);
+      expect(find.text('Love Letters'), findsOneWidget);
+      expect(find.text('RELATIONSHIP MILESTONES'), findsOneWidget);
+      expect(find.text('First Spark'), findsOneWidget);
+
+      await db.close();
+    });
+
+    testWidgets('LoveNotesScreen renders letters list and compose dialog', (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: db);
+      final repo = LocalChatRepository(database: localDb);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LoveNotesScreen(
+            partnerUsername: '@twilight',
+            currentUsername: '@alex',
+            chatRepository: repo,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Love Letters 💌'), findsOneWidget);
+      expect(find.text('Write Letter'), findsOneWidget);
+      expect(find.text('No Love Letters Yet'), findsOneWidget);
+
+      // Tap write letter button
+      await tester.tap(find.text('Write Letter'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Write Love Letter 💌'), findsOneWidget);
+      expect(find.text('Letter Title...'), findsOneWidget);
+      expect(find.text('Pour your heart out...'), findsOneWidget);
+      expect(find.text('Seal & Send 💌'), findsOneWidget);
+
+      await db.close();
     });
   });
 }

@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/ephemeral_relay_envelope.dart';
+import 'package:chatbox/models/love_note.dart';
 import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/conversation_sharing_service.dart';
+import 'package:chatbox/services/couple_features_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/love_connection_service.dart';
 import 'package:chatbox/services/media_encryption_service.dart';
@@ -63,6 +65,7 @@ class DefaultSyncService implements SyncService {
   final MediaEncryptionService? _mediaEncryptionService;
   final LoveConnectionService? _loveConnectionService;
   final ConversationSharingService? _conversationSharingService;
+  final CoupleFeaturesService? _coupleFeaturesService;
 
   bool _isOnline = true;
 
@@ -76,6 +79,7 @@ class DefaultSyncService implements SyncService {
     MediaEncryptionService? mediaEncryptionService,
     LoveConnectionService? loveConnectionService,
     ConversationSharingService? conversationSharingService,
+    CoupleFeaturesService? coupleFeaturesService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
         _encryptionService = encryptionService,
@@ -84,8 +88,10 @@ class DefaultSyncService implements SyncService {
         _mediaStorageService = mediaStorageService,
         _mediaEncryptionService = mediaEncryptionService,
         _loveConnectionService = loveConnectionService,
-        _conversationSharingService = conversationSharingService;
+        _conversationSharingService = conversationSharingService,
+        _coupleFeaturesService = coupleFeaturesService;
 
+  CoupleFeaturesService? get coupleFeaturesService => _coupleFeaturesService;
   LoveConnectionService? get loveConnectionService => _loveConnectionService;
   ConversationSharingService? get conversationSharingService => _conversationSharingService;
   MediaEncryptionService? get mediaEncryptionService => _mediaEncryptionService;
@@ -174,6 +180,33 @@ class DefaultSyncService implements SyncService {
       } else if (envelope.isLoveShareSignal) {
         if (_conversationSharingService != null) {
           await _conversationSharingService.handleInboundEnvelope(envelope);
+        }
+        await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+      } else if (envelope.isLoveLuvSignal) {
+        if (_coupleFeaturesService != null) {
+          _coupleFeaturesService.emitLuvBurst(envelope.senderId);
+        }
+        await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+      } else if (envelope.isReactionSignal) {
+        if (_coupleFeaturesService != null) {
+          try {
+            final data = jsonDecode(envelope.ciphertextPayload) as Map<String, dynamic>;
+            await _coupleFeaturesService.handleInboundReaction(
+              messageId: data['message_id'] as String,
+              senderUsername: data['sender_username'] as String? ?? envelope.senderId,
+              emoji: data['emoji'] as String,
+              isRemove: data['is_remove'] as bool? ?? false,
+            );
+          } catch (_) {}
+        }
+        await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+      } else if (envelope.isLoveNoteSignal) {
+        if (_coupleFeaturesService != null) {
+          try {
+            final data = jsonDecode(envelope.ciphertextPayload) as Map<String, dynamic>;
+            final note = LoveNote.fromJson(data);
+            await _coupleFeaturesService.handleInboundLoveNote(note);
+          } catch (_) {}
         }
         await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
       } else if (envelope.isDeliveryReceipt) {

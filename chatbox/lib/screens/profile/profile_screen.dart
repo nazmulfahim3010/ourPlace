@@ -15,6 +15,8 @@ import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/screens/auth/app_lock_screen.dart';
 import 'package:chatbox/screens/auth/passcode_setup_screen.dart';
+import 'package:chatbox/screens/couple/couple_milestones_screen.dart';
+import 'package:chatbox/repositories/chat_repository.dart';
 
 /// Profile screen displaying anonymous account identity, Love Connection status, and privacy settings
 class ProfileScreen extends StatefulWidget {
@@ -25,6 +27,7 @@ class ProfileScreen extends StatefulWidget {
   final NotificationService? notificationService;
   final LoveConnectionService? loveConnectionService;
   final ConversationSharingService? conversationSharingService;
+  final ChatRepository? chatRepository;
 
   const ProfileScreen({
     super.key,
@@ -35,6 +38,7 @@ class ProfileScreen extends StatefulWidget {
     this.notificationService,
     this.loveConnectionService,
     this.conversationSharingService,
+    this.chatRepository,
   });
 
   @override
@@ -1244,6 +1248,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
                 const Divider(color: Color(0xFF383838), height: 24),
+
+                // Phase 18: Couple Space & Milestones action
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.favorite_rounded, color: Colors.white, size: 16),
+                    label: const Text(
+                      'Open Couple Space ❤️',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF4081),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => CoupleMilestonesScreen(
+                            loveConnection: conn,
+                            chatRepository: widget.chatRepository ?? LocalChatRepository(),
+                            currentUsername: currentUsername,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
 
                 // Phase 17: Redeem Partner's Love Code action
                 SizedBox(

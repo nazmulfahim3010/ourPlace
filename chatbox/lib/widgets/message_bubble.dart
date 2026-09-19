@@ -3,12 +3,14 @@ import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/widgets/timestamp_indicator.dart';
 
-/// Individual message bubble widget supporting Text, Image, Audio, and Video (Phase 15 — Media Messaging)
+/// Individual message bubble widget supporting Text, Image, Audio, Video, and Reactions (Phase 15 & Phase 18)
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool showTimestamp;
   final bool? isSent;
   final VoidCallback? onMediaTap;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onReactionTap;
 
   const MessageBubble({
     super.key,
@@ -16,6 +18,8 @@ class MessageBubble extends StatelessWidget {
     this.showTimestamp = true,
     this.isSent,
     this.onMediaTap,
+    this.onLongPress,
+    this.onReactionTap,
   });
 
   bool get _effectiveIsSent => isSent ?? message.isSent;
@@ -38,20 +42,70 @@ class MessageBubble extends StatelessWidget {
           const SizedBox(height: 4),
         ],
 
-        /// Message bubble container
+        /// Message bubble container with long-press support for reactions
         Align(
           alignment: sent ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75,
+          child: GestureDetector(
+            onLongPress: onLongPress,
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFF383838),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: _buildBubbleContent(context),
             ),
-            decoration: BoxDecoration(
-              color: const Color(0xFF383838),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: _buildBubbleContent(context),
           ),
         ),
+
+        /// Reaction badge pill docked below bubble (Phase 18)
+        if (message.reactions != null && message.reactions!.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Align(
+            alignment: sent ? Alignment.centerRight : Alignment.centerLeft,
+            child: GestureDetector(
+              onTap: onReactionTap ?? onLongPress,
+              child: Container(
+                margin: const EdgeInsets.only(top: 2, bottom: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF282828),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF484848), width: 0.8),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black45,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message.reactions!.values.toSet().join(' '),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    if (message.reactions!.length > 1) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '${message.reactions!.length}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

@@ -7,6 +7,7 @@ import 'package:chatbox/models/message.dart';
 import 'package:chatbox/repositories/conversation_repository.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/conversation_sharing_service.dart';
+import 'package:chatbox/services/couple_features_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/love_connection_service.dart';
 import 'package:chatbox/services/media_encryption_service.dart';
@@ -59,6 +60,9 @@ abstract class ChatRepository {
 
   // Phase 17 One-Time Love Code & Conversation Sharing additions
   ConversationSharingService get conversationSharingService;
+
+  // Phase 18 Couple-Specific Features additions
+  CoupleFeaturesService get coupleFeaturesService;
 }
 
 /// Primary implementation coordinating local SQLite storage, E2EE, and chat transport
@@ -74,6 +78,7 @@ class LocalChatRepository implements ChatRepository {
   final MediaEncryptionService _mediaEncryptionService;
   final LoveConnectionService _loveConnectionService;
   final ConversationSharingService _conversationSharingService;
+  final CoupleFeaturesService _coupleFeaturesService;
 
   LocalChatRepository({
     LocalDatabase? database,
@@ -87,6 +92,7 @@ class LocalChatRepository implements ChatRepository {
     MediaEncryptionService? mediaEncryptionService,
     LoveConnectionService? loveConnectionService,
     ConversationSharingService? conversationSharingService,
+    CoupleFeaturesService? coupleFeaturesService,
     ConversationRepository? conversationRepository,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
@@ -126,11 +132,21 @@ class LocalChatRepository implements ChatRepository {
               mediaEncryptionService: mediaEncryptionService ?? StandardMediaEncryptionService(),
               loveConnectionService: loveConnectionService,
               conversationSharingService: conversationSharingService,
+              coupleFeaturesService: coupleFeaturesService,
             ),
         _realtimeService = realtimeService ??
             DefaultRealtimeService(
               chatService: chatService ?? ChatService(),
+            ),
+        _coupleFeaturesService = coupleFeaturesService ??
+            DefaultCoupleFeaturesService(
+              localDatabase: database ?? LocalDatabase(),
+              relayService: (chatService ?? ChatService()).relayService,
+              encryptionService: encryptionService,
             );
+
+  @override
+  CoupleFeaturesService get coupleFeaturesService => _coupleFeaturesService;
 
   @override
   ConversationSharingService get conversationSharingService => _conversationSharingService;

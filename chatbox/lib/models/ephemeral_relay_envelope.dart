@@ -349,6 +349,73 @@ class EphemeralRelayEnvelope {
     );
   }
 
+  /// Create an ephemeral "Send luv" heart burst signal (Phase 18)
+  factory EphemeralRelayEnvelope.loveLuvBurst({
+    required String senderId,
+    required String recipientId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(seconds: 15),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'sig_luv_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: 'luv_burst',
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_luv_burst',
+    );
+  }
+
+  /// Create an ephemeral message reaction signal (Phase 18)
+  factory EphemeralRelayEnvelope.messageReaction({
+    required String senderId,
+    required String recipientId,
+    required String messageId,
+    required String emoji,
+    bool isRemove = false,
+    DateTime? timestamp,
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'sig_react_${messageId}_${senderId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: jsonEncode({
+        'message_id': messageId,
+        'emoji': emoji,
+        'is_remove': isRemove,
+        'sender_username': senderId,
+      }),
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'message_reaction',
+    );
+  }
+
+  /// Create an ephemeral Love Note / Letter delivery envelope (Phase 18)
+  factory EphemeralRelayEnvelope.loveNoteBundle({
+    required String senderId,
+    required String recipientId,
+    required String encryptedPayload,
+    required String noteId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(days: 7),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'love_note_${noteId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: encryptedPayload,
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_note',
+    );
+  }
+
   /// Whether this envelope is a status receipt rather than a content payload
   bool get isReceipt =>
       envelopeType == 'delivery_receipt' || envelopeType == 'read_receipt';
@@ -383,8 +450,22 @@ class EphemeralRelayEnvelope {
       envelopeType == 'love_share_bundle' ||
       envelopeType == 'love_share_ack';
 
-  /// Whether this envelope is any ephemeral Love subsystem signal (Phase 16 & Phase 17)
-  bool get isLoveSignal => isLoveConnectionSignal || isLoveShareSignal;
+  /// Whether this envelope is an ephemeral "Send luv" burst signal (Phase 18)
+  bool get isLoveLuvSignal => envelopeType == 'love_luv_burst';
+
+  /// Whether this envelope is an ephemeral message reaction signal (Phase 18)
+  bool get isReactionSignal => envelopeType == 'message_reaction';
+
+  /// Whether this envelope is an ephemeral Love Note signal (Phase 18)
+  bool get isLoveNoteSignal => envelopeType == 'love_note';
+
+  /// Whether this envelope is any couple feature signal (Phase 18)
+  bool get isCoupleFeatureSignal =>
+      isLoveLuvSignal || isReactionSignal || isLoveNoteSignal;
+
+  /// Whether this envelope is any ephemeral Love subsystem signal (Phase 16, 17 & 18)
+  bool get isLoveSignal =>
+      isLoveConnectionSignal || isLoveShareSignal || isCoupleFeatureSignal;
 
   /// Target message ID for receipt envelopes
   String get targetMessageId => ciphertextPayload;

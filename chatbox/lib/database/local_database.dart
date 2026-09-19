@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:chatbox/database/app_database.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
 import 'package:chatbox/models/love_connection.dart';
+import 'package:chatbox/models/love_note.dart';
 import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/models/security_log.dart';
@@ -56,6 +58,11 @@ class LocalDatabase {
       mediaAttachment: row.mediaData != null && row.mediaData!.isNotEmpty
           ? MediaAttachment.fromJsonString(row.mediaData!)
           : null,
+      reactions: row.reactions != null && row.reactions!.isNotEmpty
+          ? (jsonDecode(row.reactions!) as Map).map(
+              (k, v) => MapEntry(k.toString(), v.toString()),
+            )
+          : null,
     );
   }
 
@@ -70,6 +77,9 @@ class LocalDatabase {
       type: Value(message.type.name),
       status: Value(message.status.name),
       mediaData: Value(message.mediaAttachment?.toJsonString()),
+      reactions: Value(message.reactions != null && message.reactions!.isNotEmpty
+          ? jsonEncode(message.reactions!)
+          : null),
     );
   }
 
@@ -592,6 +602,120 @@ class LocalDatabase {
   Future<void> deleteLoveConnection(String id) async {
     await (db.delete(db.loveConnections)..where((tbl) => tbl.id.equals(id)))
         .go();
+  }
+
+  // ==================== COUPLE FEATURES: REACTIONS, MEMORIES, LOVE NOTES (Phase 18) ====================
+
+  /// Update emoji reactions for a specific message
+  Future<void> updateMessageReactions(
+    String messageId,
+    Map<String, String>? reactions,
+  ) async {
+    await (db.update(db.messages)..where((tbl) => tbl.id.equals(messageId)))
+        .write(
+      MessagesCompanion(
+        reactions: Value(reactions != null && reactions.isNotEmpty
+            ? jsonEncode(reactions)
+            : null),
+      ),
+    );
+  }
+
+  /// Query all media messages exchanged with a specific partner for the Shared Memory Gallery
+  Future<List<ChatMessage>> getSharedMediaMessages(String partnerUsername) async {
+    final clean = partnerUsername.startsWith('@')
+        ? partnerUsername.substring(1)
+        : partnerUsername;
+    final query = db.select(db.messages)
+      ..where((tbl) =>
+          (tbl.senderId.equals(clean) |
+              tbl.senderId.equals('@$clean') |
+              tbl.recipientId.equals(clean) |
+              tbl.recipientId.equals('@$clean') |
+              tbl.senderId.equals('current_user') |
+              tbl.recipientId.equals('current_user')) &
+          tbl.mediaData.isNotNull())
+      ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
+    final rows = await query.get();
+    return rows
+        .map(_rowToMessage)
+        .where((m) => m.mediaAttachment != null)
+        .toList();
+  }
+
+  /// Convert Drift DbLoveNote row to LoveNote domain model
+  LoveNote _rowToLoveNote(DbLoveNote row) {
+    return LoveNote(
+      id: row.id,
+      senderUsername: row.senderUsername,
+      recipientUsername: row.recipientUsername,
+      title: row.title,
+      body: row.body,
+      createdAt: row.createdAt,
+      openAt: row.openAt,
+      isOpened: row.isOpened,
+      tag: row.tag,
+    );
+  }
+
+  /// Convert LoveNote domain model to Drift LoveNotesCompanion
+  LoveNotesCompanion _loveNoteToCompanion(LoveNote note) {
+    return LoveNotesCompanion(
+      id: Value(note.id),
+      senderUsername: Value(note.senderUsername),
+      recipientUsername: Value(note.recipientUsername),
+      title: Value(note.title),
+      body: Value(note.body),
+      createdAt: Value(note.createdAt),
+      openAt: Value(note.openAt),
+      isOpened: Value(note.isOpened),
+      tag: Value(note.tag),
+    );
+  }
+
+  /// Save or update a Love Note in SQLite
+  Future<void> saveLoveNote(LoveNote note) async {
+    await db.into(db.loveNotes).insertOnConflictUpdate(_loveNoteToCompanion(note));
+  }
+
+  /// Get all Love Notes exchanged with a specific partner
+  Future<List<LoveNote>> getLoveNotes(String partnerUsername) async {
+    final clean = partnerUsername.startsWith('@')
+        ? partnerUsername.substring(1)
+        : partnerUsername;
+    final query = db.select(db.loveNotes)
+      ..where((tbl) =>
+          tbl.senderUsername.equals(clean) |
+          tbl.senderUsername.equals('@$clean') |
+          tbl.recipientUsername.equals(clean) |
+          tbl.recipientUsername.equals('@$clean'))
+      ..orderBy([(tbl) => OrderingTerm.desc(tbl.createdAt)]);
+    final rows = await query.get();
+    return rows.map(_rowToLoveNote).toList();
+  }
+
+  /// Watch reactive stream of Love Notes for a partner
+  Stream<List<LoveNote>> watchLoveNotes(String partnerUsername) {
+    final clean = partnerUsername.startsWith('@')
+        ? partnerUsername.substring(1)
+        : partnerUsername;
+    final query = db.select(db.loveNotes)
+      ..where((tbl) =>
+          tbl.senderUsername.equals(clean) |
+          tbl.senderUsername.equals('@$clean') |
+          tbl.recipientUsername.equals(clean) |
+          tbl.recipientUsername.equals('@$clean'))
+      ..orderBy([(tbl) => OrderingTerm.desc(tbl.createdAt)]);
+    return query.watch().map((rows) => rows.map(_rowToLoveNote).toList());
+  }
+
+  /// Mark a Love Note as unsealed / opened
+  Future<void> markLoveNoteOpened(String noteId) async {
+    await (db.update(db.loveNotes)..where((tbl) => tbl.id.equals(noteId))).write(
+      const LoveNotesCompanion(
+        isOpened: Value(true),
+      ),
+    );
   }
 
   /// Check if database is initialized

@@ -1,5 +1,5 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.9.0  
+> **Document Version:** 4.0.0  
 > **Last Updated:** 2026-09-19  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 17 — One-Time Love Code & Conversation Sharing** |
-| **Current Status** | **COMPLETED** (Ready for Phase 18: Couple-Specific Features) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications), **Phase 15** (Media Messaging), **Phase 16** (Love Connection), **Phase 17** (One-Time Love Code & Conversation Sharing) |
-| **Next Phase** | **Phase 18 — Couple-Specific Features** |
+| **Current Phase** | **Phase 18 — Couple-Specific Features** |
+| **Current Status** | **COMPLETED ✅ — ALL 18 PHASES OF MASTER ROADMAP COMPLETE!** (165/165 tests passing, 0 analyzer issues) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications), **Phase 15** (Media Messaging), **Phase 16** (Love Connection), **Phase 17** (One-Time Love Code & Conversation Sharing), **Phase 18** (Couple-Specific Features) |
+| **Next Milestone** | **Production Release & Multi-Device Verification** |
 
 ---
 
@@ -65,7 +65,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           │
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
-       (NEXT)                          (COMPLETED)                     (COMPLETED)
+       (COMPLETED)                     (COMPLETED)                     (COMPLETED)
 ```
 
 #### Detailed Phase Progress Breakdown
@@ -229,9 +229,19 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] `ClaimLoveCodeDialog` UI with 6-digit PIN input, validation, and success confirmation
   - [x] Comprehensive test suite (147/147 tests passing, 0 analyzer issues)
 
-- [ ] **Phase 18 — Couple-Specific Features**
-  - [ ] "Send luv" animated micro-interactions and reactions
-  - [ ] Shared memory gallery, relationship timeline, love letters
+- [x] **Phase 18 — Couple-Specific Features**
+  - [x] Particle animation overlay (`FloatingHeartsOverlay`) rendering floating, rising, swaying, and fading hearts (`❤️`, `💕`, `🔥`, `🥰`, `✨`)
+  - [x] Ephemeral `loveLuvBurst` wire signaling triggering real-time screen burst animations on the connected partner's device
+  - [x] Floating dark emoji reaction picker (`MessageReactionPicker`) on message long-press with couple reactions
+  - [x] Docked message reaction pills on `MessageBubble` with toggle/untoggle behavior and clear support
+  - [x] Drift SQLite database schema migration to v6 adding `reactions` JSON column to `Messages` table
+  - [x] Ephemeral `messageReaction` wire signaling syncing reactions between couple devices with immediate delivery ACK purge
+  - [x] Shared memory gallery (`SharedMemoriesScreen`) filtering couple media by "All", "Photos 📸", "Audio 🎙️", and "Videos 🎥" with full tap-to-view integration
+  - [x] Relationship timeline & milestones (`CoupleMilestonesScreen`) with "Together Since" duration counter, anniversary tracker, and milestone badges ("First Spark", "Chatterbox", "Memory Keeper", etc.)
+  - [x] Drift SQLite schema v6 `LoveNotes` table (`id`, `senderUsername`, `recipientUsername`, `title`, `body`, `createdAt`, `openAt`, `isOpened`, `tag`)
+  - [x] Encrypted Love Letters / Couple Notes space (`LoveNotesScreen`) with sealed letter cards, unsealing dialog, and compose modal
+  - [x] Integrated couple space navigation into `ChatHeader` ("Memories", "Couple Space ❤️") and `ProfileScreen`
+  - [x] Comprehensive automated test suite elevated from 147 to 165 tests (100% passing, 0 analyzer issues)
 
 ---
 
@@ -263,17 +273,18 @@ e:\ourPlace\
     │   │       ├── hash_utils.dart          # Cryptographic salt & SHA-256 verifiers
     │   │       └── recovery_key_utils.dart  # BIP-39 mnemonic generation & phrase hashing
     │   ├── database/
-    │   │   ├── app_database.dart            # Drift database (Messages, UserAccounts, SecurityLogs, LoveConnections - v5)
+    │   │   ├── app_database.dart            # Drift database (Messages, UserAccounts, SecurityLogs, LoveConnections, LoveNotes - v6)
     │   │   ├── app_database.g.dart          # Drift generated code
-    │   │   └── local_database.dart          # Local database singleton & CRUD methods (LoveConnection persistence)
+    │   │   └── local_database.dart          # Local database singleton & CRUD methods (LoveNotes, Reactions & Media queries)
     │   ├── models/
     │   │   ├── conversation.dart            # Conversation model with Love Connection support
     │   │   ├── encrypted_payload.dart       # E2EE ciphertext envelope (version, pubKey, nonce, ct, mac)
-    │   │   ├── ephemeral_relay_envelope.dart # Ephemeral wire envelope with Love signaling factories
+    │   │   ├── ephemeral_relay_envelope.dart # Ephemeral wire envelope with Love signaling & couple feature factories
     │   │   ├── love_code_session.dart       # 60-second ephemeral Love Code session domain model
     │   │   ├── love_connection.dart         # Love Connection domain model, status lifecycle & visibility
+    │   │   ├── love_note.dart               # Sealed couple love letters & notes domain model
     │   │   ├── media_attachment.dart        # Encrypted media metadata, Base64 keys, waveforms, and file sizes
-    │   │   ├── message.dart                 # ChatMessage domain model & enums
+    │   │   ├── message.dart                 # ChatMessage domain model with reactions mapping & enums
     │   │   ├── notification_settings.dart   # Notification preferences & Discreet Mode
     │   │   ├── push_wakeup_signal.dart      # Zero-knowledge silent background wakeup signal
     │   │   ├── security_log.dart            # Device-local security event audit model
@@ -283,7 +294,7 @@ e:\ourPlace\
     │   │   └── user_presence.dart           # User online status, relative last seen, and formatting
     │   ├── repositories/
     │   │   ├── auth_repository.dart         # AuthRepository contract & default implementation
-    │   │   ├── chat_repository.dart         # ChatRepository contract & LocalChatRepository (E2EE + Relay + Media + Sharing)
+    │   │   ├── chat_repository.dart         # ChatRepository contract & LocalChatRepository (E2EE + Relay + Media + Sharing + Couple)
     │   │   └── conversation_repository.dart # ConversationRepository & LocalConversationRepository
     │   ├── screens/
     │   │   ├── auth/
@@ -291,14 +302,19 @@ e:\ourPlace\
     │   │   │   ├── auth_gate.dart           # Session & device lock coordinator (lifecycle auto-lock)
     │   │   │   ├── auth_screen.dart         # Dark-themed login/register with recovery key reset dialog
     │   │   │   └── passcode_setup_screen.dart # Multi-step PIN creation & biometric setup
+    │   │   ├── couple/
+    │   │   │   ├── couple_milestones_screen.dart # Relationship timeline, "Together Since" counter & milestone badges
+    │   │   │   └── love_notes_screen.dart   # Sealed love letters / couple notes with unsealing dialog & compose modal
     │   │   ├── home_screen.dart             # Primary Home screen hosting Inbox & Profile nav
     │   │   ├── inbox/
     │   │   │   └── inbox_screen.dart        # Inbox displaying Love Connection & Conversations
     │   │   ├── media/
     │   │   │   └── private_media_viewer_screen.dart # Fullscreen private media viewer with zoom & audio
+    │   │   ├── memories/
+    │   │   │   └── shared_memories_screen.dart # Filtered couple media gallery (Photos, Audio, Videos)
     │   │   ├── profile/
     │   │   │   └── profile_screen.dart      # User Profile, Love Connection Card, Security/Passcode & Audit Log
-    │   │   └── chat_screen.dart             # Modular ChatScreen widget with Love Code sharing integration
+    │   │   └── chat_screen.dart             # Modular ChatScreen with FloatingHeartsOverlay, reactions & couple features
     │   ├── services/
     │   │   ├── access_throttling_service.dart # Exponential backoff & login rate-limiting service
     │   │   ├── app_lock_service.dart        # Device passcode & biometric authentication service
@@ -306,6 +322,7 @@ e:\ourPlace\
     │   │   ├── auth_service.dart            # AuthService contract & LocalAuthService (E2EE Keygen)
     │   │   ├── chat_service.dart            # Chat transport service coordinating with RelayService
     │   │   ├── conversation_sharing_service.dart # Ephemeral Love Code generation, validation & E2EE sharing
+    │   │   ├── couple_features_service.dart # Real-time luv bursts, emoji reactions & love notes sync service
     │   │   ├── encryption_service.dart      # StandardE2EEEncryptionService (X25519 + AES-GCM) & NoOp
     │   │   ├── love_connection_service.dart # 1-to-1 couple invariant, invitation handshake & unlink service
     │   │   ├── media_encryption_service.dart # Binary AES-256-GCM media encryption service
@@ -315,20 +332,22 @@ e:\ourPlace\
     │   │   ├── realtime_service.dart        # Debounced typing indicators & online presence heartbeats
     │   │   ├── relay_service.dart           # Ephemeral Relay contract, InMemory & Firestore implementations
     │   │   ├── secure_storage_service.dart  # Hardware-backed encrypted key-value storage (with test mode)
-    │   │   └── sync_service.dart            # Offline queueing, receipts, E2EE sync & love signal routing
+    │   │   └── sync_service.dart            # Offline queueing, receipts, E2EE sync, couple features & love signal routing
     │   └── widgets/
-    │       ├── chat_header.dart             # Floating pill header with back button, user, partner & share button
+    │       ├── chat_header.dart             # Floating pill header with partner info, memories & couple space actions
     │       ├── chat_input_field.dart        # Message input bar, attachments & voice recording bar
     │       ├── claim_love_code_dialog.dart  # Dialog for entering 6-digit Love Code to claim shared conversation
     │       ├── conversation_tile.dart       # Reusable conversation tile component
     │       ├── date_divider.dart            # Date group divider ("Today", "Yesterday")
+    │       ├── floating_hearts_overlay.dart # Rising particle animation overlay for "Send luv" micro-interactions
     │       ├── love_code_sheet.dart         # Bottom sheet displaying 6-digit code with 60s countdown timer
-    │       ├── message_bubble.dart          # Chat message bubble container (text, media, audio)
+    │       ├── message_bubble.dart          # Chat message bubble with docked reaction pills & long-press picker
+    │       ├── message_reaction_picker.dart # Floating dark emoji reaction picker (❤️, 💕, 🔥, 🥰, ✨)
     │       ├── numeric_keypad.dart          # Tactile dark numeric keypad with biometric button
     │       ├── passcode_dots.dart           # Animated passcode dots indicator with shake feedback
     │       └── timestamp_indicator.dart     # Timestamp indicator widget
     └── test/
-        └── widget_test.dart                 # Automated test suite (132/132 tests passing)
+        └── widget_test.dart                 # Automated test suite (165/165 tests passing, 100% pass rate)
 ```
 ```
 
@@ -1076,11 +1095,73 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ---
 
+### 7.13 Phase 18: Couple-Specific Features Architecture (COMPLETED ✅)
+
+Phase 18 brings the master 18-phase roadmap of `ourPlace` to completion, delivering an intimate, couple-exclusive messaging and memory suite while preserving strict zero-cloud-plaintext guarantees.
+
+#### Core Capabilities Delivered
+
+1. **Floating Hearts Particle Animation & "Send luv" Wire Bursts:**
+   - **`FloatingHeartsOverlay` (`chatbox/lib/widgets/floating_hearts_overlay.dart`):** Overlay widget that wraps the conversation screen. Uses a physics-inspired `FloatingHeartParticle` controller with randomized horizontal sway (`sin` wave), scaling, opacity fade, and multi-emoji variety (`❤️`, `💕`, `🔥`, `🥰`, `✨`).
+   - **`EphemeralRelayEnvelope.loveLuvBurst` (`chatbox/lib/models/ephemeral_relay_envelope.dart`):** Ephemeral wire signal sent across the relay when a user taps "Send luv".
+   - **Real-Time Synchronized Bursts:** `SyncService` captures inbound `isLoveLuvSignal` envelopes and triggers `CoupleFeaturesService.luvBurstStream`, causing floating hearts to cascade live across the partner's screen. Envelopes are immediately purged from the cloud upon receipt.
+
+2. **Message Emoji Reactions:**
+   - **`MessageReactionPicker` (`chatbox/lib/widgets/message_reaction_picker.dart`):** Sleek floating dark emoji reaction picker triggered on message long-press. Offers five intimate reactions: `❤️`, `💕`, `🔥`, `🥰`, `✨`.
+   - **Docked Reaction Pills (`MessageBubble`):** Renders selected emojis docked on the message bubble with tap-to-toggle/clear support.
+   - **Drift SQLite Schema v6:** Added `reactions` JSON column (`Map<String, String>?`) to the `Messages` table.
+   - **Wire Synchronization:** `EphemeralRelayEnvelope.messageReaction` notifies the partner device, updating local SQLite reactions reactively without touching message ciphertext.
+
+3. **Shared Memory Gallery (`SharedMemoriesScreen`):**
+   - Filtered media gallery showing all media exchanged exclusively between the Love Connection pair.
+   - Filter category chips: "All", "Photos 📸", "Audio 🎙️", and "Videos 🎥".
+   - Direct tap integration opening media in `PrivateMediaViewerScreen` with pinch-to-zoom and audio playback.
+
+4. **Relationship Timeline & Milestones (`CoupleMilestonesScreen`):**
+   - **"Together Since" Live Counter:** Computes exact days, months, and years since the couple connected.
+   - **Anniversary Tracker:** Calculates days remaining until the next anniversary.
+   - **Milestone Badges:** Automatically unlocked badges based on chat history ("First Spark", "Chatterbox", "Memory Keeper", "Centurion", etc.).
+   - Quick navigation to Shared Memories and Love Letters.
+
+5. **Encrypted Love Letters / Couple Notes (`LoveNotesScreen`):**
+   - **Drift SQLite Schema v6 `LoveNotes` Table:** Persists sealed notes (`id`, `senderUsername`, `recipientUsername`, `title`, `body`, `createdAt`, `openAt`, `isOpened`, `tag`).
+   - **Sealed Letter Cards:** Interactive cards showing sealed status with category badges ("Anniversary", "Open When...", "Just Because").
+   - **Interactive Unsealing & Reading Dialog:** Romantic popup displaying the unsealed letter with recipient acknowledgment.
+   - **Compose Modal:** Clean dark-themed creation form for sending heartfelt couple notes.
+
+6. **Automated Test Suite Expansion:**
+   - Test suite elevated from **147 to 165 tests (100% passing)** with **0 analyzer issues**.
+
+#### Files Created
+- `chatbox/lib/models/love_note.dart`: Sealed couple love letter domain model.
+- `chatbox/lib/services/couple_features_service.dart`: `CoupleFeaturesService` interface, `DefaultCoupleFeaturesService`, and `InMemoryCoupleFeaturesService`.
+- `chatbox/lib/widgets/floating_hearts_overlay.dart`: Particle overlay rendering floating/swaying hearts.
+- `chatbox/lib/widgets/message_reaction_picker.dart`: Floating dark emoji reaction picker.
+- `chatbox/lib/screens/couple/couple_milestones_screen.dart`: Relationship milestones, duration counters & badges.
+- `chatbox/lib/screens/couple/love_notes_screen.dart`: Sealed love letters / couple notes screen with compose modal.
+- `chatbox/lib/screens/memories/shared_memories_screen.dart`: Filtered couple media gallery screen.
+
+#### Files Modified
+- `chatbox/lib/models/message.dart`: Added reactions map, `copyWith` clear support, and toggling logic.
+- `chatbox/lib/models/ephemeral_relay_envelope.dart`: Added couple feature wire factories and discriminators.
+- `chatbox/lib/database/app_database.dart`: Bumped to schemaVersion 6, added reactions column & LoveNotes table.
+- `chatbox/lib/database/local_database.dart`: Added `updateMessageReactions`, `getSharedMediaMessages`, and `LoveNotes` CRUD.
+- `chatbox/lib/repositories/chat_repository.dart`: Exposed `coupleFeaturesService`.
+- `chatbox/lib/services/sync_service.dart`: Injected `CoupleFeaturesService` and handled couple envelopes.
+- `chatbox/lib/widgets/message_bubble.dart`: Added docked reaction pills and long-press reaction picker.
+- `chatbox/lib/widgets/chat_header.dart`: Added Memories and Couple Space action buttons.
+- `chatbox/lib/screens/chat_screen.dart`: Wrapped in `FloatingHeartsOverlay`, wired "Send luv" burst, and reactions.
+- `chatbox/lib/screens/profile/profile_screen.dart`: Added "Open Couple Space ❤️" button.
+- `chatbox/test/widget_test.dart`: Added 18 new automated tests (165 tests total).
+- `docts.md`: Updated master documentation to Version 4.0.0.
+
+---
+
 ## 8. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
 - **Test Command:** `flutter test`
-- **Results:** `116 / 116 tests passing` (100% pass rate)
+- **Results:** `165 / 165 tests passing` (100% pass rate)
 - **Analyzer Check:** `flutter analyze` ➔ `No issues found!`
 
 ### Comprehensive Test Coverage Breakdown
@@ -1140,41 +1221,33 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 | **Phase 17: LocalDatabase Ingestion & Deduplication** | 1 | `importSharedMessages` inserting and updating duplicate message IDs without SQLite collision |
 | **Phase 17: ConversationSharingService Replay Protection & E2EE Flow** | 6 | Love connection prerequisite validation, 60s session timer, cancel flow, non-partner rejection, wrong code rejection, full Alice-Bob transfer, and single-use replay rejection |
 | **Phase 17: UI Widget Tests (LoveCodeSheet & ClaimLoveCodeDialog)** | 3 | `LoveCodeSheet` rendering 6-digit code, timer & actions; `ClaimLoveCodeDialog` input validation and successful conversation import confirmation |
-| **Total Test Suite** | **147** | **100% Passing — Zero Analyzer Issues** |
+| **Phase 18: Message Reactions & Model** | 3 | `ChatMessage` reaction toggle/untoggle, reaction clearing in `copyWith`, JSON serialization roundtrip |
+| **Phase 18: LoveNote Domain Model** | 2 | `LoveNote` serialization roundtrip, `isTimeLocked` evaluation, and `copyWith` mutation |
+| **Phase 18: Couple Wire Signaling Envelopes** | 2 | `EphemeralRelayEnvelope` couple feature factories (`loveLuvBurst`, `messageReaction`, `loveNoteBundle`) and discriminator validation |
+| **Phase 18: Drift SQLite Schema v6 Persistence** | 3 | `Messages` reactions JSON column persistence, `LoveNotes` CRUD operations, and `watchLoveNotes` reactive stream |
+| **Phase 18: CoupleFeaturesService Integration** | 3 | In-memory and default implementations for sending luv bursts, reaction dispatch, and sealed love note management |
+| **Phase 18: UI Widgets & Couple Space Screens** | 5 | `FloatingHeartsOverlay` particle rendering, `MessageReactionPicker` emoji selection, `SharedMemoriesScreen` category filtering, `CoupleMilestonesScreen` duration calculation & badges, `LoveNotesScreen` compose and unsealing dialog |
+| **Total Test Suite** | **165** | **100% Passing — Zero Analyzer Issues** |
 
 ---
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Phase 17: One-Time Love Code & Conversation Sharing (COMPLETED ✅ — 2026-09-19)
-- Cryptographically secure 6-digit One-Time Love Code (OTC) generator with 60-second strict TTL.
-- Single-use replay protection: code invalidated immediately upon first claim or timeout.
-- Explicit mutual consent authorization: sharing strictly limited to the connected Love Partner.
-- Client-side E2EE conversation transfer bundle (`SharedConversationBundle`) with zero cloud plaintext.
-- Ephemeral relay wire envelopes with immediate delivery ACK purge (zero server metadata footprint).
-- Local SQLite database message ingestion with duplicate key conflict resolution.
-- UI components: `LoveCodeSheet` with live countdown timer and `ClaimLoveCodeDialog`.
-- 147/147 automated unit and widget tests passing with 0 analyzer issues.
+### Phase 18: Couple-Specific Features (COMPLETED ✅ — 2026-09-19)
+- Particle animation overlay (`FloatingHeartsOverlay`) rendering floating/swaying hearts on screen.
+- Ephemeral wire signal `loveLuvBurst` triggering synchronized real-time floating heart bursts on partner devices.
+- Floating dark emoji reaction picker (`MessageReactionPicker`) and docked reaction pills on message bubbles.
+- Drift SQLite schema v6: `reactions` column on `Messages` and dedicated `LoveNotes` table.
+- Shared memory gallery (`SharedMemoriesScreen`) filtering photos, voice notes, and videos.
+- Relationship timeline and milestones (`CoupleMilestonesScreen`) with "Together Since" duration counter, anniversary tracker, and milestone badges.
+- Encrypted couple love letters (`LoveNotesScreen`) with sealed cards, compose modal, and unsealing dialog.
+- 165/165 automated tests passing with 0 analyzer issues across all 18 phases.
 
 ---
 
-### Next Phase: Phase 18 — Couple-Specific Features
+### 🎉 All 18 Phases of Master Development Roadmap Complete!
 
-Phase 18 completes the core couple messaging experience of `ourPlace` with romantic, couple-exclusive micro-interactions and shared relationship spaces.
-
-#### Key Objectives for Phase 18:
-1. **"Send luv" Animated Micro-Interactions & Reactions:**
-   - Tactile heart burst animation, floating hearts canvas, and customized couple haptic feedback patterns.
-   - Message reaction picker with couple emoji reactions (`❤️`, `💕`, `🔥`, `🥰`, `✨`).
-2. **Shared Memory Gallery:**
-   - Filtered media gallery showing all photos, voice notes, and videos exchanged exclusively between the Love Connection pair.
-   - Timeline chronological grouping and search.
-3. **Relationship Timeline & Milestones:**
-   - "Together Since" milestone counter and anniversary tracking.
-   - First message milestone marker and memory moments.
-4. **Encrypted Love Letters / Notes:**
-   - Dedicated private space for special long-form notes with unlock animations and romantic themes.
-5. **Final Polish & Multi-Device Validation:**
-   - End-to-end verification across the entire 18-phase application roadmap.
-   - Production APK build and release validation.
-
+### Next Milestone: Production Release & Multi-Device Verification
+1. **Real-Device APK Build:** Run `flutter build apk --release` from `chatbox/`.
+2. **Multi-Device Live Testing:** Install on Device A (`@alex`) and Device B (`@twilight`).
+3. **Couple Handshake & Burst Verification:** Form Love Connection, exchange messages, send luv bursts, react with emojis, unseal love notes, and view shared memories.

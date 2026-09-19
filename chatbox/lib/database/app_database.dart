@@ -13,6 +13,7 @@ class Messages extends Table {
   TextColumn get type => text()();
   TextColumn get status => text()();
   TextColumn get mediaData => text().nullable()();
+  TextColumn get reactions => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -66,13 +67,30 @@ class LoveConnections extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Messages, UserAccounts, SecurityLogs, LoveConnections])
+/// Table schema for storing couple love letters and "Open When..." notes (Phase 18)
+@DataClassName('DbLoveNote')
+class LoveNotes extends Table {
+  TextColumn get id => text()();
+  TextColumn get senderUsername => text()();
+  TextColumn get recipientUsername => text()();
+  TextColumn get title => text()();
+  TextColumn get body => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get openAt => dateTime().nullable()();
+  BoolColumn get isOpened => boolean().withDefault(const Constant(false))();
+  TextColumn get tag => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [Messages, UserAccounts, SecurityLogs, LoveConnections, LoveNotes])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? e])
       : super(e ?? driftDatabase(name: 'ourplace_chat'));
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -93,6 +111,10 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 5) {
             await m.createTable(loveConnections);
+          }
+          if (from < 6) {
+            await m.addColumn(messages, messages.reactions);
+            await m.createTable(loveNotes);
           }
         },
       );

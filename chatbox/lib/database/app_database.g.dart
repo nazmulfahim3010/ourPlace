@@ -90,6 +90,17 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _reactionsMeta = const VerificationMeta(
+    'reactions',
+  );
+  @override
+  late final GeneratedColumn<String> reactions = GeneratedColumn<String>(
+    'reactions',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -100,6 +111,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type,
     status,
     mediaData,
+    reactions,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -175,6 +187,12 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         mediaData.isAcceptableOrUnknown(data['media_data']!, _mediaDataMeta),
       );
     }
+    if (data.containsKey('reactions')) {
+      context.handle(
+        _reactionsMeta,
+        reactions.isAcceptableOrUnknown(data['reactions']!, _reactionsMeta),
+      );
+    }
     return context;
   }
 
@@ -216,6 +234,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}media_data'],
       ),
+      reactions: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reactions'],
+      ),
     );
   }
 
@@ -234,6 +256,7 @@ class Message extends DataClass implements Insertable<Message> {
   final String type;
   final String status;
   final String? mediaData;
+  final String? reactions;
   const Message({
     required this.id,
     required this.senderId,
@@ -243,6 +266,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.type,
     required this.status,
     this.mediaData,
+    this.reactions,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -256,6 +280,9 @@ class Message extends DataClass implements Insertable<Message> {
     map['status'] = Variable<String>(status);
     if (!nullToAbsent || mediaData != null) {
       map['media_data'] = Variable<String>(mediaData);
+    }
+    if (!nullToAbsent || reactions != null) {
+      map['reactions'] = Variable<String>(reactions);
     }
     return map;
   }
@@ -272,6 +299,9 @@ class Message extends DataClass implements Insertable<Message> {
       mediaData: mediaData == null && nullToAbsent
           ? const Value.absent()
           : Value(mediaData),
+      reactions: reactions == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reactions),
     );
   }
 
@@ -289,6 +319,7 @@ class Message extends DataClass implements Insertable<Message> {
       type: serializer.fromJson<String>(json['type']),
       status: serializer.fromJson<String>(json['status']),
       mediaData: serializer.fromJson<String?>(json['mediaData']),
+      reactions: serializer.fromJson<String?>(json['reactions']),
     );
   }
   @override
@@ -303,6 +334,7 @@ class Message extends DataClass implements Insertable<Message> {
       'type': serializer.toJson<String>(type),
       'status': serializer.toJson<String>(status),
       'mediaData': serializer.toJson<String?>(mediaData),
+      'reactions': serializer.toJson<String?>(reactions),
     };
   }
 
@@ -315,6 +347,7 @@ class Message extends DataClass implements Insertable<Message> {
     String? type,
     String? status,
     Value<String?> mediaData = const Value.absent(),
+    Value<String?> reactions = const Value.absent(),
   }) => Message(
     id: id ?? this.id,
     senderId: senderId ?? this.senderId,
@@ -324,6 +357,7 @@ class Message extends DataClass implements Insertable<Message> {
     type: type ?? this.type,
     status: status ?? this.status,
     mediaData: mediaData.present ? mediaData.value : this.mediaData,
+    reactions: reactions.present ? reactions.value : this.reactions,
   );
   Message copyWithCompanion(MessagesCompanion data) {
     return Message(
@@ -339,6 +373,7 @@ class Message extends DataClass implements Insertable<Message> {
       type: data.type.present ? data.type.value : this.type,
       status: data.status.present ? data.status.value : this.status,
       mediaData: data.mediaData.present ? data.mediaData.value : this.mediaData,
+      reactions: data.reactions.present ? data.reactions.value : this.reactions,
     );
   }
 
@@ -352,7 +387,8 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('timestamp: $timestamp, ')
           ..write('type: $type, ')
           ..write('status: $status, ')
-          ..write('mediaData: $mediaData')
+          ..write('mediaData: $mediaData, ')
+          ..write('reactions: $reactions')
           ..write(')'))
         .toString();
   }
@@ -367,6 +403,7 @@ class Message extends DataClass implements Insertable<Message> {
     type,
     status,
     mediaData,
+    reactions,
   );
   @override
   bool operator ==(Object other) =>
@@ -379,7 +416,8 @@ class Message extends DataClass implements Insertable<Message> {
           other.timestamp == this.timestamp &&
           other.type == this.type &&
           other.status == this.status &&
-          other.mediaData == this.mediaData);
+          other.mediaData == this.mediaData &&
+          other.reactions == this.reactions);
 }
 
 class MessagesCompanion extends UpdateCompanion<Message> {
@@ -391,6 +429,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> type;
   final Value<String> status;
   final Value<String?> mediaData;
+  final Value<String?> reactions;
   final Value<int> rowid;
   const MessagesCompanion({
     this.id = const Value.absent(),
@@ -401,6 +440,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.type = const Value.absent(),
     this.status = const Value.absent(),
     this.mediaData = const Value.absent(),
+    this.reactions = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MessagesCompanion.insert({
@@ -412,6 +452,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     required String type,
     required String status,
     this.mediaData = const Value.absent(),
+    this.reactions = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        senderId = Value(senderId),
@@ -429,6 +470,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? type,
     Expression<String>? status,
     Expression<String>? mediaData,
+    Expression<String>? reactions,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -440,6 +482,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (type != null) 'type': type,
       if (status != null) 'status': status,
       if (mediaData != null) 'media_data': mediaData,
+      if (reactions != null) 'reactions': reactions,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -453,6 +496,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? type,
     Value<String>? status,
     Value<String?>? mediaData,
+    Value<String?>? reactions,
     Value<int>? rowid,
   }) {
     return MessagesCompanion(
@@ -464,6 +508,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       type: type ?? this.type,
       status: status ?? this.status,
       mediaData: mediaData ?? this.mediaData,
+      reactions: reactions ?? this.reactions,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -495,6 +540,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (mediaData.present) {
       map['media_data'] = Variable<String>(mediaData.value);
     }
+    if (reactions.present) {
+      map['reactions'] = Variable<String>(reactions.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -512,6 +560,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('type: $type, ')
           ..write('status: $status, ')
           ..write('mediaData: $mediaData, ')
+          ..write('reactions: $reactions, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2075,6 +2124,570 @@ class LoveConnectionsCompanion extends UpdateCompanion<DbLoveConnection> {
   }
 }
 
+class $LoveNotesTable extends LoveNotes
+    with TableInfo<$LoveNotesTable, DbLoveNote> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LoveNotesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _senderUsernameMeta = const VerificationMeta(
+    'senderUsername',
+  );
+  @override
+  late final GeneratedColumn<String> senderUsername = GeneratedColumn<String>(
+    'sender_username',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _recipientUsernameMeta = const VerificationMeta(
+    'recipientUsername',
+  );
+  @override
+  late final GeneratedColumn<String> recipientUsername =
+      GeneratedColumn<String>(
+        'recipient_username',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bodyMeta = const VerificationMeta('body');
+  @override
+  late final GeneratedColumn<String> body = GeneratedColumn<String>(
+    'body',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _openAtMeta = const VerificationMeta('openAt');
+  @override
+  late final GeneratedColumn<DateTime> openAt = GeneratedColumn<DateTime>(
+    'open_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isOpenedMeta = const VerificationMeta(
+    'isOpened',
+  );
+  @override
+  late final GeneratedColumn<bool> isOpened = GeneratedColumn<bool>(
+    'is_opened',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_opened" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _tagMeta = const VerificationMeta('tag');
+  @override
+  late final GeneratedColumn<String> tag = GeneratedColumn<String>(
+    'tag',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    senderUsername,
+    recipientUsername,
+    title,
+    body,
+    createdAt,
+    openAt,
+    isOpened,
+    tag,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'love_notes';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DbLoveNote> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('sender_username')) {
+      context.handle(
+        _senderUsernameMeta,
+        senderUsername.isAcceptableOrUnknown(
+          data['sender_username']!,
+          _senderUsernameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_senderUsernameMeta);
+    }
+    if (data.containsKey('recipient_username')) {
+      context.handle(
+        _recipientUsernameMeta,
+        recipientUsername.isAcceptableOrUnknown(
+          data['recipient_username']!,
+          _recipientUsernameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_recipientUsernameMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('body')) {
+      context.handle(
+        _bodyMeta,
+        body.isAcceptableOrUnknown(data['body']!, _bodyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bodyMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('open_at')) {
+      context.handle(
+        _openAtMeta,
+        openAt.isAcceptableOrUnknown(data['open_at']!, _openAtMeta),
+      );
+    }
+    if (data.containsKey('is_opened')) {
+      context.handle(
+        _isOpenedMeta,
+        isOpened.isAcceptableOrUnknown(data['is_opened']!, _isOpenedMeta),
+      );
+    }
+    if (data.containsKey('tag')) {
+      context.handle(
+        _tagMeta,
+        tag.isAcceptableOrUnknown(data['tag']!, _tagMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DbLoveNote map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DbLoveNote(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      senderUsername: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender_username'],
+      )!,
+      recipientUsername: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_username'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      body: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}body'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      openAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}open_at'],
+      ),
+      isOpened: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_opened'],
+      )!,
+      tag: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tag'],
+      ),
+    );
+  }
+
+  @override
+  $LoveNotesTable createAlias(String alias) {
+    return $LoveNotesTable(attachedDatabase, alias);
+  }
+}
+
+class DbLoveNote extends DataClass implements Insertable<DbLoveNote> {
+  final String id;
+  final String senderUsername;
+  final String recipientUsername;
+  final String title;
+  final String body;
+  final DateTime createdAt;
+  final DateTime? openAt;
+  final bool isOpened;
+  final String? tag;
+  const DbLoveNote({
+    required this.id,
+    required this.senderUsername,
+    required this.recipientUsername,
+    required this.title,
+    required this.body,
+    required this.createdAt,
+    this.openAt,
+    required this.isOpened,
+    this.tag,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['sender_username'] = Variable<String>(senderUsername);
+    map['recipient_username'] = Variable<String>(recipientUsername);
+    map['title'] = Variable<String>(title);
+    map['body'] = Variable<String>(body);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || openAt != null) {
+      map['open_at'] = Variable<DateTime>(openAt);
+    }
+    map['is_opened'] = Variable<bool>(isOpened);
+    if (!nullToAbsent || tag != null) {
+      map['tag'] = Variable<String>(tag);
+    }
+    return map;
+  }
+
+  LoveNotesCompanion toCompanion(bool nullToAbsent) {
+    return LoveNotesCompanion(
+      id: Value(id),
+      senderUsername: Value(senderUsername),
+      recipientUsername: Value(recipientUsername),
+      title: Value(title),
+      body: Value(body),
+      createdAt: Value(createdAt),
+      openAt: openAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(openAt),
+      isOpened: Value(isOpened),
+      tag: tag == null && nullToAbsent ? const Value.absent() : Value(tag),
+    );
+  }
+
+  factory DbLoveNote.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DbLoveNote(
+      id: serializer.fromJson<String>(json['id']),
+      senderUsername: serializer.fromJson<String>(json['senderUsername']),
+      recipientUsername: serializer.fromJson<String>(json['recipientUsername']),
+      title: serializer.fromJson<String>(json['title']),
+      body: serializer.fromJson<String>(json['body']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      openAt: serializer.fromJson<DateTime?>(json['openAt']),
+      isOpened: serializer.fromJson<bool>(json['isOpened']),
+      tag: serializer.fromJson<String?>(json['tag']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'senderUsername': serializer.toJson<String>(senderUsername),
+      'recipientUsername': serializer.toJson<String>(recipientUsername),
+      'title': serializer.toJson<String>(title),
+      'body': serializer.toJson<String>(body),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'openAt': serializer.toJson<DateTime?>(openAt),
+      'isOpened': serializer.toJson<bool>(isOpened),
+      'tag': serializer.toJson<String?>(tag),
+    };
+  }
+
+  DbLoveNote copyWith({
+    String? id,
+    String? senderUsername,
+    String? recipientUsername,
+    String? title,
+    String? body,
+    DateTime? createdAt,
+    Value<DateTime?> openAt = const Value.absent(),
+    bool? isOpened,
+    Value<String?> tag = const Value.absent(),
+  }) => DbLoveNote(
+    id: id ?? this.id,
+    senderUsername: senderUsername ?? this.senderUsername,
+    recipientUsername: recipientUsername ?? this.recipientUsername,
+    title: title ?? this.title,
+    body: body ?? this.body,
+    createdAt: createdAt ?? this.createdAt,
+    openAt: openAt.present ? openAt.value : this.openAt,
+    isOpened: isOpened ?? this.isOpened,
+    tag: tag.present ? tag.value : this.tag,
+  );
+  DbLoveNote copyWithCompanion(LoveNotesCompanion data) {
+    return DbLoveNote(
+      id: data.id.present ? data.id.value : this.id,
+      senderUsername: data.senderUsername.present
+          ? data.senderUsername.value
+          : this.senderUsername,
+      recipientUsername: data.recipientUsername.present
+          ? data.recipientUsername.value
+          : this.recipientUsername,
+      title: data.title.present ? data.title.value : this.title,
+      body: data.body.present ? data.body.value : this.body,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      openAt: data.openAt.present ? data.openAt.value : this.openAt,
+      isOpened: data.isOpened.present ? data.isOpened.value : this.isOpened,
+      tag: data.tag.present ? data.tag.value : this.tag,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbLoveNote(')
+          ..write('id: $id, ')
+          ..write('senderUsername: $senderUsername, ')
+          ..write('recipientUsername: $recipientUsername, ')
+          ..write('title: $title, ')
+          ..write('body: $body, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('openAt: $openAt, ')
+          ..write('isOpened: $isOpened, ')
+          ..write('tag: $tag')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    senderUsername,
+    recipientUsername,
+    title,
+    body,
+    createdAt,
+    openAt,
+    isOpened,
+    tag,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DbLoveNote &&
+          other.id == this.id &&
+          other.senderUsername == this.senderUsername &&
+          other.recipientUsername == this.recipientUsername &&
+          other.title == this.title &&
+          other.body == this.body &&
+          other.createdAt == this.createdAt &&
+          other.openAt == this.openAt &&
+          other.isOpened == this.isOpened &&
+          other.tag == this.tag);
+}
+
+class LoveNotesCompanion extends UpdateCompanion<DbLoveNote> {
+  final Value<String> id;
+  final Value<String> senderUsername;
+  final Value<String> recipientUsername;
+  final Value<String> title;
+  final Value<String> body;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> openAt;
+  final Value<bool> isOpened;
+  final Value<String?> tag;
+  final Value<int> rowid;
+  const LoveNotesCompanion({
+    this.id = const Value.absent(),
+    this.senderUsername = const Value.absent(),
+    this.recipientUsername = const Value.absent(),
+    this.title = const Value.absent(),
+    this.body = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.openAt = const Value.absent(),
+    this.isOpened = const Value.absent(),
+    this.tag = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LoveNotesCompanion.insert({
+    required String id,
+    required String senderUsername,
+    required String recipientUsername,
+    required String title,
+    required String body,
+    required DateTime createdAt,
+    this.openAt = const Value.absent(),
+    this.isOpened = const Value.absent(),
+    this.tag = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       senderUsername = Value(senderUsername),
+       recipientUsername = Value(recipientUsername),
+       title = Value(title),
+       body = Value(body),
+       createdAt = Value(createdAt);
+  static Insertable<DbLoveNote> custom({
+    Expression<String>? id,
+    Expression<String>? senderUsername,
+    Expression<String>? recipientUsername,
+    Expression<String>? title,
+    Expression<String>? body,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? openAt,
+    Expression<bool>? isOpened,
+    Expression<String>? tag,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (senderUsername != null) 'sender_username': senderUsername,
+      if (recipientUsername != null) 'recipient_username': recipientUsername,
+      if (title != null) 'title': title,
+      if (body != null) 'body': body,
+      if (createdAt != null) 'created_at': createdAt,
+      if (openAt != null) 'open_at': openAt,
+      if (isOpened != null) 'is_opened': isOpened,
+      if (tag != null) 'tag': tag,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LoveNotesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? senderUsername,
+    Value<String>? recipientUsername,
+    Value<String>? title,
+    Value<String>? body,
+    Value<DateTime>? createdAt,
+    Value<DateTime?>? openAt,
+    Value<bool>? isOpened,
+    Value<String?>? tag,
+    Value<int>? rowid,
+  }) {
+    return LoveNotesCompanion(
+      id: id ?? this.id,
+      senderUsername: senderUsername ?? this.senderUsername,
+      recipientUsername: recipientUsername ?? this.recipientUsername,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      createdAt: createdAt ?? this.createdAt,
+      openAt: openAt ?? this.openAt,
+      isOpened: isOpened ?? this.isOpened,
+      tag: tag ?? this.tag,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (senderUsername.present) {
+      map['sender_username'] = Variable<String>(senderUsername.value);
+    }
+    if (recipientUsername.present) {
+      map['recipient_username'] = Variable<String>(recipientUsername.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (body.present) {
+      map['body'] = Variable<String>(body.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (openAt.present) {
+      map['open_at'] = Variable<DateTime>(openAt.value);
+    }
+    if (isOpened.present) {
+      map['is_opened'] = Variable<bool>(isOpened.value);
+    }
+    if (tag.present) {
+      map['tag'] = Variable<String>(tag.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LoveNotesCompanion(')
+          ..write('id: $id, ')
+          ..write('senderUsername: $senderUsername, ')
+          ..write('recipientUsername: $recipientUsername, ')
+          ..write('title: $title, ')
+          ..write('body: $body, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('openAt: $openAt, ')
+          ..write('isOpened: $isOpened, ')
+          ..write('tag: $tag, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2084,6 +2697,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $LoveConnectionsTable loveConnections = $LoveConnectionsTable(
     this,
   );
+  late final $LoveNotesTable loveNotes = $LoveNotesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2093,6 +2707,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     userAccounts,
     securityLogs,
     loveConnections,
+    loveNotes,
   ];
 }
 
@@ -2106,6 +2721,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       required String type,
       required String status,
       Value<String?> mediaData,
+      Value<String?> reactions,
       Value<int> rowid,
     });
 typedef $$MessagesTableUpdateCompanionBuilder =
@@ -2118,6 +2734,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String> type,
       Value<String> status,
       Value<String?> mediaData,
+      Value<String?> reactions,
       Value<int> rowid,
     });
 
@@ -2167,6 +2784,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get mediaData => $composableBuilder(
     column: $table.mediaData,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reactions => $composableBuilder(
+    column: $table.reactions,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -2219,6 +2841,11 @@ class $$MessagesTableOrderingComposer
     column: $table.mediaData,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get reactions => $composableBuilder(
+    column: $table.reactions,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MessagesTableAnnotationComposer
@@ -2257,6 +2884,9 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<String> get mediaData =>
       $composableBuilder(column: $table.mediaData, builder: (column) => column);
+
+  GeneratedColumn<String> get reactions =>
+      $composableBuilder(column: $table.reactions, builder: (column) => column);
 }
 
 class $$MessagesTableTableManager
@@ -2295,6 +2925,7 @@ class $$MessagesTableTableManager
                 Value<String> type = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<String?> mediaData = const Value.absent(),
+                Value<String?> reactions = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
@@ -2305,6 +2936,7 @@ class $$MessagesTableTableManager
                 type: type,
                 status: status,
                 mediaData: mediaData,
+                reactions: reactions,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2317,6 +2949,7 @@ class $$MessagesTableTableManager
                 required String type,
                 required String status,
                 Value<String?> mediaData = const Value.absent(),
+                Value<String?> reactions = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion.insert(
                 id: id,
@@ -2327,6 +2960,7 @@ class $$MessagesTableTableManager
                 type: type,
                 status: status,
                 mediaData: mediaData,
+                reactions: reactions,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -3129,6 +3763,283 @@ typedef $$LoveConnectionsTableProcessedTableManager =
       DbLoveConnection,
       PrefetchHooks Function()
     >;
+typedef $$LoveNotesTableCreateCompanionBuilder =
+    LoveNotesCompanion Function({
+      required String id,
+      required String senderUsername,
+      required String recipientUsername,
+      required String title,
+      required String body,
+      required DateTime createdAt,
+      Value<DateTime?> openAt,
+      Value<bool> isOpened,
+      Value<String?> tag,
+      Value<int> rowid,
+    });
+typedef $$LoveNotesTableUpdateCompanionBuilder =
+    LoveNotesCompanion Function({
+      Value<String> id,
+      Value<String> senderUsername,
+      Value<String> recipientUsername,
+      Value<String> title,
+      Value<String> body,
+      Value<DateTime> createdAt,
+      Value<DateTime?> openAt,
+      Value<bool> isOpened,
+      Value<String?> tag,
+      Value<int> rowid,
+    });
+
+class $$LoveNotesTableFilterComposer
+    extends Composer<_$AppDatabase, $LoveNotesTable> {
+  $$LoveNotesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get senderUsername => $composableBuilder(
+    column: $table.senderUsername,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recipientUsername => $composableBuilder(
+    column: $table.recipientUsername,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get openAt => $composableBuilder(
+    column: $table.openAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isOpened => $composableBuilder(
+    column: $table.isOpened,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tag => $composableBuilder(
+    column: $table.tag,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LoveNotesTableOrderingComposer
+    extends Composer<_$AppDatabase, $LoveNotesTable> {
+  $$LoveNotesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get senderUsername => $composableBuilder(
+    column: $table.senderUsername,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recipientUsername => $composableBuilder(
+    column: $table.recipientUsername,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get openAt => $composableBuilder(
+    column: $table.openAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isOpened => $composableBuilder(
+    column: $table.isOpened,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tag => $composableBuilder(
+    column: $table.tag,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LoveNotesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LoveNotesTable> {
+  $$LoveNotesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get senderUsername => $composableBuilder(
+    column: $table.senderUsername,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recipientUsername => $composableBuilder(
+    column: $table.recipientUsername,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get body =>
+      $composableBuilder(column: $table.body, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get openAt =>
+      $composableBuilder(column: $table.openAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get isOpened =>
+      $composableBuilder(column: $table.isOpened, builder: (column) => column);
+
+  GeneratedColumn<String> get tag =>
+      $composableBuilder(column: $table.tag, builder: (column) => column);
+}
+
+class $$LoveNotesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $LoveNotesTable,
+          DbLoveNote,
+          $$LoveNotesTableFilterComposer,
+          $$LoveNotesTableOrderingComposer,
+          $$LoveNotesTableAnnotationComposer,
+          $$LoveNotesTableCreateCompanionBuilder,
+          $$LoveNotesTableUpdateCompanionBuilder,
+          (
+            DbLoveNote,
+            BaseReferences<_$AppDatabase, $LoveNotesTable, DbLoveNote>,
+          ),
+          DbLoveNote,
+          PrefetchHooks Function()
+        > {
+  $$LoveNotesTableTableManager(_$AppDatabase db, $LoveNotesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LoveNotesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LoveNotesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LoveNotesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> senderUsername = const Value.absent(),
+                Value<String> recipientUsername = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String> body = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> openAt = const Value.absent(),
+                Value<bool> isOpened = const Value.absent(),
+                Value<String?> tag = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LoveNotesCompanion(
+                id: id,
+                senderUsername: senderUsername,
+                recipientUsername: recipientUsername,
+                title: title,
+                body: body,
+                createdAt: createdAt,
+                openAt: openAt,
+                isOpened: isOpened,
+                tag: tag,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String senderUsername,
+                required String recipientUsername,
+                required String title,
+                required String body,
+                required DateTime createdAt,
+                Value<DateTime?> openAt = const Value.absent(),
+                Value<bool> isOpened = const Value.absent(),
+                Value<String?> tag = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LoveNotesCompanion.insert(
+                id: id,
+                senderUsername: senderUsername,
+                recipientUsername: recipientUsername,
+                title: title,
+                body: body,
+                createdAt: createdAt,
+                openAt: openAt,
+                isOpened: isOpened,
+                tag: tag,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LoveNotesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $LoveNotesTable,
+      DbLoveNote,
+      $$LoveNotesTableFilterComposer,
+      $$LoveNotesTableOrderingComposer,
+      $$LoveNotesTableAnnotationComposer,
+      $$LoveNotesTableCreateCompanionBuilder,
+      $$LoveNotesTableUpdateCompanionBuilder,
+      (DbLoveNote, BaseReferences<_$AppDatabase, $LoveNotesTable, DbLoveNote>),
+      DbLoveNote,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3141,4 +4052,6 @@ class $AppDatabaseManager {
       $$SecurityLogsTableTableManager(_db, _db.securityLogs);
   $$LoveConnectionsTableTableManager get loveConnections =>
       $$LoveConnectionsTableTableManager(_db, _db.loveConnections);
+  $$LoveNotesTableTableManager get loveNotes =>
+      $$LoveNotesTableTableManager(_db, _db.loveNotes);
 }
