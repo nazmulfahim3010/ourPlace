@@ -1,10 +1,12 @@
+import 'package:chatbox/models/media_attachment.dart';
+
 /// Message type enumeration
 enum MessageType { text, image, audio, video, system }
 
 /// Message delivery status enumeration
 enum MessageStatus { sending, sent, delivered, read, failed }
 
-/// Message model following the architecture requirements from Phase 2
+/// Message model following the architecture requirements from Phase 2 & Phase 15
 class ChatMessage {
   /// Unique message identifier
   final String id;
@@ -27,6 +29,9 @@ class ChatMessage {
   /// Message delivery status
   final MessageStatus status;
 
+  /// Media attachment metadata (for image, audio, video messages)
+  final MediaAttachment? mediaAttachment;
+
   ChatMessage({
     required this.id,
     required this.senderId,
@@ -35,6 +40,7 @@ class ChatMessage {
     required this.timestamp,
     this.type = MessageType.text,
     this.status = MessageStatus.sent,
+    this.mediaAttachment,
   });
 
   /// Convenience getter: Check if message was sent by default current user
@@ -62,6 +68,7 @@ class ChatMessage {
       'timestamp': timestamp.toIso8601String(),
       'type': type.toString().split('.').last,
       'status': status.toString().split('.').last,
+      if (mediaAttachment != null) 'mediaAttachment': mediaAttachment!.toJson(),
     };
   }
 
@@ -81,6 +88,9 @@ class ChatMessage {
         (e) => e.toString().split('.').last == json['status'],
         orElse: () => MessageStatus.sent,
       ),
+      mediaAttachment: json['mediaAttachment'] != null
+          ? MediaAttachment.fromJson(json['mediaAttachment'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -93,6 +103,7 @@ class ChatMessage {
     DateTime? timestamp,
     MessageType? type,
     MessageStatus? status,
+    MediaAttachment? mediaAttachment,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -102,6 +113,7 @@ class ChatMessage {
       timestamp: timestamp ?? this.timestamp,
       type: type ?? this.type,
       status: status ?? this.status,
+      mediaAttachment: mediaAttachment ?? this.mediaAttachment,
     );
   }
 
@@ -142,7 +154,8 @@ class ChatMessage {
   @override
   String toString() {
     return 'ChatMessage(id: $id, senderId: $senderId, recipientId: $recipientId, '
-        'text: $text, timestamp: $timestamp, type: $type, status: $status)';
+        'text: $text, timestamp: $timestamp, type: $type, status: $status, '
+        'media: ${mediaAttachment?.fileName})';
   }
 
   @override
@@ -156,7 +169,8 @@ class ChatMessage {
           text == other.text &&
           timestamp == other.timestamp &&
           type == other.type &&
-          status == other.status;
+          status == other.status &&
+          mediaAttachment == other.mediaAttachment;
 
   @override
   int get hashCode =>
@@ -166,5 +180,7 @@ class ChatMessage {
       text.hashCode ^
       timestamp.hashCode ^
       type.hashCode ^
-      status.hashCode;
+      status.hashCode ^
+      mediaAttachment.hashCode;
 }
+

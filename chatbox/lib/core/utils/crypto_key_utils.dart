@@ -165,4 +165,77 @@ class CryptoKeyUtils {
       );
     }
   }
+
+  /// Encrypt arbitrary binary bytes with AES-256-GCM (Phase 15 Media Messaging)
+  ///
+  /// Returns a [SecretBox] containing cipherText bytes, nonce bytes, and MAC tag.
+  static Future<SecretBox> encryptAesGcmBytes({
+    required List<int> bytes,
+    required SecretKey secretKey,
+    List<int>? nonce,
+  }) async {
+    try {
+      final iv = nonce ?? generateNonce(12);
+      final secretBox = await _aesGcm.encrypt(
+        bytes,
+        secretKey: secretKey,
+        nonce: iv,
+      );
+      return secretBox;
+    } catch (e) {
+      throw SecurityException(
+        'AES-256-GCM media encryption failed: $e',
+        code: 'MEDIA_ENCRYPTION_FAILED',
+      );
+    }
+  }
+
+  /// Decrypt ciphertext binary bytes with AES-256-GCM and verify MAC authentication tag
+  ///
+  /// Throws [SecurityException] if the MAC tag doesn't match (tampering detected).
+  static Future<List<int>> decryptAesGcmBytes({
+    required List<int> ciphertext,
+    required List<int> nonce,
+    required List<int> mac,
+    required SecretKey secretKey,
+  }) async {
+    try {
+      final secretBox = SecretBox(
+        ciphertext,
+        nonce: nonce,
+        mac: Mac(mac),
+      );
+
+      return await _aesGcm.decrypt(
+        secretBox,
+        secretKey: secretKey,
+      );
+    } on SecretBoxAuthenticationError catch (_) {
+      throw const SecurityException(
+        'Tamper detected: Media authentication tag (MAC) verification failed',
+        code: 'INTEGRITY_COMPROMISED',
+      );
+    } catch (e) {
+      throw SecurityException(
+        'AES-256-GCM media decryption failed: $e',
+        code: 'MEDIA_DECRYPTION_FAILED',
+      );
+    }
+  }
+
+  /// Generate an ephemeral 256-bit symmetric key for media encryption
+  static Future<SecretKey> generateSymmetricKey() async {
+    return await _aesGcm.newSecretKey();
+  }
+
+  /// Extract raw byte representation from a SecretKey
+  static Future<List<int>> extractSecretKeyBytes(SecretKey secretKey) async {
+    return await secretKey.extractBytes();
+  }
+
+  /// Reconstruct SecretKey from raw byte list
+  static SecretKey secretKeyFromBytes(List<int> bytes) {
+    return SecretKey(bytes);
+  }
 }
+

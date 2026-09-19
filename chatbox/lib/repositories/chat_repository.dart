@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/encrypted_payload.dart';
+import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/media_encryption_service.dart';
+import 'package:chatbox/services/media_relay_service.dart';
+import 'package:chatbox/services/media_storage_service.dart';
 import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/services/sync_service.dart';
@@ -39,6 +44,12 @@ abstract class ChatRepository {
 
   // Phase 14 Push Notifications additions
   NotificationService get notificationService;
+
+  // Phase 15 Media Messaging additions
+  MediaRelayService get mediaRelayService;
+  MediaStorageService get mediaStorageService;
+  MediaEncryptionService get mediaEncryptionService;
+  Future<void> sendMediaMessage(ChatMessage message, List<int> mediaBytes);
 }
 
 /// Primary implementation coordinating local SQLite storage, E2EE, and chat transport
@@ -49,6 +60,9 @@ class LocalChatRepository implements ChatRepository {
   final SyncService _syncService;
   final RealtimeService _realtimeService;
   final NotificationService _notificationService;
+  final MediaRelayService _mediaRelayService;
+  final MediaStorageService _mediaStorageService;
+  final MediaEncryptionService _mediaEncryptionService;
 
   LocalChatRepository({
     LocalDatabase? database,
@@ -57,16 +71,25 @@ class LocalChatRepository implements ChatRepository {
     SyncService? syncService,
     RealtimeService? realtimeService,
     NotificationService? notificationService,
+    MediaRelayService? mediaRelayService,
+    MediaStorageService? mediaStorageService,
+    MediaEncryptionService? mediaEncryptionService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
         _encryptionService = encryptionService,
         _notificationService = notificationService ?? DefaultNotificationService(),
+        _mediaRelayService = mediaRelayService ?? InMemoryMediaRelayService(),
+        _mediaStorageService = mediaStorageService ?? DefaultMediaStorageService(),
+        _mediaEncryptionService = mediaEncryptionService ?? StandardMediaEncryptionService(),
         _syncService = syncService ??
             DefaultSyncService(
               database: database ?? LocalDatabase(),
               chatService: chatService ?? ChatService(),
               encryptionService: encryptionService,
               notificationService: notificationService ?? DefaultNotificationService(),
+              mediaRelayService: mediaRelayService ?? InMemoryMediaRelayService(),
+              mediaStorageService: mediaStorageService ?? DefaultMediaStorageService(),
+              mediaEncryptionService: mediaEncryptionService ?? StandardMediaEncryptionService(),
             ),
         _realtimeService = realtimeService ??
             DefaultRealtimeService(
@@ -81,6 +104,15 @@ class LocalChatRepository implements ChatRepository {
 
   @override
   NotificationService get notificationService => _notificationService;
+
+  @override
+  MediaRelayService get mediaRelayService => _mediaRelayService;
+
+  @override
+  MediaStorageService get mediaStorageService => _mediaStorageService;
+
+  @override
+  MediaEncryptionService get mediaEncryptionService => _mediaEncryptionService;
 
   @override
   Future<List<ChatMessage>> getMessages(String partnerId) {
@@ -119,8 +151,17 @@ class LocalChatRepository implements ChatRepository {
           await _database.getAccountByUsername(initial.recipientId);
       final recipientKey = recipientAccount?.publicIdentityKey;
       if (recipientKey != null && recipientKey.isNotEmpty) {
+        final String payload;
+        if (initial.mediaAttachment != null) {
+          payload = jsonEncode({
+            'text': initial.text,
+            'mediaAttachment': initial.mediaAttachment!.toJson(),
+          });
+        } else {
+          payload = initial.text;
+        }
         final ciphertext = await enc.encryptPayload(
-          initial.text,
+          payload,
           recipientKey,
         );
         outboundMessage = initial.copyWith(text: ciphertext);
@@ -139,6 +180,39 @@ class LocalChatRepository implements ChatRepository {
       // 5. If dispatch fails or offline, update to failed for offline retry
       await _database.updateMessageStatus(message.id, MessageStatus.failed);
     }
+  }
+
+  @override
+  Future<void> sendMediaMessage(ChatMessage message, List<int> mediaBytes) async {
+    final att = message.mediaAttachment;
+    if (att == null) {
+      return sendMessage(message);
+    }
+
+    // 1. Save plaintext media to local sandboxed storage
+    final localPath = await _mediaStorageService.saveToSandbox(
+      fileName: att.fileName,
+      bytes: mediaBytes,
+      type: att.type,
+    );
+
+    // 2. Upload media blob to ephemeral relay
+    final blobId = 'blob_${message.id}_${DateTime.now().millisecondsSinceEpoch}';
+    final remoteUrl = await _mediaRelayService.uploadEncryptedBlob(blobId, mediaBytes);
+
+    // 3. Update attachment descriptor with localPath and remoteUrl
+    final resolvedAttachment = att.copyWith(
+      localPath: localPath,
+      remoteUrl: remoteUrl,
+    );
+
+    final resolvedMessage = message.copyWith(
+      mediaAttachment: resolvedAttachment,
+      type: att.type,
+    );
+
+    // 4. Dispatch through regular E2EE sendMessage flow
+    await sendMessage(resolvedMessage);
   }
 
   @override
@@ -163,7 +237,23 @@ class LocalChatRepository implements ChatRepository {
           rawMessage.text,
           senderKey,
         );
-        decryptedMessage = rawMessage.copyWith(text: cleartext);
+        try {
+          final decoded = jsonDecode(cleartext);
+          if (decoded is Map<String, dynamic> && decoded.containsKey('mediaAttachment')) {
+            final mediaMap = decoded['mediaAttachment'] as Map<String, dynamic>;
+            final att = MediaAttachment.fromJson(mediaMap);
+            final text = decoded['text'] as String? ?? '';
+            decryptedMessage = rawMessage.copyWith(
+              text: text,
+              type: att.type,
+              mediaAttachment: att,
+            );
+          } else {
+            decryptedMessage = rawMessage.copyWith(text: cleartext);
+          }
+        } catch (_) {
+          decryptedMessage = rawMessage.copyWith(text: cleartext);
+        }
       } catch (_) {
         // Fallback to raw text if decryption fails or message is unencrypted
       }

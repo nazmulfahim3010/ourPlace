@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:chatbox/database/app_database.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
+import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/models/security_log.dart';
 import 'package:chatbox/models/user_account.dart';
@@ -51,6 +52,9 @@ class LocalDatabase {
         (e) => e.name == row.status,
         orElse: () => MessageStatus.sent,
       ),
+      mediaAttachment: row.mediaData != null && row.mediaData!.isNotEmpty
+          ? MediaAttachment.fromJsonString(row.mediaData!)
+          : null,
     );
   }
 
@@ -64,6 +68,7 @@ class LocalDatabase {
       timestamp: Value(message.timestamp),
       type: Value(message.type.name),
       status: Value(message.status.name),
+      mediaData: Value(message.mediaAttachment?.toJsonString()),
     );
   }
 

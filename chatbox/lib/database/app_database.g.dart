@@ -79,6 +79,17 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _mediaDataMeta = const VerificationMeta(
+    'mediaData',
+  );
+  @override
+  late final GeneratedColumn<String> mediaData = GeneratedColumn<String>(
+    'media_data',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -88,6 +99,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     timestamp,
     type,
     status,
+    mediaData,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -157,6 +169,12 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     } else if (isInserting) {
       context.missing(_statusMeta);
     }
+    if (data.containsKey('media_data')) {
+      context.handle(
+        _mediaDataMeta,
+        mediaData.isAcceptableOrUnknown(data['media_data']!, _mediaDataMeta),
+      );
+    }
     return context;
   }
 
@@ -194,6 +212,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}status'],
       )!,
+      mediaData: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_data'],
+      ),
     );
   }
 
@@ -211,6 +233,7 @@ class Message extends DataClass implements Insertable<Message> {
   final DateTime timestamp;
   final String type;
   final String status;
+  final String? mediaData;
   const Message({
     required this.id,
     required this.senderId,
@@ -219,6 +242,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.timestamp,
     required this.type,
     required this.status,
+    this.mediaData,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -230,6 +254,9 @@ class Message extends DataClass implements Insertable<Message> {
     map['timestamp'] = Variable<DateTime>(timestamp);
     map['type'] = Variable<String>(type);
     map['status'] = Variable<String>(status);
+    if (!nullToAbsent || mediaData != null) {
+      map['media_data'] = Variable<String>(mediaData);
+    }
     return map;
   }
 
@@ -242,6 +269,9 @@ class Message extends DataClass implements Insertable<Message> {
       timestamp: Value(timestamp),
       type: Value(type),
       status: Value(status),
+      mediaData: mediaData == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mediaData),
     );
   }
 
@@ -258,6 +288,7 @@ class Message extends DataClass implements Insertable<Message> {
       timestamp: serializer.fromJson<DateTime>(json['timestamp']),
       type: serializer.fromJson<String>(json['type']),
       status: serializer.fromJson<String>(json['status']),
+      mediaData: serializer.fromJson<String?>(json['mediaData']),
     );
   }
   @override
@@ -271,6 +302,7 @@ class Message extends DataClass implements Insertable<Message> {
       'timestamp': serializer.toJson<DateTime>(timestamp),
       'type': serializer.toJson<String>(type),
       'status': serializer.toJson<String>(status),
+      'mediaData': serializer.toJson<String?>(mediaData),
     };
   }
 
@@ -282,6 +314,7 @@ class Message extends DataClass implements Insertable<Message> {
     DateTime? timestamp,
     String? type,
     String? status,
+    Value<String?> mediaData = const Value.absent(),
   }) => Message(
     id: id ?? this.id,
     senderId: senderId ?? this.senderId,
@@ -290,6 +323,7 @@ class Message extends DataClass implements Insertable<Message> {
     timestamp: timestamp ?? this.timestamp,
     type: type ?? this.type,
     status: status ?? this.status,
+    mediaData: mediaData.present ? mediaData.value : this.mediaData,
   );
   Message copyWithCompanion(MessagesCompanion data) {
     return Message(
@@ -304,6 +338,7 @@ class Message extends DataClass implements Insertable<Message> {
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
       type: data.type.present ? data.type.value : this.type,
       status: data.status.present ? data.status.value : this.status,
+      mediaData: data.mediaData.present ? data.mediaData.value : this.mediaData,
     );
   }
 
@@ -316,7 +351,8 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('messageText: $messageText, ')
           ..write('timestamp: $timestamp, ')
           ..write('type: $type, ')
-          ..write('status: $status')
+          ..write('status: $status, ')
+          ..write('mediaData: $mediaData')
           ..write(')'))
         .toString();
   }
@@ -330,6 +366,7 @@ class Message extends DataClass implements Insertable<Message> {
     timestamp,
     type,
     status,
+    mediaData,
   );
   @override
   bool operator ==(Object other) =>
@@ -341,7 +378,8 @@ class Message extends DataClass implements Insertable<Message> {
           other.messageText == this.messageText &&
           other.timestamp == this.timestamp &&
           other.type == this.type &&
-          other.status == this.status);
+          other.status == this.status &&
+          other.mediaData == this.mediaData);
 }
 
 class MessagesCompanion extends UpdateCompanion<Message> {
@@ -352,6 +390,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<DateTime> timestamp;
   final Value<String> type;
   final Value<String> status;
+  final Value<String?> mediaData;
   final Value<int> rowid;
   const MessagesCompanion({
     this.id = const Value.absent(),
@@ -361,6 +400,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.timestamp = const Value.absent(),
     this.type = const Value.absent(),
     this.status = const Value.absent(),
+    this.mediaData = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MessagesCompanion.insert({
@@ -371,6 +411,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     required DateTime timestamp,
     required String type,
     required String status,
+    this.mediaData = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        senderId = Value(senderId),
@@ -387,6 +428,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<DateTime>? timestamp,
     Expression<String>? type,
     Expression<String>? status,
+    Expression<String>? mediaData,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -397,6 +439,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (timestamp != null) 'timestamp': timestamp,
       if (type != null) 'type': type,
       if (status != null) 'status': status,
+      if (mediaData != null) 'media_data': mediaData,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -409,6 +452,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<DateTime>? timestamp,
     Value<String>? type,
     Value<String>? status,
+    Value<String?>? mediaData,
     Value<int>? rowid,
   }) {
     return MessagesCompanion(
@@ -419,6 +463,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       timestamp: timestamp ?? this.timestamp,
       type: type ?? this.type,
       status: status ?? this.status,
+      mediaData: mediaData ?? this.mediaData,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -447,6 +492,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (status.present) {
       map['status'] = Variable<String>(status.value);
     }
+    if (mediaData.present) {
+      map['media_data'] = Variable<String>(mediaData.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -463,6 +511,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('timestamp: $timestamp, ')
           ..write('type: $type, ')
           ..write('status: $status, ')
+          ..write('mediaData: $mediaData, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1405,6 +1454,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       required DateTime timestamp,
       required String type,
       required String status,
+      Value<String?> mediaData,
       Value<int> rowid,
     });
 typedef $$MessagesTableUpdateCompanionBuilder =
@@ -1416,6 +1466,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<DateTime> timestamp,
       Value<String> type,
       Value<String> status,
+      Value<String?> mediaData,
       Value<int> rowid,
     });
 
@@ -1460,6 +1511,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get status => $composableBuilder(
     column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaData => $composableBuilder(
+    column: $table.mediaData,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -1507,6 +1563,11 @@ class $$MessagesTableOrderingComposer
     column: $table.status,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get mediaData => $composableBuilder(
+    column: $table.mediaData,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MessagesTableAnnotationComposer
@@ -1542,6 +1603,9 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaData =>
+      $composableBuilder(column: $table.mediaData, builder: (column) => column);
 }
 
 class $$MessagesTableTableManager
@@ -1579,6 +1643,7 @@ class $$MessagesTableTableManager
                 Value<DateTime> timestamp = const Value.absent(),
                 Value<String> type = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                Value<String?> mediaData = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
@@ -1588,6 +1653,7 @@ class $$MessagesTableTableManager
                 timestamp: timestamp,
                 type: type,
                 status: status,
+                mediaData: mediaData,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1599,6 +1665,7 @@ class $$MessagesTableTableManager
                 required DateTime timestamp,
                 required String type,
                 required String status,
+                Value<String?> mediaData = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion.insert(
                 id: id,
@@ -1608,6 +1675,7 @@ class $$MessagesTableTableManager
                 timestamp: timestamp,
                 type: type,
                 status: status,
+                mediaData: mediaData,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

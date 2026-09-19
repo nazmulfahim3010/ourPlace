@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:chatbox/core/constants/app_constants.dart';
+import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/models/user.dart';
 import 'package:chatbox/models/user_presence.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
 import 'package:chatbox/repositories/chat_repository.dart';
+import 'package:chatbox/screens/media/private_media_viewer_screen.dart';
 import 'package:chatbox/widgets/chat_header.dart';
 import 'package:chatbox/widgets/date_divider.dart';
 import 'package:chatbox/widgets/message_bubble.dart';
@@ -46,6 +48,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   StreamSubscription<bool>? _typingSubscription;
   StreamSubscription<UserPresence>? _presenceSubscription;
   StreamSubscription<List<ChatMessage>>? _messageSubscription;
+
+  // Phase 15: Media Messaging state
+  MediaAttachment? _pendingAttachment;
+  List<int>? _pendingAttachmentBytes;
+  bool _isRecordingVoice = false;
+  int _recordingSeconds = 0;
+  Timer? _recordingTimer;
 
   String get _currentUserId => widget.currentUser?.id ?? AppConstants.currentUserId;
   String get _currentUsername => widget.currentUser?.username ?? 'You';
@@ -126,6 +135,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _typingSubscription?.cancel();
     _presenceSubscription?.cancel();
     _messageSubscription?.cancel();
+    _recordingTimer?.cancel();
     _chatRepository.realtimeService.pause();
     _messageController.dispose();
     _scrollController.dispose();
@@ -236,7 +246,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Send message: update UI, delegate persistence and dispatch to ChatRepository
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    final att = _pendingAttachment;
+    final attBytes = _pendingAttachmentBytes;
+
+    if (text.isEmpty && att == null) return;
 
     final newMessage = ChatMessage(
       id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
@@ -244,14 +257,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       recipientId: widget.partnerId,
       text: text,
       timestamp: DateTime.now(),
-      type: MessageType.text,
+      type: att?.type ?? MessageType.text,
       status: MessageStatus.sending,
+      mediaAttachment: att,
     );
 
     // Optimistic UI update
     setState(() {
       _messages.insert(0, newMessage);
+      _pendingAttachment = null;
+      _pendingAttachmentBytes = null;
     });
+
+    _messageController.clear();
+
+    // Auto-scroll to bottom
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+
+    // Save and dispatch through ChatRepository
+    if (att != null && attBytes != null) {
+      await _chatRepository.sendMediaMessage(newMessage, attBytes);
+    } else {
+      await _chatRepository.sendMessage(newMessage);
+    }
 
     _messageController.clear();
 
@@ -295,6 +329,140 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       currentUserId: _currentUserId,
       partnerId: widget.partnerId,
       isTyping: text.trim().isNotEmpty,
+    );
+  }
+
+  void _openAttachmentOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A4A4A),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined, color: Colors.pinkAccent),
+                title: const Text('Send Romantic Sunset Photo', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Encrypted client-side with AES-256-GCM', style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  final sampleBytes = await _chatRepository.mediaStorageService
+                      .generateSampleMediaBytes(MessageType.image);
+                  setState(() {
+                    _pendingAttachment = MediaAttachment(
+                      id: 'img_${DateTime.now().millisecondsSinceEpoch}',
+                      type: MessageType.image,
+                      fileName: 'Sunset_Memory_${DateTime.now().hour}${DateTime.now().minute}.png',
+                      mimeType: 'image/png',
+                      fileSizeBytes: sampleBytes.length,
+                    );
+                    _pendingAttachmentBytes = sampleBytes;
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.mic_none_rounded, color: Colors.amberAccent),
+                title: const Text('Record Voice Note', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Record voice clip with waveform scrubber', style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12)),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _startVoiceRecording();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _startVoiceRecording() {
+    setState(() {
+      _isRecordingVoice = true;
+      _recordingSeconds = 0;
+    });
+    _recordingTimer?.cancel();
+    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _recordingSeconds++;
+        });
+      }
+    });
+  }
+
+  void _cancelVoiceRecording() {
+    _recordingTimer?.cancel();
+    setState(() {
+      _isRecordingVoice = false;
+      _recordingSeconds = 0;
+    });
+  }
+
+  Future<void> _sendVoiceRecording() async {
+    final duration = _recordingSeconds > 0 ? _recordingSeconds : 3;
+    _cancelVoiceRecording();
+    final sampleAudio = await _chatRepository.mediaStorageService
+        .generateSampleMediaBytes(MessageType.audio);
+
+    final att = MediaAttachment(
+      id: 'audio_${DateTime.now().millisecondsSinceEpoch}',
+      type: MessageType.audio,
+      fileName: 'Voice_Note_${DateTime.now().hour}${DateTime.now().minute}.m4a',
+      mimeType: 'audio/m4a',
+      fileSizeBytes: sampleAudio.length,
+      durationMs: duration * 1000,
+    );
+
+    final newMsg = ChatMessage(
+      id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
+      senderId: _currentUserId,
+      recipientId: widget.partnerId,
+      text: '',
+      timestamp: DateTime.now(),
+      type: MessageType.audio,
+      status: MessageStatus.sending,
+      mediaAttachment: att,
+    );
+
+    setState(() {
+      _messages.insert(0, newMsg);
+    });
+
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+
+    await _chatRepository.sendMediaMessage(newMsg, sampleAudio);
+  }
+
+  void _openMediaViewer(ChatMessage message) {
+    if (message.mediaAttachment == null && message.type == MessageType.text) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PrivateMediaViewerScreen(
+          message: message,
+          storageService: _chatRepository.mediaStorageService,
+        ),
+      ),
     );
   }
 
@@ -344,6 +512,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       messages: _messages,
                       scrollController: _scrollController,
                       currentUserId: _currentUserId,
+                      onMediaTap: _openMediaViewer,
                     ),
                   ),
           ),
@@ -353,6 +522,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             controller: _messageController,
             onChanged: _onInputChanged,
             onSendPressed: _sendMessage,
+            onAttachmentPressed: _openAttachmentOptions,
+            onVoiceRecordPressed: _startVoiceRecording,
+            isRecording: _isRecordingVoice,
+            recordingDurationSeconds: _recordingSeconds,
+            onCancelRecording: _cancelVoiceRecording,
+            onSendRecording: _sendVoiceRecording,
+            pendingAttachment: _pendingAttachment,
+            onRemovePendingAttachment: () {
+              setState(() {
+                _pendingAttachment = null;
+                _pendingAttachmentBytes = null;
+              });
+            },
           ),
         ],
       ),
@@ -365,11 +547,13 @@ class _ChatMessageArea extends StatelessWidget {
   final List<ChatMessage> messages;
   final ScrollController scrollController;
   final String currentUserId;
+  final ValueChanged<ChatMessage>? onMediaTap;
 
   const _ChatMessageArea({
     required this.messages,
     required this.scrollController,
     this.currentUserId = AppConstants.currentUserId,
+    this.onMediaTap,
   });
 
   bool _isSameDay(DateTime a, DateTime b) {
@@ -419,6 +603,7 @@ class _ChatMessageArea extends StatelessWidget {
                 message: message,
                 isSent: message.isSentBy(currentUserId),
                 showTimestamp: showTimestamp,
+                onMediaTap: onMediaTap != null ? () => onMediaTap!(message) : null,
               ),
             ),
           ],
@@ -427,3 +612,4 @@ class _ChatMessageArea extends StatelessWidget {
     );
   }
 }
+

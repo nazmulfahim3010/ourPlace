@@ -26,6 +26,7 @@ import 'package:chatbox/screens/auth/passcode_setup_screen.dart';
 import 'package:chatbox/screens/profile/profile_screen.dart';
 import 'package:chatbox/widgets/conversation_tile.dart';
 import 'package:chatbox/widgets/chat_header.dart';
+import 'package:chatbox/widgets/message_bubble.dart';
 import 'package:chatbox/widgets/chat_input_field.dart';
 import 'package:chatbox/widgets/numeric_keypad.dart';
 import 'package:chatbox/widgets/passcode_dots.dart';
@@ -43,6 +44,11 @@ import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/models/notification_settings.dart';
 import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/sync_service.dart';
+import 'package:chatbox/models/media_attachment.dart';
+import 'package:chatbox/services/media_storage_service.dart';
+import 'package:chatbox/services/media_relay_service.dart';
+import 'package:chatbox/services/media_encryption_service.dart';
+import 'package:chatbox/screens/media/private_media_viewer_screen.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
@@ -2653,6 +2659,655 @@ void main() {
 
       expect(notificationService.displayedAlerts.length, equals(1));
       expect(find.byType(SnackBar), findsOneWidget);
+    });
+  });
+
+  group('Phase 15: MediaAttachment Domain Model Tests', () {
+    test('serialize and deserialize preserves all media attributes', () {
+      const att = MediaAttachment(
+        id: 'media_001',
+        type: MessageType.image,
+        fileName: 'vacation.jpg',
+        mimeType: 'image/jpeg',
+        fileSizeBytes: 1048576,
+        localPath: 'sandbox://ourPlace/media/image/vacation.jpg',
+        remoteUrl: 'relay://ephemeral-media/blob_123',
+        encryptedMediaKey: 'encKeyBase64==',
+        nonce: 'nonceBase64==',
+        mac: 'macBase64==',
+        durationMs: null,
+        width: 1920,
+        height: 1080,
+        thumbnailBase64: 'thumb==',
+      );
+
+      final json = att.toJson();
+      final restored = MediaAttachment.fromJson(json);
+
+      expect(restored.id, equals('media_001'));
+      expect(restored.type, equals(MessageType.image));
+      expect(restored.fileName, equals('vacation.jpg'));
+      expect(restored.mimeType, equals('image/jpeg'));
+      expect(restored.fileSizeBytes, equals(1048576));
+      expect(restored.localPath, equals('sandbox://ourPlace/media/image/vacation.jpg'));
+      expect(restored.remoteUrl, equals('relay://ephemeral-media/blob_123'));
+      expect(restored.encryptedMediaKey, equals('encKeyBase64=='));
+      expect(restored.nonce, equals('nonceBase64=='));
+      expect(restored.mac, equals('macBase64=='));
+      expect(restored.width, equals(1920));
+      expect(restored.height, equals(1080));
+      expect(restored.thumbnailBase64, equals('thumb=='));
+      expect(restored.isImage, isTrue);
+      expect(restored.isAudio, isFalse);
+      expect(restored.formattedFileSize, equals('1.0 MB'));
+    });
+
+    test('toJsonString and fromJsonString round-trips correctly', () {
+      const att = MediaAttachment(
+        id: 'audio_001',
+        type: MessageType.audio,
+        fileName: 'note.m4a',
+        mimeType: 'audio/m4a',
+        fileSizeBytes: 45000,
+        durationMs: 75000,
+      );
+
+      final str = att.toJsonString();
+      final restored = MediaAttachment.fromJsonString(str);
+
+      expect(restored.id, equals('audio_001'));
+      expect(restored.isAudio, isTrue);
+      expect(restored.durationMs, equals(75000));
+      expect(restored.formattedDuration, equals('1:15'));
+      expect(restored.formattedFileSize, equals('43.9 KB'));
+    });
+
+    test('ChatMessage includes and serializes mediaAttachment', () {
+      final msg = ChatMessage(
+        id: 'msg_media_1',
+        senderId: 'current_user',
+        recipientId: '@twilight',
+        text: 'Look at this photo!',
+        timestamp: DateTime.now(),
+        type: MessageType.image,
+        status: MessageStatus.sent,
+        mediaAttachment: const MediaAttachment(
+          id: 'media_photo_1',
+          type: MessageType.image,
+          fileName: 'memory.png',
+          mimeType: 'image/png',
+          fileSizeBytes: 12000,
+        ),
+      );
+
+      final json = msg.toJson();
+      final restored = ChatMessage.fromJson(json);
+
+      expect(restored.mediaAttachment, isNotNull);
+      expect(restored.mediaAttachment!.fileName, equals('memory.png'));
+      expect(restored.type, equals(MessageType.image));
+    });
+  });
+
+  group('Phase 15: CryptoKeyUtils Binary AES-256-GCM Tests', () {
+    test('encryptAesGcmBytes and decryptAesGcmBytes roundtrip binary payload', () async {
+      final key = await CryptoKeyUtils.generateSymmetricKey();
+      final rawData = List<int>.generate(1024, (i) => (i * 7) % 256);
+
+      final secretBox = await CryptoKeyUtils.encryptAesGcmBytes(
+        bytes: rawData,
+        secretKey: key,
+      );
+
+      expect(secretBox.cipherText.length, equals(rawData.length));
+      expect(secretBox.nonce.length, equals(12));
+      expect(secretBox.mac.bytes.length, equals(16));
+
+      final decrypted = await CryptoKeyUtils.decryptAesGcmBytes(
+        ciphertext: secretBox.cipherText,
+        nonce: secretBox.nonce,
+        mac: secretBox.mac.bytes,
+        secretKey: key,
+      );
+
+      expect(decrypted, equals(rawData));
+    });
+
+    test('Tamper Resistance: Decryption throws SecurityException when ciphertext is modified', () async {
+      final key = await CryptoKeyUtils.generateSymmetricKey();
+      final rawData = [10, 20, 30, 40, 50, 60, 70, 80];
+
+      final secretBox = await CryptoKeyUtils.encryptAesGcmBytes(
+        bytes: rawData,
+        secretKey: key,
+      );
+
+      final corruptedCiphertext = List<int>.from(secretBox.cipherText);
+      corruptedCiphertext[0] ^= 0xFF;
+
+      expect(
+        () async => await CryptoKeyUtils.decryptAesGcmBytes(
+          ciphertext: corruptedCiphertext,
+          nonce: secretBox.nonce,
+          mac: secretBox.mac.bytes,
+          secretKey: key,
+        ),
+        throwsA(isA<SecurityException>()),
+      );
+    });
+
+    test('Tamper Resistance: Decryption throws SecurityException when MAC tag is corrupted', () async {
+      final key = await CryptoKeyUtils.generateSymmetricKey();
+      final rawData = [1, 2, 3, 4, 5];
+
+      final secretBox = await CryptoKeyUtils.encryptAesGcmBytes(
+        bytes: rawData,
+        secretKey: key,
+      );
+
+      final corruptedMac = List<int>.from(secretBox.mac.bytes);
+      corruptedMac[corruptedMac.length - 1] ^= 0x01;
+
+      expect(
+        () async => await CryptoKeyUtils.decryptAesGcmBytes(
+          ciphertext: secretBox.cipherText,
+          nonce: secretBox.nonce,
+          mac: corruptedMac,
+          secretKey: key,
+        ),
+        throwsA(isA<SecurityException>()),
+      );
+    });
+
+    test('extractSecretKeyBytes and secretKeyFromBytes roundtrip preserves key', () async {
+      final key1 = await CryptoKeyUtils.generateSymmetricKey();
+      final bytes = await CryptoKeyUtils.extractSecretKeyBytes(key1);
+      final key2 = CryptoKeyUtils.secretKeyFromBytes(bytes);
+
+      const testPayload = [42, 43, 44, 45];
+      final box = await CryptoKeyUtils.encryptAesGcmBytes(bytes: testPayload, secretKey: key1);
+      final decrypted = await CryptoKeyUtils.decryptAesGcmBytes(
+        ciphertext: box.cipherText,
+        nonce: box.nonce,
+        mac: box.mac.bytes,
+        secretKey: key2,
+      );
+
+      expect(decrypted, equals(testPayload));
+    });
+  });
+
+  group('Phase 15: MediaEncryptionService Tests', () {
+    test('Alice encrypts binary media for Bob, Bob decrypts successfully', () async {
+      final aliceKeyPair = await CryptoKeyUtils.generateX25519KeyPair();
+      final bobKeyPair = await CryptoKeyUtils.generateX25519KeyPair();
+
+      final alicePub = await CryptoKeyUtils.encodePublicKey(aliceKeyPair);
+      final bobPub = await CryptoKeyUtils.encodePublicKey(bobKeyPair);
+
+      final service = StandardMediaEncryptionService();
+      final photoBytes = [137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4, 5];
+
+      final package = await service.encryptMedia(
+        rawBytes: photoBytes,
+        recipientPublicKey: bobPub,
+        localKeyPair: aliceKeyPair,
+        localPublicKeyBase64: alicePub,
+        fileName: 'beach.png',
+        type: MessageType.image,
+      );
+
+      expect(package.encryptedBytes, isNotEmpty);
+      expect(package.encryptedBytes, isNot(equals(photoBytes)));
+      expect(package.attachment.encryptedMediaKey, isNotNull);
+
+      // Bob decrypts with his private key
+      final decrypted = await service.decryptMedia(
+        ciphertextBytes: package.encryptedBytes,
+        attachment: package.attachment,
+        senderPublicKey: alicePub,
+        localKeyPair: bobKeyPair,
+      );
+
+      expect(decrypted, equals(photoBytes));
+    });
+
+    test('Unauthorized Charlie fails to decrypt Alice-Bob media', () async {
+      final aliceKeyPair = await CryptoKeyUtils.generateX25519KeyPair();
+      final bobKeyPair = await CryptoKeyUtils.generateX25519KeyPair();
+      final charlieKeyPair = await CryptoKeyUtils.generateX25519KeyPair();
+
+      final alicePub = await CryptoKeyUtils.encodePublicKey(aliceKeyPair);
+      final bobPub = await CryptoKeyUtils.encodePublicKey(bobKeyPair);
+
+      final service = StandardMediaEncryptionService();
+      final secretDocument = [99, 98, 97, 96];
+
+      final package = await service.encryptMedia(
+        rawBytes: secretDocument,
+        recipientPublicKey: bobPub,
+        localKeyPair: aliceKeyPair,
+        localPublicKeyBase64: alicePub,
+        fileName: 'secret.png',
+        type: MessageType.image,
+      );
+
+      // Charlie attempts decryption
+      expect(
+        () async => await service.decryptMedia(
+          ciphertextBytes: package.encryptedBytes,
+          attachment: package.attachment,
+          senderPublicKey: alicePub,
+          localKeyPair: charlieKeyPair,
+        ),
+        throwsA(isA<SecurityException>()),
+      );
+    });
+  });
+
+  group('Phase 15: InMemoryMediaRelayService Tests', () {
+    test('uploadEncryptedBlob and downloadEncryptedBlob transfers blob', () async {
+      final relay = InMemoryMediaRelayService();
+      final testBytes = [1, 2, 3, 4, 5, 6, 7];
+
+      final url = await relay.uploadEncryptedBlob('blob_test_1', testBytes);
+      expect(url, equals('relay://ephemeral-media/blob_test_1'));
+
+      final downloaded = await relay.downloadEncryptedBlob(url);
+      expect(downloaded, equals(testBytes));
+      expect(await relay.hasBlob(url), isTrue);
+    });
+
+    test('purgeEncryptedBlob immediately permanently deletes blob (delivery ACK purge)', () async {
+      final relay = InMemoryMediaRelayService();
+      final testBytes = [10, 20, 30];
+
+      final url = await relay.uploadEncryptedBlob('blob_test_2', testBytes);
+      expect(relay.totalBlobCount, equals(1));
+
+      final purged = await relay.purgeEncryptedBlob(url);
+      expect(purged, isTrue);
+      expect(relay.totalBlobCount, equals(0));
+      expect(await relay.hasBlob(url), isFalse);
+
+      expect(
+        () async => await relay.downloadEncryptedBlob(url),
+        throwsException,
+      );
+    });
+
+    test('purgeExpiredBlobs prunes expired blobs based on TTL', () async {
+      final relay = InMemoryMediaRelayService();
+      await relay.uploadEncryptedBlob(
+        'expired_blob',
+        [1, 2, 3],
+        ttl: const Duration(milliseconds: -1),
+      );
+      await relay.uploadEncryptedBlob(
+        'active_blob',
+        [4, 5, 6],
+        ttl: const Duration(hours: 24),
+      );
+
+      expect(relay.totalBlobCount, equals(2));
+      final pruned = await relay.purgeExpiredBlobs();
+      expect(pruned, equals(1));
+      expect(relay.totalBlobCount, equals(1));
+      expect(await relay.hasBlob('active_blob'), isTrue);
+      expect(await relay.hasBlob('expired_blob'), isFalse);
+    });
+  });
+
+  group('Phase 15: MediaStorageService Sandbox Tests', () {
+    test('saveToSandbox, readFromSandbox, and deleteFromSandbox lifecycle', () async {
+      final storage = DefaultMediaStorageService();
+      final sample = [100, 101, 102];
+
+      final path = await storage.saveToSandbox(
+        fileName: 'note.m4a',
+        bytes: sample,
+        type: MessageType.audio,
+      );
+
+      expect(path, contains('ourPlace/media/audio/note.m4a'));
+      expect(await storage.fileExistsInSandbox(path), isTrue);
+
+      final read = await storage.readFromSandbox(path);
+      expect(read, equals(sample));
+
+      final deleted = await storage.deleteFromSandbox(path);
+      expect(deleted, isTrue);
+      expect(await storage.fileExistsInSandbox(path), isFalse);
+    });
+
+    test('generateSampleMediaBytes returns valid non-empty buffers', () async {
+      final storage = DefaultMediaStorageService();
+
+      final img = await storage.generateSampleMediaBytes(MessageType.image);
+      final audio = await storage.generateSampleMediaBytes(MessageType.audio);
+      final video = await storage.generateSampleMediaBytes(MessageType.video);
+
+      expect(img.length, greaterThan(10));
+      expect(audio.length, greaterThan(10));
+      expect(video.length, greaterThan(10));
+    });
+  });
+
+  group('Phase 15: LocalDatabase Schema v4 Tests', () {
+    test('Save and retrieve ChatMessage with MediaAttachment in SQLite', () async {
+      final inMemoryDb = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: inMemoryDb);
+
+      final mediaMessage = ChatMessage(
+        id: 'msg_sql_media_1',
+        senderId: 'current_user',
+        recipientId: '@twilight',
+        text: 'Romantic memory',
+        timestamp: DateTime.now(),
+        type: MessageType.image,
+        status: MessageStatus.sent,
+        mediaAttachment: const MediaAttachment(
+          id: 'att_sql_1',
+          type: MessageType.image,
+          fileName: 'sunset.png',
+          mimeType: 'image/png',
+          fileSizeBytes: 2048,
+          localPath: 'sandbox://ourPlace/media/image/sunset.png',
+          remoteUrl: 'relay://ephemeral-media/sunset_blob',
+        ),
+      );
+
+      await localDb.saveMessage(mediaMessage);
+      final retrieved = await localDb.getMessagesForPartner('@twilight');
+
+      expect(retrieved.length, equals(1));
+      expect(retrieved.first.id, equals('msg_sql_media_1'));
+      expect(retrieved.first.type, equals(MessageType.image));
+      expect(retrieved.first.mediaAttachment, isNotNull);
+      expect(retrieved.first.mediaAttachment!.fileName, equals('sunset.png'));
+      expect(retrieved.first.mediaAttachment!.fileSizeBytes, equals(2048));
+
+      await localDb.close();
+    });
+  });
+
+  group('Phase 15: End-to-End Media Messaging Integration Tests', () {
+    test('Alice sends photo -> blob uploaded to relay -> Bob syncs, downloads, decrypts, and cloud blob is purged', () async {
+      final inMemoryDbAlice = AppDatabase(NativeDatabase.memory());
+      final dbAlice = LocalDatabase(database: inMemoryDbAlice);
+
+      final inMemoryDbBob = AppDatabase(NativeDatabase.memory());
+      final dbBob = LocalDatabase(database: inMemoryDbBob);
+
+      final relayService = InMemoryFirebaseRelayService.isolated();
+      final mediaRelay = InMemoryMediaRelayService();
+      final mediaStorageAlice = DefaultMediaStorageService();
+      final mediaStorageBob = DefaultMediaStorageService();
+
+      final aliceStorage = InMemorySecureStorageService();
+      final bobStorage = InMemorySecureStorageService();
+
+      final aliceEnc = StandardE2EEEncryptionService(secureStorage: aliceStorage);
+      final bobEnc = StandardE2EEEncryptionService(secureStorage: bobStorage);
+
+      await aliceEnc.initializeUserKeys('@alice');
+      await bobEnc.initializeUserKeys('@bob');
+
+      final alicePub = await aliceEnc.getPublicIdentityKey();
+      final bobPub = await bobEnc.getPublicIdentityKey();
+
+      await dbAlice.saveAccount(UserAccount.create(accountId: 'acc_bob', username: '@bob', plaintextPassword: 'pass').copyWith(publicIdentityKey: bobPub));
+      await dbBob.saveAccount(UserAccount.create(accountId: 'acc_alice', username: '@alice', plaintextPassword: 'pass').copyWith(publicIdentityKey: alicePub));
+
+      final aliceRepo = LocalChatRepository(
+        database: dbAlice,
+        chatService: ChatService(relayService: relayService),
+        encryptionService: aliceEnc,
+        mediaRelayService: mediaRelay,
+        mediaStorageService: mediaStorageAlice,
+      );
+
+      final bobRepo = LocalChatRepository(
+        database: dbBob,
+        chatService: ChatService(relayService: relayService),
+        encryptionService: bobEnc,
+        mediaRelayService: mediaRelay,
+        mediaStorageService: mediaStorageBob,
+      );
+
+      final samplePhoto = [255, 216, 255, 224, 0, 16, 74, 70, 73, 70];
+      final photoMessage = ChatMessage(
+        id: 'alice_photo_1',
+        senderId: '@alice',
+        recipientId: '@bob',
+        text: 'Look at this view!',
+        timestamp: DateTime.now(),
+        type: MessageType.image,
+        mediaAttachment: const MediaAttachment(
+          id: 'photo_att_1',
+          type: MessageType.image,
+          fileName: 'view.jpg',
+          mimeType: 'image/jpeg',
+          fileSizeBytes: 10,
+        ),
+      );
+
+      // Alice sends media
+      await aliceRepo.sendMediaMessage(photoMessage, samplePhoto);
+
+      // Verify blob uploaded to media relay
+      expect(mediaRelay.totalBlobCount, equals(1));
+
+      // Bob syncs incoming messages
+      final bobReceived = await bobRepo.syncPendingRelayMessages('@bob');
+      expect(bobReceived.length, equals(1));
+      expect(bobReceived.first.id, equals('alice_photo_1'));
+      expect(bobReceived.first.mediaAttachment, isNotNull);
+      expect(bobReceived.first.mediaAttachment!.fileName, equals('view.jpg'));
+
+      // Verify delivery ACK immediately purged the cloud media blob!
+      expect(mediaRelay.totalBlobCount, equals(0));
+
+      await dbAlice.close();
+      await dbBob.close();
+    });
+  });
+
+  group('Phase 15: UI Widget Tests', () {
+    testWidgets('MessageBubble renders image card with E2EE lock badge', (WidgetTester tester) async {
+      final msg = ChatMessage(
+        id: 'img_msg_1',
+        senderId: 'current_user',
+        recipientId: '@twilight',
+        text: 'Sunset view ❤️',
+        timestamp: DateTime.now(),
+        type: MessageType.image,
+        status: MessageStatus.sent,
+        mediaAttachment: const MediaAttachment(
+          id: 'att_1',
+          type: MessageType.image,
+          fileName: 'Sunset.png',
+          mimeType: 'image/png',
+          fileSizeBytes: 250000,
+        ),
+      );
+
+      bool tapped = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: msg,
+              isSent: true,
+              onMediaTap: () => tapped = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sunset view ❤️'), findsOneWidget);
+      expect(find.text('Sunset.png'), findsOneWidget);
+      expect(find.text('E2EE'), findsOneWidget);
+
+      await tester.tap(find.text('Sunset.png'));
+      expect(tapped, isTrue);
+    });
+
+    testWidgets('MessageBubble renders audio waveform bar and duration', (WidgetTester tester) async {
+      final msg = ChatMessage(
+        id: 'audio_msg_1',
+        senderId: '@twilight',
+        recipientId: 'current_user',
+        text: '',
+        timestamp: DateTime.now(),
+        type: MessageType.audio,
+        status: MessageStatus.read,
+        mediaAttachment: const MediaAttachment(
+          id: 'att_audio_1',
+          type: MessageType.audio,
+          fileName: 'voice.m4a',
+          mimeType: 'audio/m4a',
+          fileSizeBytes: 15000,
+          durationMs: 42000,
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MessageBubble(
+              message: msg,
+              isSent: false,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('0:42'), findsOneWidget);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    });
+
+    testWidgets('ChatInputField renders attachment button and staged preview banner', (WidgetTester tester) async {
+      final controller = TextEditingController();
+      bool attachPressed = false;
+      bool removePressed = false;
+
+      const pending = MediaAttachment(
+        id: 'pending_1',
+        type: MessageType.image,
+        fileName: 'selected_pic.jpg',
+        mimeType: 'image/jpeg',
+        fileSizeBytes: 120000,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatInputField(
+              controller: controller,
+              onSendPressed: () {},
+              onAttachmentPressed: () => attachPressed = true,
+              pendingAttachment: pending,
+              onRemovePendingAttachment: () => removePressed = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('selected_pic.jpg'), findsOneWidget);
+      expect(find.byIcon(Icons.attach_file_rounded), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      expect(removePressed, isTrue);
+
+      await tester.tap(find.byIcon(Icons.attach_file_rounded));
+      expect(attachPressed, isTrue);
+    });
+
+    testWidgets('ChatInputField renders voice recording mode with timer and cancel', (WidgetTester tester) async {
+      final controller = TextEditingController();
+      bool cancelPressed = false;
+      bool sendVoicePressed = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatInputField(
+              controller: controller,
+              onSendPressed: () {},
+              isRecording: true,
+              recordingDurationSeconds: 7,
+              onCancelRecording: () => cancelPressed = true,
+              onSendRecording: () => sendVoicePressed = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('00:07'), findsOneWidget);
+      expect(find.text('Recording voice...'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.delete_outline));
+      expect(cancelPressed, isTrue);
+
+      await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+      expect(sendVoicePressed, isTrue);
+    });
+
+    testWidgets('PrivateMediaViewerScreen renders fullscreen media and actions', (WidgetTester tester) async {
+      final msg = ChatMessage(
+        id: 'viewer_msg_1',
+        senderId: '@twilight',
+        recipientId: 'current_user',
+        text: '',
+        timestamp: DateTime.now(),
+        type: MessageType.image,
+        status: MessageStatus.read,
+        mediaAttachment: const MediaAttachment(
+          id: 'att_v1',
+          type: MessageType.image,
+          fileName: 'memory_lake.png',
+          mimeType: 'image/png',
+          fileSizeBytes: 500000,
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PrivateMediaViewerScreen(
+            message: msg,
+            storageService: DefaultMediaStorageService(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('memory_lake.png'), findsWidgets);
+      expect(find.text('Save to Device'), findsOneWidget);
+      expect(find.text('Security Audit'), findsOneWidget);
+
+      // Open Security Audit modal
+      await tester.tap(find.text('Security Audit'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cryptographic Audit Details'), findsOneWidget);
+      expect(find.text('AES-256-GCM (Authenticated)'), findsOneWidget);
+      expect(find.text('Close'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      // Open Save to Device confirmation
+      await tester.tap(find.text('Save to Device'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Export Privacy Notice'), findsOneWidget);
+      expect(find.text('Export Media'), findsOneWidget);
     });
   });
 }

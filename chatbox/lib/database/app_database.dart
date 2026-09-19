@@ -12,6 +12,7 @@ class Messages extends Table {
   DateTimeColumn get timestamp => dateTime()();
   TextColumn get type => text()();
   TextColumn get status => text()();
+  TextColumn get mediaData => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -52,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
       : super(e ?? driftDatabase(name: 'ourplace_chat'));
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -67,6 +68,9 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(userAccounts, userAccounts.recoveryKeyHash);
             await m.addColumn(userAccounts, userAccounts.recoveryKeySalt);
             await m.createTable(securityLogs);
+          }
+          if (from < 4) {
+            await m.addColumn(messages, messages.mediaData);
           }
         },
       );

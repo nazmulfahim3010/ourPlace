@@ -1,6 +1,6 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.6.0  
-> **Last Updated:** 2026-09-18  
+> **Document Version:** 3.7.0  
+> **Last Updated:** 2026-09-19  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
 
@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 14 — Push Notifications** |
-| **Current Status** | **COMPLETED** (Ready for Phase 15: Media Messaging) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications) |
-| **Next Phase** | **Phase 15 — Media Messaging** |
+| **Current Phase** | **Phase 15 — Media Messaging** |
+| **Current Status** | **COMPLETED** (Ready for Phase 16: Love Connection) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications), **Phase 15** (Media Messaging) |
+| **Next Phase** | **Phase 16 — Love Connection** |
 
 ---
 
@@ -61,11 +61,11 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
           │
           ▼
 [Phase 13: Real-Time]    ──►  [Phase 14: Push Notifs]   ──►  [Phase 15: Media]
-       (COMPLETED)                     (COMPLETED)                     (NEXT)
+       (COMPLETED)                     (COMPLETED)                     (COMPLETED)
                                                                           │
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
-       (PLANNED)                       (PLANNED)                     (PLANNED)
+       (PLANNED)                       (PLANNED)                       (NEXT)
 ```
 
 #### Detailed Phase Progress Breakdown
@@ -196,9 +196,16 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Deep-linking deferred through `AppLockScreen` verification when app is locked
   - [x] Comprehensive test suite (95/95 tests passing, 0 analyzer issues)
 
-- [ ] **Phase 15 — Media Messaging**
-  - [ ] Encrypted images, voice notes, and video attachments
-  - [ ] Ephemeral transfer and local storage
+- [x] **Phase 15 — Media Messaging**
+  - [x] Client-side binary AES-256-GCM media encryption with unique payload keys and X25519 key wrapping
+  - [x] Ephemeral cloud blob relay (`InMemoryMediaRelayService`) with 24-hour TTL pruning
+  - [x] Immediate delivery ACK purge protocol (cloud blob permanently deleted upon receipt/decryption)
+  - [x] Sandboxed private device storage (`MediaStorageService`) preventing auto-leaks to phone gallery
+  - [x] Drift SQLite database schema migration to v4 with nullable `mediaData` JSON column
+  - [x] Rich UI rendering: image thumbnails with E2EE badges, audio waveforms with duration & scrubbing, video preview cards
+  - [x] Dynamic attachment action sheet & voice recording bar with live duration timer in `ChatInputField`
+  - [x] Fullscreen `PrivateMediaViewerScreen` with interactive pinch-to-zoom, audio playback, E2EE audit dialog, and safe export confirmation
+  - [x] Comprehensive test suite (116/116 tests passing, 0 analyzer issues)
 
 - [ ] **Phase 16 — Love Connection**
   - [ ] Mutually accepted 1-to-1 couple connection (0 or 1 active connection)
@@ -825,19 +832,89 @@ Every contributor and agent interacting with this codebase **must** adhere to th
    - Test suite elevated from **76 to 85 tests (100% passing)** with **0 analyzer issues**.
 
 #### Files Created
-- `chatbox/lib/models/user_presence.dart`: Domain model for real-time user presence.
-- `chatbox/lib/services/realtime_service.dart`: RealtimeService contract and DefaultRealtimeService.
+- `chatbox/lib/models/user_presence.dart`: Domain model for real-time user pr---
+
+### 7.9. Phase 14 Completion Report — Push Notifications
+
+- **Current Phase:** Phase 14 — Push Notifications
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. **Push Wake-up Signal Domain Model (`PushWakeupSignal`):**
+   - Created `PushWakeupSignal` data ping structure with zero plaintext message data, zero sender identity leaks, and zero remote telemetry.
+2. **Notification Service Layer (`NotificationService` & `DefaultNotificationService`):**
+   - Privacy-preserving Discreet Mode by default ("ourPlace • New private message received").
+   - Deep-link route buffering when the application is locked behind passcode/biometrics.
+   - Interactive local test notification action.
+3. **Integration with Synchronization Pipeline (`SyncService`):**
+   - Inbound message decryption triggers `NotificationService.showLocalAlert`.
+4. **UI Settings & Controls:**
+   - Added Notifications & Privacy configuration card in `ProfileScreen`.
+5. **Automated Test Suite:**
+   - 95 / 95 tests passing with 0 analyzer issues.
+
+---
+
+### 7.10. Phase 15 Completion Report — Media Messaging
+
+- **Current Phase:** Phase 15 — Media Messaging
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. **Binary Cryptographic Primitives (`CryptoKeyUtils`):**
+   - Added `encryptAesGcmBytes` and `decryptAesGcmBytes` providing authenticated AEAD encryption for arbitrary binary byte buffers.
+   - Added `generateSymmetricKey`, `extractSecretKeyBytes`, and `secretKeyFromBytes` for raw 32-byte AES-256 key serialization.
+2. **Domain Models (`MediaAttachment` & `ChatMessage`):**
+   - Created `MediaAttachment` model with file metadata, Base64 key/nonce/mac attributes, formatted file sizes, and duration formatting.
+   - Extended `ChatMessage` with nullable `MediaAttachment? mediaAttachment`, updating constructors, JSON serialization, and `copyWith`.
+3. **Local SQLite Database Schema v4 Migration (`AppDatabase` & `LocalDatabase`):**
+   - Added `mediaData` nullable text column to `Messages` table in `app_database.dart`.
+   - Bumped `schemaVersion` from 3 to 4 with clean migration strategy.
+   - Rebuilt Drift code (`app_database.g.dart`) with zero errors.
+   - Updated `LocalDatabase` row-to-message and companion mapping routines.
+4. **Media Services Layer:**
+   - `MediaStorageService` & `DefaultMediaStorageService`: Device-local private sandbox isolation (`app_sandbox/media/`) preventing automatic leakage to system photo galleries.
+   - `MediaRelayService` & `InMemoryMediaRelayService`: Temporary cloud blob storage with 24-hour auto-purge TTL and immediate delivery ACK purge.
+   - `MediaEncryptionService` & `StandardMediaEncryptionService`: Client-side AES-256-GCM binary encryption and X25519 asymmetric key wrapping.
+5. **Sync & Repository Integration:**
+   - Updated `DefaultSyncService` to package media metadata inside E2EE envelopes, download ciphertext blobs from relay, decrypt into local sandbox, and trigger delivery ACK blob purge.
+   - Updated `ChatRepository` exposing `mediaRelayService`, `mediaStorageService`, `mediaEncryptionService`, and `sendMediaMessage`.
+6. **UI Components & Screens:**
+   - `MessageBubble`: Displays image thumbnails with E2EE badge, audio waveform bars with duration and playback button, and video cards.
+   - `ChatInputField`: Added dynamic reactive toggle between Send and Mic buttons using `ValueListenableBuilder`, attachment action sheet, staged media preview banner, and voice recording bar with live timer and cancel actions.
+   - `PrivateMediaViewerScreen`: Dedicated fullscreen dark media viewer with interactive pinch-to-zoom, audio player, cryptographic audit modal, and safe export confirmation.
+   - `ChatScreen`: Wired attachment bottom sheet, voice recording flow, and tap-to-view fullscreen navigation.
+7. **Automated Test Suite Expansion (21 New Tests):**
+   - `MediaAttachment` serialization and chat message embedding.
+   - `CryptoKeyUtils` binary AES-GCM encryption, decryption, and tamper resistance.
+   - `MediaEncryptionService` Alice/Bob flow and third-party denial.
+   - `InMemoryMediaRelayService` blob upload, download, delivery ACK purge, and TTL pruning.
+   - `MediaStorageService` private sandbox read/write/delete and sample generators.
+   - SQLite schema v4 persistence with media attachments.
+   - End-to-end media messaging pipeline (Alice -> Relay -> Bob -> ACK purge).
+   - `MessageBubble`, `ChatInputField`, and `PrivateMediaViewerScreen` widget tests.
+   - Test suite elevated from **95 to 116 tests (100% passing)** with **0 analyzer issues**.
+
+#### Files Created
+- `chatbox/lib/models/media_attachment.dart`: Domain model for encrypted media attachments.
+- `chatbox/lib/services/media_storage_service.dart`: Sandboxed local device storage service.
+- `chatbox/lib/services/media_relay_service.dart`: Ephemeral cloud media blob relay service.
+- `chatbox/lib/services/media_encryption_service.dart`: AES-256-GCM media encryption service.
+- `chatbox/lib/screens/media/private_media_viewer_screen.dart`: Fullscreen private media viewer.
 
 #### Files Modified
-- `chatbox/lib/models/ephemeral_relay_envelope.dart`: Added typing and presence signaling constructors.
-- `chatbox/lib/repositories/chat_repository.dart`: Exposed `realtimeService`.
-- `chatbox/lib/widgets/chat_header.dart`: Added typing & presence indicators.
-- `chatbox/lib/widgets/chat_input_field.dart`: Added `onChanged` callback.
-- `chatbox/lib/screens/chat_screen.dart`: Wired realtime subscriptions and lifecycle observer.
-- `chatbox/lib/screens/profile/profile_screen.dart`: Added Privacy & Presence toggle card.
-- `chatbox/lib/screens/home_screen.dart`: Passed `realtimeService` to `ProfileScreen`.
-- `chatbox/test/widget_test.dart`: Added 9 new unit & widget tests (85 tests total).
-- `docts.md`: Updated master documentation to Version 3.5.0.
+- `chatbox/lib/core/utils/crypto_key_utils.dart`: Added binary AES-GCM methods and symmetric key utilities.
+- `chatbox/lib/models/message.dart`: Added `MediaAttachment? mediaAttachment`.
+- `chatbox/lib/database/app_database.dart`: Added `mediaData` column and bumped schemaVersion to 4.
+- `chatbox/lib/database/app_database.g.dart`: Generated Drift schema v4 code.
+- `chatbox/lib/database/local_database.dart`: Connected mediaData column mapping.
+- `chatbox/lib/services/sync_service.dart`: Integrated media upload, download, decrypt, and ACK purge.
+- `chatbox/lib/repositories/chat_repository.dart`: Added media services and `sendMediaMessage`.
+- `chatbox/lib/widgets/message_bubble.dart`: Added media card rendering.
+- `chatbox/lib/widgets/chat_input_field.dart`: Added attachment button, staged preview, and voice recording bar.
+- `chatbox/lib/screens/chat_screen.dart`: Wired media attachments and viewer navigation.
+- `chatbox/test/widget_test.dart`: Added 21 new tests (116 tests total).
+- `docts.md`: Updated master documentation to Version 3.7.0.
 
 ---
 
@@ -845,7 +922,7 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ### Current Automated Test Suite Status
 - **Test Command:** `flutter test`
-- **Results:** `85 / 85 tests passing` (100% pass rate)
+- **Results:** `116 / 116 tests passing` (100% pass rate)
 - **Analyzer Check:** `flutter analyze` ➔ `No issues found!`
 
 ### Comprehensive Test Coverage Breakdown
@@ -880,41 +957,52 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 | **Phase 13: RealtimeService Typing Indicators** | 2 | Alice sends typing ➔ Bob receives event, 3s inactivity auto-expiry, instant send cancellation, typing privacy toggle blocking emission |
 | **Phase 13: RealtimeService Presence & Heartbeat** | 2 | Alice online presence ➔ Bob receives update, app pause transition to offline, stealth mode presence masking |
 | **Phase 13: UI Widget Tests** | 3 | `ChatHeader` rendering typing and online states, `ChatInputField` firing `onChanged`, `ProfileScreen` rendering Privacy & Presence card with toggles |
-| **Total Test Suite** | **85** | **100% Passing — Zero Analyzer Issues** |
+| **Phase 14: NotificationSettings & PushWakeupSignal** | 3 | Default Discreet Mode, copyWith & serialization, zero-leak payload validation |
+| **Phase 14: DefaultNotificationService** | 5 | Discreet masking, cleartext mode, notifications disabled suppression, silent wakeup sync triggering, deep-link route buffering |
+| **Phase 14: SyncService & Inbound Notification Integration** | 1 | Decrypted inbound message firing local alert |
+| **Phase 14: ProfileScreen Notifications UI** | 1 | Render notifications card, switches, and test notification |
+| **Phase 15: MediaAttachment Domain Model** | 3 | Serialization fidelity, JSON string roundtrip, ChatMessage media attachment embedding |
+| **Phase 15: CryptoKeyUtils Binary AES-256-GCM** | 4 | Binary encrypt/decrypt roundtrip, ciphertext tamper rejection, MAC tag corruption rejection, raw key extract/restore roundtrip |
+| **Phase 15: MediaEncryptionService** | 2 | Alice encrypts binary media for Bob with X25519 key wrapping, unauthorized Charlie decryption rejection |
+| **Phase 15: InMemoryMediaRelayService** | 3 | Upload/download blob transfer, delivery ACK purge (zero blob retention), 24h TTL pruning |
+| **Phase 15: MediaStorageService Sandbox** | 2 | Local sandbox save/read/delete lifecycle, sample media generators |
+| **Phase 15: LocalDatabase Schema v4** | 1 | Save and retrieve ChatMessage with MediaAttachment in SQLite |
+| **Phase 15: End-to-End Media Messaging Integration** | 1 | Alice sends photo -> relay upload -> Bob syncs, downloads, decrypts, and relay blob is purged |
+| **Phase 15: Media UI Widget Tests** | 5 | `MessageBubble` image card with E2EE badge, `MessageBubble` audio waveform bar, `ChatInputField` attachment button & staged preview, `ChatInputField` voice recording mode, `PrivateMediaViewerScreen` fullscreen viewer & actions |
+| **Total Test Suite** | **116** | **100% Passing — Zero Analyzer Issues** |
 
 ---
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Phase 14: Push Notifications (COMPLETED ✅ — 2026-09-18)
-- Zero-knowledge `PushWakeupSignal` data pings implemented.
-- `DefaultNotificationService` with Discreet Mode masking ("ourPlace • New private message received").
-- Full integration with `SyncService` inbound decryption pipeline.
-- `ProfileScreen` Notifications & Privacy settings card with interactive test alert button.
-- 95/95 automated unit and widget tests passing with 0 analyzer issues.
+### Phase 15: Media Messaging (COMPLETED ✅ — 2026-09-19)
+- Client-side AES-256-GCM binary media encryption with X25519 key wrapping.
+- Ephemeral cloud blob relay with 24-hour TTL and immediate delivery ACK purge (zero cloud media retention).
+- Private sandboxed device storage (`app_sandbox/media/`) preventing automatic leakage to system photo galleries.
+- SQLite Drift schema upgraded to v4.
+- In-chat image previews, waveform audio notes, and fullscreen `PrivateMediaViewerScreen`.
+- 116/116 automated unit and widget tests passing with 0 analyzer issues.
 
 ---
 
-### Next Phase: Phase 15 — Media Messaging
+### Next Phase: Phase 16 — Love Connection
 
-Phase 15 adds end-to-end encrypted media messaging (images, voice notes, and video clips) following the same strict privacy philosophy: the server never sees plaintext files, and media copies are never permanently retained in cloud storage.
+Phase 16 implements the core couple subsystem of `ourPlace`: the mutually accepted 1-to-1 **Love Connection** (0 or 1 active connection).
 
-#### Key Objectives for Phase 15:
-1. **Client-Side Media Encryption:**
-   - Encrypt image, voice note, and video files locally before upload using ephemeral AES-256-GCM symmetric keys.
-   - Encrypt the symmetric media key with recipient's public identity key (X25519) and embed it inside the E2EE message envelope.
-2. **Ephemeral Media Relay Transfer:**
-   - Upload encrypted binary blobs to temporary cloud storage (Firebase Storage / S3) with short-lived access URLs.
-   - Enforce 24-hour auto-deletion TTL rules on cloud storage buckets.
-3. **Local Decryption & Sandbox Storage:**
-   - Recipient downloads ciphertext blob, decrypts it using the embedded media key, and saves it into the device's secure local sandbox.
-   - Purge cloud media immediately following successful delivery acknowledgement (ACK).
-4. **Audio Messaging & Voice Waveform:**
-   - Record and playback compressed AAC/Opus audio with visual waveform scrubbers.
-5. **Private Media Gallery / In-Chat Media Viewer:**
-   - Fullscreen zoomable photo/video viewer with secure temporary caching that prevents leakage into public device photo albums unless explicitly exported.
-
-
-
-
+#### Key Objectives for Phase 16:
+1. **1-to-1 Couple Connection Invariant:**
+   - Enforce strictly 0 or 1 active Love Connection per account.
+   - Prevent initiating or accepting a second Love Connection while an active connection exists.
+2. **Love Connection Invitation Protocol:**
+   - Partner discovery via anonymous username search (no email or phone lookup).
+   - Ephemeral connection request envelope via relay.
+   - Mutual acceptance handshake: both users must agree to form the Love Connection.
+   - Ability to decline or cancel pending requests.
+3. **Connection State Management:**
+   - Connection statuses: `none`, `request_sent`, `request_received`, `connected`, `disconnected`.
+   - Persist Love Connection state locally in Drift SQLite.
+4. **Profile & UI Controls:**
+   - Prominent Love Connection card in `ProfileScreen` and top pinned section in `InboxScreen`.
+   - Privacy toggle: Hide/show Love Connection presence on profile.
+   - Graceful disconnection / unlink flow with clear local retention confirmation.
 

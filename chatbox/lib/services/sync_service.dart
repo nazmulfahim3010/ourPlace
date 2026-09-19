@@ -1,10 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/ephemeral_relay_envelope.dart';
+import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/media_encryption_service.dart';
+import 'package:chatbox/services/media_relay_service.dart';
+import 'package:chatbox/services/media_storage_service.dart';
 import 'package:chatbox/services/notification_service.dart';
 
 /// Abstract service contract for message synchronization and offline queueing (Phase 12)
@@ -51,6 +56,9 @@ class DefaultSyncService implements SyncService {
   final ChatService _chatService;
   final EncryptionService? _encryptionService;
   final NotificationService? _notificationService;
+  final MediaRelayService? _mediaRelayService;
+  final MediaStorageService? _mediaStorageService;
+  final MediaEncryptionService? _mediaEncryptionService;
 
   bool _isOnline = true;
 
@@ -59,10 +67,20 @@ class DefaultSyncService implements SyncService {
     ChatService? chatService,
     EncryptionService? encryptionService,
     NotificationService? notificationService,
+    MediaRelayService? mediaRelayService,
+    MediaStorageService? mediaStorageService,
+    MediaEncryptionService? mediaEncryptionService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
         _encryptionService = encryptionService,
-        _notificationService = notificationService;
+        _notificationService = notificationService,
+        _mediaRelayService = mediaRelayService,
+        _mediaStorageService = mediaStorageService,
+        _mediaEncryptionService = mediaEncryptionService;
+
+  MediaEncryptionService? get mediaEncryptionService => _mediaEncryptionService;
+  MediaRelayService? get mediaRelayService => _mediaRelayService;
+  MediaStorageService? get mediaStorageService => _mediaStorageService;
 
   @override
   bool get isOnline => _isOnline;
@@ -103,7 +121,16 @@ class DefaultSyncService implements SyncService {
             await _database.getAccountByUsername(message.recipientId);
         final recipientKey = recipientAccount?.publicIdentityKey;
         if (recipientKey != null && recipientKey.isNotEmpty) {
-          final ciphertext = await enc.encryptPayload(message.text, recipientKey);
+          final String payload;
+          if (message.mediaAttachment != null) {
+            payload = jsonEncode({
+              'text': message.text,
+              'mediaAttachment': message.mediaAttachment!.toJson(),
+            });
+          } else {
+            payload = message.text;
+          }
+          final ciphertext = await enc.encryptPayload(payload, recipientKey);
           outbound = message.copyWith(text: ciphertext);
         }
       }
@@ -164,7 +191,42 @@ class DefaultSyncService implements SyncService {
               } catch (_) {}
             }
             final cleartext = await enc.decryptPayload(raw.text, senderKey);
-            decryptedMessage = raw.copyWith(text: cleartext);
+            try {
+              final decoded = jsonDecode(cleartext);
+              if (decoded is Map<String, dynamic> && decoded.containsKey('mediaAttachment')) {
+                final mediaMap = decoded['mediaAttachment'] as Map<String, dynamic>;
+                var att = MediaAttachment.fromJson(mediaMap);
+                final text = decoded['text'] as String? ?? '';
+
+                // If media blob is in relay, download and purge from cloud
+                final relay = _mediaRelayService;
+                final storage = _mediaStorageService;
+                if (att.remoteUrl != null && relay != null) {
+                  try {
+                    final blob = await relay.downloadEncryptedBlob(att.remoteUrl!);
+                    if (storage != null) {
+                      final localPath = await storage.saveToSandbox(
+                        fileName: att.fileName,
+                        bytes: blob,
+                        type: att.type,
+                      );
+                      att = att.copyWith(localPath: localPath);
+                    }
+                    await relay.purgeEncryptedBlob(att.remoteUrl!);
+                  } catch (_) {}
+                }
+
+                decryptedMessage = raw.copyWith(
+                  text: text,
+                  type: att.type,
+                  mediaAttachment: att,
+                );
+              } else {
+                decryptedMessage = raw.copyWith(text: cleartext);
+              }
+            } catch (_) {
+              decryptedMessage = raw.copyWith(text: cleartext);
+            }
           } catch (_) {
             // Decryption fallback
           }
@@ -177,7 +239,13 @@ class DefaultSyncService implements SyncService {
         // Notify user locally using privacy-preserving settings (zero leak)
         await _notificationService?.showLocalAlert(
           title: decryptedMessage.senderId,
-          body: decryptedMessage.text,
+          body: decryptedMessage.mediaAttachment != null
+              ? (decryptedMessage.mediaAttachment!.isImage
+                  ? '📷 Photo'
+                  : decryptedMessage.mediaAttachment!.isAudio
+                      ? '🎙️ Voice note'
+                      : '🎥 Video')
+              : decryptedMessage.text,
           conversationId: decryptedMessage.senderId,
         );
 
