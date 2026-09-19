@@ -211,21 +211,29 @@ class _InboxScreenState extends State<InboxScreen> {
                       color: Colors.white,
                       backgroundColor: const Color(0xFF383838),
                       onRefresh: _loadConversations,
-                      child: _filteredConversations.isEmpty
+                      child: _searchQuery.isNotEmpty && _filteredConversations.isEmpty
                           ? _buildEmptyState()
                           : ListView(
                               padding: const EdgeInsets.only(bottom: 24),
                               children: [
-                                /// Love Connection Section
-                                if (loveConversations.isNotEmpty) ...[
-                                  _buildSectionHeader('❤️ LOVE CONNECTION', hasAccent: true),
-                                  ...loveConversations.map(
-                                    (conv) => ConversationTile(
-                                      conversation: conv,
-                                      currentUserId: widget.currentUser?.id ?? 'current_user',
-                                      onTap: () => _openConversation(conv),
-                                    ),
+                                /// Love Connection Section (Always pinned at top when not searching)
+                                if (_searchQuery.isEmpty) ...[
+                                  _buildSectionHeader(
+                                    loveConversations.isNotEmpty
+                                        ? '❤️ LOVE CONNECTION'
+                                        : '❤️ LOVE CONNECTION (0/1)',
+                                    hasAccent: true,
                                   ),
+                                  if (loveConversations.isNotEmpty)
+                                    ...loveConversations.map(
+                                      (conv) => ConversationTile(
+                                        conversation: conv,
+                                        currentUserId: widget.currentUser?.id ?? 'current_user',
+                                        onTap: () => _openConversation(conv),
+                                      ),
+                                    )
+                                  else
+                                    _buildEmptyLoveCard(),
                                   const SizedBox(height: 14),
                                 ],
 
@@ -241,6 +249,9 @@ class _InboxScreenState extends State<InboxScreen> {
                                       onTap: () => _openConversation(conv),
                                     ),
                                   ),
+                                ] else if (_searchQuery.isEmpty && loveConversations.isEmpty) ...[
+                                  const SizedBox(height: 32),
+                                  _buildNoConversationsPlaceholder(),
                                 ],
                               ],
                             ),
@@ -414,6 +425,107 @@ class _InboxScreenState extends State<InboxScreen> {
                   ? 'Try searching with a different username or keyword.'
                   : 'Tap the + button below to start a private conversation.',
               style: const TextStyle(color: Colors.white54, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyLoveCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFFF4D6D).withValues(alpha: 0.15),
+            const Color(0xFF383838),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFFF6B81).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF4D6D).withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.favorite,
+              color: Color(0xFFFF6B81),
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Connect your Love Partner (0/1)',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'Establish a private couple connection for your shared world.',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: widget.onOpenProfile,
+            style: TextButton.styleFrom(
+              backgroundColor: const Color(0xFFFF4D6D),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: const Text(
+              'Connect',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoConversationsPlaceholder() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32.0),
+        child: Column(
+          children: const [
+            Icon(Icons.chat_bubble_outline, color: Colors.white30, size: 40),
+            SizedBox(height: 12),
+            Text(
+              'No individual chats yet',
+              style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Tap the + button below to start a private conversation.',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
               textAlign: TextAlign.center,
             ),
           ],

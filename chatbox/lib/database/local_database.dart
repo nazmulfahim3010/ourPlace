@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:chatbox/database/app_database.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
+import 'package:chatbox/models/love_connection.dart';
 import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/models/security_log.dart';
@@ -469,6 +470,111 @@ class LocalDatabase {
   /// Clear local security logs
   Future<void> clearSecurityLogs() async {
     await db.delete(db.securityLogs).go();
+  }
+
+  // ==================== LOVE CONNECTION (PHASE 16) ====================
+
+  /// Convert a Drift database DbLoveConnection row to domain LoveConnection
+  LoveConnection _rowToLoveConnection(DbLoveConnection row) {
+    return LoveConnection(
+      id: row.id,
+      userId: row.userId,
+      partnerUsername: row.partnerUsername,
+      partnerUserId: row.partnerUserId,
+      partnerPublicKey: row.partnerPublicKey,
+      status: LoveConnectionStatusExtension.fromDbString(row.status),
+      createdAt: row.createdAt,
+      connectedAt: row.connectedAt,
+      disconnectedAt: row.disconnectedAt,
+      isVisibleOnProfile: row.isVisibleOnProfile,
+    );
+  }
+
+  /// Convert domain LoveConnection to Drift LoveConnectionsCompanion for insert/update
+  LoveConnectionsCompanion _loveConnectionToCompanion(LoveConnection conn) {
+    return LoveConnectionsCompanion(
+      id: Value(conn.id),
+      userId: Value(conn.userId),
+      partnerUsername: Value(conn.partnerUsername),
+      partnerUserId: Value(conn.partnerUserId),
+      partnerPublicKey: Value(conn.partnerPublicKey),
+      status: Value(conn.status.toDbString()),
+      createdAt: Value(conn.createdAt),
+      connectedAt: Value(conn.connectedAt),
+      disconnectedAt: Value(conn.disconnectedAt),
+      isVisibleOnProfile: Value(conn.isVisibleOnProfile),
+    );
+  }
+
+  /// Save or update a Love Connection record
+  Future<void> saveLoveConnection(LoveConnection connection) async {
+    await db.into(db.loveConnections).insertOnConflictUpdate(
+          _loveConnectionToCompanion(connection),
+        );
+  }
+
+  /// Retrieve the active Love Connection for a user (or the single device connection)
+  Future<LoveConnection?> getLoveConnection({String? userId}) async {
+    final query = db.select(db.loveConnections);
+    if (userId != null && userId.isNotEmpty) {
+      query.where((tbl) => tbl.userId.equals(userId));
+    }
+    query.limit(1);
+    final rows = await query.get();
+    if (rows.isEmpty) return null;
+    return _rowToLoveConnection(rows.first);
+  }
+
+  /// Reactive stream of the active Love Connection
+  Stream<LoveConnection?> watchLoveConnection({String? userId}) {
+    final query = db.select(db.loveConnections);
+    if (userId != null && userId.isNotEmpty) {
+      query.where((tbl) => tbl.userId.equals(userId));
+    }
+    query.limit(1);
+    return query.watch().map((rows) {
+      if (rows.isEmpty) return null;
+      return _rowToLoveConnection(rows.first);
+    });
+  }
+
+  /// Update Love Connection status and respective timestamp
+  Future<void> updateLoveConnectionStatus(
+    String id,
+    LoveConnectionStatus status,
+  ) async {
+    final now = DateTime.now();
+    await (db.update(db.loveConnections)..where((tbl) => tbl.id.equals(id)))
+        .write(
+      LoveConnectionsCompanion(
+        status: Value(status.toDbString()),
+        connectedAt: status == LoveConnectionStatus.connected
+            ? Value(now)
+            : const Value.absent(),
+        disconnectedAt: status == LoveConnectionStatus.disconnected
+            ? Value(now)
+            : const Value.absent(),
+      ),
+    );
+  }
+
+  /// Toggle visibility of Love Connection in Profile
+  Future<void> updateLoveConnectionVisibility(
+    String id,
+    bool isVisible,
+  ) async {
+    await (db.update(db.loveConnections)..where((tbl) => tbl.id.equals(id)))
+        .write(
+      LoveConnectionsCompanion(
+        isVisibleOnProfile: Value(isVisible),
+      ),
+    );
+  }
+
+  /// Permanently remove a Love Connection record
+  Future<void> deleteLoveConnection(String id) async {
+    await (db.delete(db.loveConnections)..where((tbl) => tbl.id.equals(id)))
+        .go();
   }
 
   /// Check if database is initialized

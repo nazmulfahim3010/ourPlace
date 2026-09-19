@@ -47,13 +47,32 @@ class SecurityLogs extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Messages, UserAccounts, SecurityLogs])
+/// Table schema for storing 1-to-1 Love Connection state locally (Phase 16)
+@DataClassName('DbLoveConnection')
+class LoveConnections extends Table {
+  TextColumn get id => text()();
+  TextColumn get userId => text()();
+  TextColumn get partnerUsername => text()();
+  TextColumn get partnerUserId => text().nullable()();
+  TextColumn get partnerPublicKey => text().nullable()();
+  TextColumn get status => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get connectedAt => dateTime().nullable()();
+  DateTimeColumn get disconnectedAt => dateTime().nullable()();
+  BoolColumn get isVisibleOnProfile =>
+      boolean().withDefault(const Constant(true))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [Messages, UserAccounts, SecurityLogs, LoveConnections])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? e])
       : super(e ?? driftDatabase(name: 'ourplace_chat'));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -71,6 +90,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 4) {
             await m.addColumn(messages, messages.mediaData);
+          }
+          if (from < 5) {
+            await m.createTable(loveConnections);
           }
         },
       );

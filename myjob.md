@@ -10,8 +10,9 @@ This guide contains all external, manual tasks you need to complete for the proj
 - [x] **Phase 12: Message Synchronization (COMPLETED ✅ — 2026-09-18, Zero Manual Action Needed; Pure Client-Side E2EE Sync)**
 - [x] **Phase 13: Real-Time Features (COMPLETED ✅ — 2026-09-18, Zero Manual Action Needed; Ephemeral Debounced Signals & Stealth Controls)**
 - [x] **Phase 14: Push Notifications (COMPLETED ✅ — 2026-09-18, Zero Manual Action Needed; Zero-Knowledge Silent Wakeup & Discreet Alerts)**
-- [ ] **Phase 15: Media Messaging (Firebase Storage / S3 Setup - Optional)**
-- [ ] **Phase 16–18: Physical Two-Device Testing & Production Release**
+- [x] **Phase 15: Media Messaging (COMPLETED ✅ — 2026-09-19, Zero Manual Action Needed; In-Memory Sandbox & Ephemeral Cloud Blobs)**
+- [x] **Phase 16: Love Connection (COMPLETED ✅ — 2026-09-19, Zero Manual Action Needed; Mutually Accepted 1-to-1 Ephemeral Handshake)**
+- [ ] **Phase 17–18: Physical Two-Device Testing & Production Release**
 
 ---
 

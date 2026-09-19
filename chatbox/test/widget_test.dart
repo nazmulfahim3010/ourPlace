@@ -49,6 +49,8 @@ import 'package:chatbox/services/media_storage_service.dart';
 import 'package:chatbox/services/media_relay_service.dart';
 import 'package:chatbox/services/media_encryption_service.dart';
 import 'package:chatbox/screens/media/private_media_viewer_screen.dart';
+import 'package:chatbox/models/love_connection.dart';
+import 'package:chatbox/services/love_connection_service.dart';
 import 'package:chatbox/main.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
@@ -3310,6 +3312,689 @@ void main() {
       expect(find.text('Export Media'), findsOneWidget);
     });
   });
+
+  group('Phase 16 — Love Connection Domain Model & Signaling Envelopes', () {
+    test('LoveConnection model handles status flags, JSON serialization, and copyWith', () {
+      final now = DateTime.now();
+      final conn = LoveConnection(
+        id: 'conn_alice_bob',
+        userId: 'user_alice',
+        partnerUserId: 'user_bob',
+        partnerUsername: '@bob',
+        status: LoveConnectionStatus.requestSent,
+        connectedAt: null,
+        createdAt: now,
+        isVisibleOnProfile: true,
+      );
+
+      expect(conn.isPendingSent, isTrue);
+      expect(conn.isPendingReceived, isFalse);
+      expect(conn.isPending, isTrue);
+      expect(conn.isConnected, isFalse);
+
+      final json = conn.toJson();
+      expect(json['id'], 'conn_alice_bob');
+      expect(json['status'], 'request_sent');
+      expect(json['partnerUsername'], '@bob');
+
+      final fromJson = LoveConnection.fromJson(json);
+      expect(fromJson.id, conn.id);
+      expect(fromJson.status, LoveConnectionStatus.requestSent);
+      expect(fromJson.partnerUsername, '@bob');
+
+      final connected = conn.copyWith(
+        status: LoveConnectionStatus.connected,
+        connectedAt: now,
+      );
+      expect(connected.isConnected, isTrue);
+      expect(connected.isPending, isFalse);
+
+      final received = LoveConnection(
+        id: 'conn_rec',
+        userId: 'user_bob',
+        partnerUserId: 'user_alice',
+        partnerUsername: '@alice',
+        status: LoveConnectionStatus.requestReceived,
+        createdAt: now,
+      );
+      expect(received.isPendingReceived, isTrue);
+      expect(received.status, LoveConnectionStatus.requestReceived);
+    });
+
+    test('EphemeralRelayEnvelope love signaling envelopes and isLoveSignal helper', () {
+      final req = EphemeralRelayEnvelope.loveRequest(
+        senderId: '@alice',
+        recipientId: '@bob',
+      );
+      expect(req.isLoveSignal, isTrue);
+      expect(req.envelopeType, 'love_request');
+
+      final accept = EphemeralRelayEnvelope.loveAccept(
+        senderId: '@bob',
+        recipientId: '@alice',
+      );
+      expect(accept.isLoveSignal, isTrue);
+      expect(accept.envelopeType, 'love_accept');
+
+      final decline = EphemeralRelayEnvelope.loveDecline(
+        senderId: '@bob',
+        recipientId: '@alice',
+      );
+      expect(decline.isLoveSignal, isTrue);
+      expect(decline.envelopeType, 'love_decline');
+
+      final cancel = EphemeralRelayEnvelope.loveCancel(
+        senderId: '@alice',
+        recipientId: '@bob',
+      );
+      expect(cancel.isLoveSignal, isTrue);
+      expect(cancel.envelopeType, 'love_cancel');
+
+      final unlink = EphemeralRelayEnvelope.loveUnlink(
+        senderId: '@alice',
+        recipientId: '@bob',
+      );
+      expect(unlink.isLoveSignal, isTrue);
+      expect(unlink.envelopeType, 'love_unlink');
+
+      final regular = EphemeralRelayEnvelope(
+        id: 'msg_regular',
+        senderId: '@alice',
+        recipientId: '@bob',
+        ciphertextPayload: 'secret',
+        timestamp: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      );
+      expect(regular.isLoveSignal, isFalse);
+    });
+  });
+
+  group('Phase 16 — Drift SQLite v5 LoveConnections Table Migration & LocalDatabase', () {
+    late AppDatabase inMemoryDb;
+    late LocalDatabase localDb;
+
+    setUp(() {
+      inMemoryDb = AppDatabase(NativeDatabase.memory());
+      localDb = LocalDatabase(database: inMemoryDb);
+    });
+
+    tearDown(() async {
+      await inMemoryDb.close();
+    });
+
+    test('Drift v5 schema creates LoveConnections table and persists connection', () async {
+      final conn = LoveConnection(
+        id: 'conn_test_01',
+        userId: 'user_1',
+        partnerUserId: 'user_2',
+        partnerUsername: '@sweetheart',
+        status: LoveConnectionStatus.requestSent,
+        createdAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      );
+
+      await localDb.saveLoveConnection(conn);
+
+      final fetched = await localDb.getLoveConnection(userId: 'user_1');
+      expect(fetched, isNotNull);
+      expect(fetched!.id, 'conn_test_01');
+      expect(fetched.partnerUsername, '@sweetheart');
+      expect(fetched.status, LoveConnectionStatus.requestSent);
+      expect(fetched.isVisibleOnProfile, isTrue);
+    });
+
+    test('watchLoveConnection emits updates reactively', () async {
+      final conn = LoveConnection(
+        id: 'conn_test_02',
+        userId: 'user_1',
+        partnerUserId: 'user_2',
+        partnerUsername: '@sweetheart',
+        status: LoveConnectionStatus.requestSent,
+        createdAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      );
+
+      await localDb.saveLoveConnection(conn);
+      final stream = localDb.watchLoveConnection(userId: 'user_1');
+      final expectation = expectLater(
+        stream,
+        emitsInOrder([
+          predicate<LoveConnection?>((c) => c != null && c.status == LoveConnectionStatus.requestSent),
+          predicate<LoveConnection?>((c) => c != null && c.status == LoveConnectionStatus.connected),
+        ]),
+      );
+
+      await localDb.updateLoveConnectionStatus('conn_test_02', LoveConnectionStatus.connected);
+      await expectation;
+    });
+
+    test('updateLoveConnectionVisibility and deleteLoveConnection operate cleanly', () async {
+      final conn = LoveConnection(
+        id: 'conn_test_03',
+        userId: 'user_1',
+        partnerUserId: 'user_2',
+        partnerUsername: '@sweetheart',
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      );
+
+      await localDb.saveLoveConnection(conn);
+      await localDb.updateLoveConnectionVisibility('conn_test_03', false);
+
+      var fetched = await localDb.getLoveConnection(userId: 'user_1');
+      expect(fetched!.isVisibleOnProfile, isFalse);
+
+      await localDb.deleteLoveConnection('conn_test_03');
+      fetched = await localDb.getLoveConnection(userId: 'user_1');
+      expect(fetched, isNull);
+    });
+  });
+
+  group('Phase 16 — LoveConnectionService Mutual Handshake, 1-to-1 Invariant & Chat Preservation', () {
+    late AppDatabase aliceDb;
+    late LocalDatabase aliceLocalDb;
+    late AppDatabase bobDb;
+    late LocalDatabase bobLocalDb;
+    late RelayService sharedRelay;
+    late MockConversationRepository aliceConvRepo;
+    late MockConversationRepository bobConvRepo;
+    late DefaultLoveConnectionService aliceLoveService;
+    late DefaultLoveConnectionService bobLoveService;
+
+    setUp(() {
+      aliceDb = AppDatabase(NativeDatabase.memory());
+      aliceLocalDb = LocalDatabase(database: aliceDb);
+      bobDb = AppDatabase(NativeDatabase.memory());
+      bobLocalDb = LocalDatabase(database: bobDb);
+
+      sharedRelay = InMemoryFirebaseRelayService.isolated();
+      aliceConvRepo = MockConversationRepository([]);
+      bobConvRepo = MockConversationRepository([]);
+
+      aliceLoveService = DefaultLoveConnectionService(
+        database: aliceLocalDb,
+        relayService: sharedRelay,
+        conversationRepository: aliceConvRepo,
+      );
+
+      bobLoveService = DefaultLoveConnectionService(
+        database: bobLocalDb,
+        relayService: sharedRelay,
+        conversationRepository: bobConvRepo,
+      );
+    });
+
+    tearDown(() async {
+      await aliceDb.close();
+      await bobDb.close();
+    });
+
+    test('Self connection is strictly rejected with AppException', () async {
+      expect(
+        () => aliceLoveService.sendConnectionRequest(
+          partnerUsername: '@alice',
+          currentUserId: 'alice_id',
+          currentUsername: '@alice',
+        ),
+        throwsA(isA<AppException>().having(
+          (e) => e.message,
+          'message',
+          contains('cannot form a Love Connection with yourself'),
+        )),
+      );
+    });
+
+    test('Alice sends request to Bob -> Bob accepts -> Both become connected', () async {
+      // 1. Alice sends request
+      final aliceConn = await aliceLoveService.sendConnectionRequest(
+        partnerUsername: '@bob',
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+      expect(aliceConn.status, LoveConnectionStatus.requestSent);
+      expect(aliceConn.partnerUsername, '@bob');
+
+      // 2. Bob fetches envelopes from relay and processes
+      final bobEnvelopes = await sharedRelay.fetchPendingMessages('@bob');
+      expect(bobEnvelopes.length, 1);
+      final reqEnvelope = bobEnvelopes.first;
+      expect(reqEnvelope.envelopeType, 'love_request');
+
+      await bobLoveService.processInboundLoveEnvelope(
+        reqEnvelope,
+        currentUserId: 'bob_id',
+        currentUsername: '@bob',
+      );
+      final bobConnReceived = await bobLoveService.getLoveConnection(currentUserId: 'bob_id');
+      expect(bobConnReceived, isNotNull);
+      expect(bobConnReceived!.status, LoveConnectionStatus.requestReceived);
+      expect(bobConnReceived.partnerUsername, '@alice');
+
+      // 3. Bob accepts request
+      final bobConnAccepted = await bobLoveService.acceptConnectionRequest(
+        partnerUsername: '@alice',
+        currentUserId: 'bob_id',
+        currentUsername: '@bob',
+      );
+      expect(bobConnAccepted.status, LoveConnectionStatus.connected);
+      expect(bobConnAccepted.isConnected, isTrue);
+
+      // 4. Alice receives accept envelope
+      final aliceEnvelopes = await sharedRelay.fetchPendingMessages('@alice');
+      expect(aliceEnvelopes.length, 1);
+      final acceptEnvelope = aliceEnvelopes.first;
+      expect(acceptEnvelope.envelopeType, 'love_accept');
+
+      await aliceLoveService.processInboundLoveEnvelope(
+        acceptEnvelope,
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+      final aliceConnFinal = await aliceLoveService.getLoveConnection(currentUserId: 'alice_id');
+      expect(aliceConnFinal!.status, LoveConnectionStatus.connected);
+      expect(aliceConnFinal.isConnected, isTrue);
+
+      // 5. 1-to-1 Invariant: Alice cannot connect to Charlie while already connected
+      expect(
+        () => aliceLoveService.sendConnectionRequest(
+          partnerUsername: '@charlie',
+          currentUserId: 'alice_id',
+          currentUsername: '@alice',
+        ),
+        throwsA(isA<AppException>().having(
+          (e) => e.message,
+          'message',
+          contains('active Love Connection'),
+        )),
+      );
+    });
+
+    test('1-to-1 Invariant: Cannot send second request while one is pending', () async {
+      await aliceLoveService.sendConnectionRequest(
+        partnerUsername: '@bob',
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+
+      expect(
+        () => aliceLoveService.sendConnectionRequest(
+          partnerUsername: '@charlie',
+          currentUserId: 'alice_id',
+          currentUsername: '@alice',
+        ),
+        throwsA(isA<AppException>().having(
+          (e) => e.message,
+          'message',
+          contains('pending Love Connection request'),
+        )),
+      );
+    });
+
+    test('Alice cancels pending request -> Both sides reset to none', () async {
+      await aliceLoveService.sendConnectionRequest(
+        partnerUsername: '@bob',
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+
+      // Bob receives request
+      final bobEnvelopes = await sharedRelay.fetchPendingMessages('@bob');
+      await bobLoveService.processInboundLoveEnvelope(
+        bobEnvelopes.first,
+        currentUserId: 'bob_id',
+        currentUsername: '@bob',
+      );
+
+      // Alice cancels
+      await aliceLoveService.cancelConnectionRequest(
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+      final aliceStatus = await aliceLoveService.getLoveConnection(currentUserId: 'alice_id');
+      expect(aliceStatus, isNull);
+
+      // Bob receives cancel envelope
+      final bobEnvelopes2 = await sharedRelay.fetchPendingMessages('@bob');
+      final cancelEnvelope = bobEnvelopes2.firstWhere((e) => e.envelopeType == 'love_cancel');
+      await bobLoveService.processInboundLoveEnvelope(
+        cancelEnvelope,
+        currentUserId: 'bob_id',
+        currentUsername: '@bob',
+      );
+      final bobStatus = await bobLoveService.getLoveConnection(currentUserId: 'bob_id');
+      expect(bobStatus, isNull);
+    });
+
+    test('Bob declines Alice request -> Both sides reset to none', () async {
+      await aliceLoveService.sendConnectionRequest(
+        partnerUsername: '@bob',
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+
+      // Bob receives request
+      final bobEnvelopes = await sharedRelay.fetchPendingMessages('@bob');
+      await bobLoveService.processInboundLoveEnvelope(
+        bobEnvelopes.first,
+        currentUserId: 'bob_id',
+        currentUsername: '@bob',
+      );
+
+      // Bob declines
+      await bobLoveService.declineConnectionRequest(
+        partnerUsername: '@alice',
+        currentUserId: 'bob_id',
+        currentUsername: '@bob',
+      );
+      final bobStatus = await bobLoveService.getLoveConnection(currentUserId: 'bob_id');
+      expect(bobStatus, isNull);
+
+      // Alice receives decline envelope
+      final aliceEnvelopes = await sharedRelay.fetchPendingMessages('@alice');
+      final declineEnvelope = aliceEnvelopes.firstWhere((e) => e.envelopeType == 'love_decline');
+      await aliceLoveService.processInboundLoveEnvelope(
+        declineEnvelope,
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+      final aliceStatus = await aliceLoveService.getLoveConnection(currentUserId: 'alice_id');
+      expect(aliceStatus, isNull);
+    });
+
+    test('Unlinking / disconnecting preserves local device chat messages', () async {
+      // Connect Alice & Bob
+      await aliceLoveService.sendConnectionRequest(
+        partnerUsername: '@bob',
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+      final bEnvelopes = await sharedRelay.fetchPendingMessages('@bob');
+      await bobLoveService.processInboundLoveEnvelope(
+        bEnvelopes.first,
+        currentUserId: 'bob_id',
+        currentUsername: '@bob',
+      );
+      await bobLoveService.acceptConnectionRequest(
+        partnerUsername: '@alice',
+        currentUserId: 'bob_id',
+        currentUsername: '@bob',
+      );
+      final aEnvelopes = await sharedRelay.fetchPendingMessages('@alice');
+      await aliceLoveService.processInboundLoveEnvelope(
+        aEnvelopes.first,
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+
+      // Add a chat message between Alice and Bob to Alice's local SQLite database
+      final chatMessage = ChatMessage(
+        id: 'msg_couple_01',
+        senderId: '@alice',
+        recipientId: '@bob',
+        text: 'I love you so much!',
+        timestamp: DateTime.now(),
+        status: MessageStatus.delivered,
+      );
+      await aliceLocalDb.saveMessage(chatMessage);
+
+      // Verify message is in Alice's database
+      var messages = await aliceLocalDb.getMessagesForPartner('@bob', currentUserId: '@alice');
+      expect(messages.length, 1);
+      expect(messages.first.text, 'I love you so much!');
+
+      // Alice unlinks
+      await aliceLoveService.unlinkLoveConnection(
+        currentUserId: 'alice_id',
+        currentUsername: '@alice',
+      );
+
+      final aliceConn = await aliceLoveService.getLoveConnection(currentUserId: 'alice_id');
+      expect(aliceConn!.status, LoveConnectionStatus.disconnected);
+
+      // Crucial privacy & safety invariant: Local device chat messages are PRESERVED upon unlink
+      messages = await aliceLocalDb.getMessagesForPartner('@bob', currentUserId: '@alice');
+      expect(messages.length, 1);
+      expect(messages.first.text, 'I love you so much!');
+    });
+  });
+
+  group('Phase 16 — SyncService Love Signals & Relay Delivery Purge', () {
+    test('Inbound love envelopes are processed and acknowledged/purged from relay', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: db);
+      final relay = InMemoryFirebaseRelayService.isolated();
+      final convRepo = MockConversationRepository([]);
+
+      final loveService = DefaultLoveConnectionService(
+        database: localDb,
+        relayService: relay,
+        conversationRepository: convRepo,
+      );
+
+      final chatService = ChatService(relayService: relay);
+      final syncService = DefaultSyncService(
+        database: localDb,
+        chatService: chatService,
+        loveConnectionService: loveService,
+      );
+
+      // Place a love request on relay for Bob
+      final envelope = EphemeralRelayEnvelope.loveRequest(
+        senderId: '@alice',
+        recipientId: 'bob',
+      );
+      await relay.enqueueMessage(envelope);
+
+      var pending = await relay.fetchPendingMessages('bob');
+      expect(pending.length, 1);
+
+      // Process inbound envelopes for Bob
+      await syncService.processInboundEnvelopes(currentUserId: 'bob');
+
+      // Verify connection was created on Bob's DB
+      final bobConn = await localDb.getLoveConnection(userId: 'bob');
+      expect(bobConn, isNotNull);
+      expect(bobConn!.status, LoveConnectionStatus.requestReceived);
+      expect(bobConn.partnerUsername, '@alice');
+
+      // Verify relay was purged (zero cloud metadata footprint)
+      pending = await relay.fetchPendingMessages('bob');
+      expect(pending.isEmpty, isTrue);
+
+      await db.close();
+    });
+  });
+
+  group('Phase 16 — Love Connection UI Widgets (ProfileScreen & InboxScreen)', () {
+    testWidgets('ProfileScreen renders Love Connection card in disconnected state and shows connect dialog', (WidgetTester tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: db);
+      final relay = InMemoryFirebaseRelayService.isolated();
+      final convRepo = MockConversationRepository([]);
+
+      final loveService = DefaultLoveConnectionService(
+        database: localDb,
+        relayService: relay,
+        conversationRepository: convRepo,
+      );
+
+      final user = User(
+        id: 'user_alex',
+        username: '@alex',
+        displayName: 'Alex',
+        isCurrentUser: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ProfileScreen(
+            currentUser: user,
+            loveConnectionService: loveService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Love Connection'), findsWidgets);
+      expect(find.text('0 OF 1 ACTIVE'), findsOneWidget);
+      expect(find.text('Connect with Partner'), findsOneWidget);
+
+      // Tap Connect to open dialog
+      await tester.tap(find.text('Connect with Partner'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Connect with Partner'), findsWidgets);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Send Request'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      await db.close();
+    });
+
+    testWidgets('ProfileScreen renders active Love Connection with partner username and disconnect button', (WidgetTester tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final localDb = LocalDatabase(database: db);
+      final relay = InMemoryFirebaseRelayService.isolated();
+      final convRepo = MockConversationRepository([]);
+
+      final activeConn = LoveConnection(
+        id: 'conn_sweetheart',
+        userId: 'user_alex',
+        partnerUserId: 'user_sweetheart',
+        partnerUsername: '@sweetheart',
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now(),
+        connectedAt: DateTime.now(),
+        isVisibleOnProfile: true,
+      );
+      await localDb.saveLoveConnection(activeConn);
+
+      final loveService = DefaultLoveConnectionService(
+        database: localDb,
+        relayService: relay,
+        conversationRepository: convRepo,
+      );
+
+      final user = User(
+        id: 'user_alex',
+        username: '@alex',
+        displayName: 'Alex',
+        isCurrentUser: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ProfileScreen(
+            currentUser: user,
+            loveConnectionService: loveService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Love Connection'), findsWidgets);
+      expect(find.text('CONNECTED'), findsOneWidget);
+      expect(find.text('@sweetheart'), findsOneWidget);
+      expect(find.text('Disconnect Love Partner'), findsOneWidget);
+
+      await db.close();
+    });
+
+    testWidgets('InboxScreen displays pinned romantic empty card when no love connection exists', (WidgetTester tester) async {
+      final user = User(
+        id: 'user_alex',
+        username: '@alex',
+        displayName: 'Alex',
+        isCurrentUser: true,
+      );
+
+      final convRepo = MockConversationRepository([]);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InboxScreen(
+            currentUser: user,
+            conversationRepository: convRepo,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('❤️ LOVE CONNECTION (0/1)'), findsOneWidget);
+      expect(find.text('Connect your Love Partner (0/1)'), findsOneWidget);
+      expect(find.text('Connect'), findsOneWidget);
+      expect(find.text('No individual chats yet'), findsOneWidget);
+    });
+
+    testWidgets('InboxScreen displays pinned love connection conversation when connected', (WidgetTester tester) async {
+      final user = User(
+        id: 'user_alex',
+        username: '@alex',
+        displayName: 'Alex',
+        isCurrentUser: true,
+      );
+
+      final partner = User(
+        id: 'user_sweetheart',
+        username: '@sweetheart',
+        displayName: 'Sweetheart',
+        isCurrentUser: false,
+      );
+
+      final loveConv = Conversation(
+        id: 'conv_love',
+        partner: partner,
+        lastMessage: ChatMessage(
+          id: 'msg_l1',
+          senderId: partner.id,
+          recipientId: user.id,
+          text: 'Good morning honey! ❤️',
+          timestamp: DateTime.now(),
+        ),
+        isLoveConnection: true,
+      );
+
+      final regularPartner = User(
+        id: 'user_bob',
+        username: '@bob',
+        displayName: 'Bob',
+        isCurrentUser: false,
+      );
+
+      final regularConv = Conversation(
+        id: 'conv_bob',
+        partner: regularPartner,
+        lastMessage: ChatMessage(
+          id: 'msg_r1',
+          senderId: regularPartner.id,
+          recipientId: user.id,
+          text: 'Hey there',
+          timestamp: DateTime.now().subtract(const Duration(hours: 1)),
+        ),
+        isLoveConnection: false,
+      );
+
+      final convRepo = MockConversationRepository([loveConv, regularConv]);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InboxScreen(
+            currentUser: user,
+            conversationRepository: convRepo,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('❤️ LOVE CONNECTION'), findsOneWidget);
+      expect(find.text('Sweetheart'), findsOneWidget);
+      expect(find.text('CONVERSATIONS (1)'), findsOneWidget);
+      expect(find.text('Bob'), findsOneWidget);
+    });
+  });
 }
 
 /// Helper mock implementation for AppLockService during widget/unit tests
@@ -3449,6 +4134,48 @@ class MockChatTransportService extends ChatService {
   Future<ChatMessage> sendMessage(ChatMessage message) async {
     lastDispatchedMessage = message;
     return super.sendMessage(message);
+  }
+}
+
+/// Mock repository for testing Inbox and Love Connection conversations
+class MockConversationRepository implements ConversationRepository {
+  List<Conversation> conversations;
+  MockConversationRepository([this.conversations = const []]);
+
+  @override
+  Future<List<Conversation>> getConversations({String? currentUserId}) async =>
+      conversations;
+
+  @override
+  Future<Conversation?> getLoveConnectionConversation({String? currentUserId}) async =>
+      conversations.where((c) => c.isLoveConnection).firstOrNull;
+
+  @override
+  Stream<List<Conversation>> watchConversations({String? currentUserId}) =>
+      Stream.value(conversations);
+
+  @override
+  Future<void> markAsRead(String conversationId) async {}
+
+  @override
+  Future<Conversation> startOrGetConversation({
+    required User partner,
+    bool isLoveConnection = false,
+  }) async {
+    final conv = Conversation(
+      id: 'test_${partner.id}',
+      partner: partner,
+      isLoveConnection: isLoveConnection,
+    );
+    conversations = [...conversations, conv];
+    return conv;
+  }
+
+  @override
+  Future<void> demoteLoveConnection({String? partnerUsername}) async {
+    conversations = conversations
+        .map((c) => c.isLoveConnection ? c.copyWith(isLoveConnection: false) : c)
+        .toList();
   }
 }
 

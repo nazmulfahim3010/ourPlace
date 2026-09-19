@@ -41,6 +41,7 @@ class HomeScreen extends StatelessWidget {
               appLockService: appLockService,
               realtimeService: chatRepository?.realtimeService,
               notificationService: chatRepository?.notificationService,
+              loveConnectionService: chatRepository?.loveConnectionService,
             ),
             settings: const RouteSettings(name: '/profile'),
           ),

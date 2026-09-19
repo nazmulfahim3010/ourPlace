@@ -15,6 +15,7 @@ abstract class ConversationRepository {
     required User partner,
     bool isLoveConnection = false,
   });
+  Future<void> demoteLoveConnection({String? partnerUsername});
 }
 
 /// Local-first implementation backed by local storage and in-memory synchronization
@@ -164,6 +165,20 @@ class LocalConversationRepository implements ConversationRepository {
   }
 
   @override
+  Future<void> demoteLoveConnection({String? partnerUsername}) async {
+    _cachedConversations ??= _createInitialSeedConversations();
+    for (int i = 0; i < _cachedConversations!.length; i++) {
+      if (_cachedConversations![i].isLoveConnection) {
+        if (partnerUsername == null ||
+            _cachedConversations![i].partner.username.toLowerCase() == partnerUsername.toLowerCase()) {
+          _cachedConversations![i] = _cachedConversations![i].copyWith(isLoveConnection: false);
+        }
+      }
+    }
+    _conversationsStreamController.add(List.unmodifiable(_cachedConversations!));
+  }
+
+  @override
   Future<Conversation> startOrGetConversation({
     required User partner,
     bool isLoveConnection = false,
@@ -173,6 +188,16 @@ class LocalConversationRepository implements ConversationRepository {
         .indexWhere((c) => c.partner.username.toLowerCase() == partner.username.toLowerCase());
 
     if (existingIndex != -1) {
+      if (isLoveConnection && !_cachedConversations![existingIndex].isLoveConnection) {
+        final updated = _cachedConversations![existingIndex].copyWith(
+          isLoveConnection: true,
+          partner: partner,
+        );
+        _cachedConversations!.removeAt(existingIndex);
+        _cachedConversations!.insert(0, updated);
+        _conversationsStreamController.add(List.unmodifiable(_cachedConversations!));
+        return updated;
+      }
       return _cachedConversations![existingIndex];
     }
 

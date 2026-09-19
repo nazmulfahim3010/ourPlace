@@ -143,6 +143,119 @@ class EphemeralRelayEnvelope {
     );
   }
 
+  /// Create an ephemeral love connection invitation request (Phase 16)
+  factory EphemeralRelayEnvelope.loveRequest({
+    required String senderId,
+    required String recipientId,
+    String? senderPublicKey,
+    DateTime? timestamp,
+    Duration ttl = const Duration(hours: 48),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    final payloadMap = <String, dynamic>{
+      'type': 'love_request',
+      'sender_username': senderId,
+    };
+    if (senderPublicKey != null) {
+      payloadMap['sender_public_key'] = senderPublicKey;
+    }
+    final payload = jsonEncode(payloadMap);
+    return EphemeralRelayEnvelope(
+      id: 'love_req_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: payload,
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_request',
+    );
+  }
+
+  /// Create an ephemeral love connection acceptance signal (Phase 16)
+  factory EphemeralRelayEnvelope.loveAccept({
+    required String senderId,
+    required String recipientId,
+    String? senderPublicKey,
+    DateTime? timestamp,
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    final payloadMap = <String, dynamic>{
+      'type': 'love_accept',
+      'sender_username': senderId,
+    };
+    if (senderPublicKey != null) {
+      payloadMap['sender_public_key'] = senderPublicKey;
+    }
+    final payload = jsonEncode(payloadMap);
+    return EphemeralRelayEnvelope(
+      id: 'love_acc_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: payload,
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_accept',
+    );
+  }
+
+  /// Create an ephemeral love connection decline signal (Phase 16)
+  factory EphemeralRelayEnvelope.loveDecline({
+    required String senderId,
+    required String recipientId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'love_dec_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: jsonEncode({'type': 'love_decline', 'sender_username': senderId}),
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_decline',
+    );
+  }
+
+  /// Create an ephemeral love connection cancellation signal (Phase 16)
+  factory EphemeralRelayEnvelope.loveCancel({
+    required String senderId,
+    required String recipientId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'love_can_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: jsonEncode({'type': 'love_cancel', 'sender_username': senderId}),
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_cancel',
+    );
+  }
+
+  /// Create an ephemeral love connection unlink signal (Phase 16)
+  factory EphemeralRelayEnvelope.loveUnlink({
+    required String senderId,
+    required String recipientId,
+    DateTime? timestamp,
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    final now = timestamp ?? DateTime.now().toUtc();
+    return EphemeralRelayEnvelope(
+      id: 'love_unl_${senderId}_${recipientId}_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: jsonEncode({'type': 'love_unlink', 'sender_username': senderId}),
+      timestamp: now,
+      expiresAt: now.add(ttl),
+      envelopeType: 'love_unlink',
+    );
+  }
+
   /// Whether this envelope is a status receipt rather than a content payload
   bool get isReceipt =>
       envelopeType == 'delivery_receipt' || envelopeType == 'read_receipt';
@@ -161,6 +274,9 @@ class EphemeralRelayEnvelope {
 
   /// Whether this envelope is an ephemeral presence heartbeat
   bool get isPresenceSignal => envelopeType == 'presence';
+
+  /// Whether this envelope is an ephemeral Love Connection signal (Phase 16)
+  bool get isLoveSignal => envelopeType.startsWith('love_');
 
   /// Target message ID for receipt envelopes
   String get targetMessageId => ciphertextPayload;

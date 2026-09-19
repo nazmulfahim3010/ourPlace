@@ -35,3 +35,8 @@ class SecurityException extends AppException {
   const SecurityException(super.message, {super.code, super.details});
 }
 
+/// Love Connection failures (Phase 16)
+class LoveConnectionException extends AppException {
+  const LoveConnectionException(super.message, {super.code, super.details});
+}
+

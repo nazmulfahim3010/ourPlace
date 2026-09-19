@@ -3,7 +3,7 @@
 > **Tagline:** *"The phones own the conversation. The server only helps the phones communicate."*  
 > **Target Framework:** Flutter (Dart 3.11+)  
 > **Design Aesthetic:** Minimalist High-Contrast Dark Mode (`#000000` pure black & `#383838` dark charcoal)  
-> **Current Progress:** **Phase 15 Completed** (116/116 automated tests passing, 0 analyzer issues)
+> **Current Progress:** **Phase 16 Completed** (132/132 automated tests passing, 0 analyzer issues)
 
 ---
 
@@ -18,7 +18,7 @@ Click any document title or direct link below to navigate directly to that docum
 | **[📋 User Setup Guide & Manual Action Items](./myjob.md)** | Manual steps: Firebase setup, silent wakeups, Android APK release builds, and multi-device testing | [Open `myjob.md`](./myjob.md) |
 | **[📜 Master Development Rules & Specifications Prompt](./Private%20Couple%20Chat%20App%20%E2%80%94%20Master%20Development%20Prompt.md)** | Core vision, development rules, privacy principles, and constraints | [Open `Master Prompt`](./Private%20Couple%20Chat%20App%20%E2%80%94%20Master%20Development%20Prompt.md) |
 | **[🔗 Documentation Quick Redirect](./docs.md)** | Fast pointer to the primary project documentation | [Open `docs.md`](./docs.md) |
-| **[🧪 Complete Automated Test Suite](./chatbox/test/widget_test.dart)** | 116 automated tests verifying crypto, storage, relay, sync, notifications, media, and UI | [Open `widget_test.dart`](./chatbox/test/widget_test.dart) |
+| **[🧪 Complete Automated Test Suite](./chatbox/test/widget_test.dart)** | 132 automated tests verifying crypto, storage, relay, sync, notifications, media, love connection, and UI | [Open `widget_test.dart`](./chatbox/test/widget_test.dart) |
 
 ---
 
@@ -70,6 +70,7 @@ Jump directly to specific architectural diagrams inside [**`diagram.md`**](./dia
 - [**`recovery_key_utils.dart`**](./chatbox/lib/core/utils/recovery_key_utils.dart) — BIP-39 12-word recovery mnemonic generator, validator, normalizer, and verifier
 - [**`hash_utils.dart`**](./chatbox/lib/core/utils/hash_utils.dart) — Cryptographic salt generation (32 bytes), SHA-256 verifiers, username validation
 - [**`encryption_service.dart`**](./chatbox/lib/services/encryption_service.dart) — StandardE2EEEncryptionService (X25519 + AES-256-GCM) with hardware key storage
+- [**`love_connection_service.dart`**](./chatbox/lib/services/love_connection_service.dart) — 1-to-1 couple connection management (invariant enforcement, handshake, unlinking)
 - [**`media_encryption_service.dart`**](./chatbox/lib/services/media_encryption_service.dart) — Binary media encryption service with asymmetric key wrapping
 - [**`media_storage_service.dart`**](./chatbox/lib/services/media_storage_service.dart) — Isolated device sandbox storage keeping media out of public galleries
 - [**`media_relay_service.dart`**](./chatbox/lib/services/media_relay_service.dart) — Ephemeral cloud media blob relay with 24-hour TTL and delivery ACK purge
@@ -91,7 +92,7 @@ Jump directly to specific architectural diagrams inside [**`diagram.md`**](./dia
 
 ### 💾 Local Database & Persistence (`lib/database/`)
 - [**`local_database.dart`**](./chatbox/lib/database/local_database.dart) — Singleton database manager with reactive queries, recovery keys, and CRUD
-- [**`app_database.dart`**](./chatbox/lib/database/app_database.dart) — Drift SQLite schema v4 (`Messages`, `UserAccounts`, and `SecurityLogs` tables)
+- [**`app_database.dart`**](./chatbox/lib/database/app_database.dart) — Drift SQLite schema v5 (`Messages`, `UserAccounts`, `SecurityLogs`, and `LoveConnections` tables)
 - [**`app_database.g.dart`**](./chatbox/lib/database/app_database.g.dart) — Generated Drift database code
 
 ### 📦 Domain Models (`lib/models/`)
@@ -99,6 +100,7 @@ Jump directly to specific architectural diagrams inside [**`diagram.md`**](./dia
 - [**`user_account.dart`**](./chatbox/lib/models/user_account.dart) — Private account entity with salted credentials & recovery key verification logic
 - [**`security_log.dart`**](./chatbox/lib/models/security_log.dart) — Device-local security event audit model
 - [**`conversation.dart`**](./chatbox/lib/models/conversation.dart) — Conversation domain model with Love Connection support
+- [**`love_connection.dart`**](./chatbox/lib/models/love_connection.dart) — Love Connection domain model, status lifecycle, and privacy visibility
 - [**`message.dart`**](./chatbox/lib/models/message.dart) — `ChatMessage` model, `MessageType`, `MessageStatus`, and `MediaAttachment` embedding
 - [**`encrypted_payload.dart`**](./chatbox/lib/models/encrypted_payload.dart) — E2EE ciphertext envelope (version, pubKey, nonce, ct, mac)
 - [**`ephemeral_relay_envelope.dart`**](./chatbox/lib/models/ephemeral_relay_envelope.dart) — Ephemeral wire envelope (id, sender, recipient, ct, ttl)
@@ -112,7 +114,7 @@ Jump directly to specific architectural diagrams inside [**`diagram.md`**](./dia
 - [**`app_exception.dart`**](./chatbox/lib/core/errors/app_exception.dart) — Centralized exception hierarchy (SecurityException, StorageException)
 
 ### 🧪 Automated Tests (`test/`)
-- [**`widget_test.dart`**](./chatbox/test/widget_test.dart) — Complete test suite with 116 passing unit, crypto, security, relay, media, and widget tests (100% pass rate)
+- [**`widget_test.dart`**](./chatbox/test/widget_test.dart) — Complete test suite with 132 passing unit, crypto, security, relay, media, love connection, and widget tests (100% pass rate)
 
 ---
 
@@ -126,7 +128,7 @@ cd chatbox
 # Check code health & analyze linting (0 issues)
 flutter analyze
 
-# Run the complete automated test suite (116 tests)
+# Run the complete automated test suite (132 tests)
 flutter test
 
 # Generate Drift database code (if schema changes)
@@ -169,3 +171,8 @@ flutter run
 7. **Background Privacy & Auto-Lock Protection:**
    - App automatically locks on minimization, app-switching, or screen lock via `WidgetsBindingObserver`.
    - Conversations and messages are never left exposed in task switchers.
+
+8. **1-to-1 Love Connection Couple Subsystem:**
+   - Invariant strictly enforced: exactly 0 or 1 active Love Connection per account.
+   - Anonymous mutual invitation & acceptance handshake over ephemeral relay without phone/email exchange.
+   - Unlink/disconnect demotes couple privileges while strictly preserving device-local SQLite chat history.

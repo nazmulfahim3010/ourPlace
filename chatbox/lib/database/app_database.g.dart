@@ -1428,12 +1428,662 @@ class SecurityLogsCompanion extends UpdateCompanion<DbSecurityLog> {
   }
 }
 
+class $LoveConnectionsTable extends LoveConnections
+    with TableInfo<$LoveConnectionsTable, DbLoveConnection> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LoveConnectionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _partnerUsernameMeta = const VerificationMeta(
+    'partnerUsername',
+  );
+  @override
+  late final GeneratedColumn<String> partnerUsername = GeneratedColumn<String>(
+    'partner_username',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _partnerUserIdMeta = const VerificationMeta(
+    'partnerUserId',
+  );
+  @override
+  late final GeneratedColumn<String> partnerUserId = GeneratedColumn<String>(
+    'partner_user_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _partnerPublicKeyMeta = const VerificationMeta(
+    'partnerPublicKey',
+  );
+  @override
+  late final GeneratedColumn<String> partnerPublicKey = GeneratedColumn<String>(
+    'partner_public_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _connectedAtMeta = const VerificationMeta(
+    'connectedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> connectedAt = GeneratedColumn<DateTime>(
+    'connected_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _disconnectedAtMeta = const VerificationMeta(
+    'disconnectedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> disconnectedAt =
+      GeneratedColumn<DateTime>(
+        'disconnected_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _isVisibleOnProfileMeta =
+      const VerificationMeta('isVisibleOnProfile');
+  @override
+  late final GeneratedColumn<bool> isVisibleOnProfile = GeneratedColumn<bool>(
+    'is_visible_on_profile',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_visible_on_profile" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    partnerUsername,
+    partnerUserId,
+    partnerPublicKey,
+    status,
+    createdAt,
+    connectedAt,
+    disconnectedAt,
+    isVisibleOnProfile,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'love_connections';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DbLoveConnection> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('partner_username')) {
+      context.handle(
+        _partnerUsernameMeta,
+        partnerUsername.isAcceptableOrUnknown(
+          data['partner_username']!,
+          _partnerUsernameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_partnerUsernameMeta);
+    }
+    if (data.containsKey('partner_user_id')) {
+      context.handle(
+        _partnerUserIdMeta,
+        partnerUserId.isAcceptableOrUnknown(
+          data['partner_user_id']!,
+          _partnerUserIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('partner_public_key')) {
+      context.handle(
+        _partnerPublicKeyMeta,
+        partnerPublicKey.isAcceptableOrUnknown(
+          data['partner_public_key']!,
+          _partnerPublicKeyMeta,
+        ),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('connected_at')) {
+      context.handle(
+        _connectedAtMeta,
+        connectedAt.isAcceptableOrUnknown(
+          data['connected_at']!,
+          _connectedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('disconnected_at')) {
+      context.handle(
+        _disconnectedAtMeta,
+        disconnectedAt.isAcceptableOrUnknown(
+          data['disconnected_at']!,
+          _disconnectedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_visible_on_profile')) {
+      context.handle(
+        _isVisibleOnProfileMeta,
+        isVisibleOnProfile.isAcceptableOrUnknown(
+          data['is_visible_on_profile']!,
+          _isVisibleOnProfileMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DbLoveConnection map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DbLoveConnection(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      partnerUsername: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}partner_username'],
+      )!,
+      partnerUserId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}partner_user_id'],
+      ),
+      partnerPublicKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}partner_public_key'],
+      ),
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      connectedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}connected_at'],
+      ),
+      disconnectedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}disconnected_at'],
+      ),
+      isVisibleOnProfile: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_visible_on_profile'],
+      )!,
+    );
+  }
+
+  @override
+  $LoveConnectionsTable createAlias(String alias) {
+    return $LoveConnectionsTable(attachedDatabase, alias);
+  }
+}
+
+class DbLoveConnection extends DataClass
+    implements Insertable<DbLoveConnection> {
+  final String id;
+  final String userId;
+  final String partnerUsername;
+  final String? partnerUserId;
+  final String? partnerPublicKey;
+  final String status;
+  final DateTime createdAt;
+  final DateTime? connectedAt;
+  final DateTime? disconnectedAt;
+  final bool isVisibleOnProfile;
+  const DbLoveConnection({
+    required this.id,
+    required this.userId,
+    required this.partnerUsername,
+    this.partnerUserId,
+    this.partnerPublicKey,
+    required this.status,
+    required this.createdAt,
+    this.connectedAt,
+    this.disconnectedAt,
+    required this.isVisibleOnProfile,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['partner_username'] = Variable<String>(partnerUsername);
+    if (!nullToAbsent || partnerUserId != null) {
+      map['partner_user_id'] = Variable<String>(partnerUserId);
+    }
+    if (!nullToAbsent || partnerPublicKey != null) {
+      map['partner_public_key'] = Variable<String>(partnerPublicKey);
+    }
+    map['status'] = Variable<String>(status);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || connectedAt != null) {
+      map['connected_at'] = Variable<DateTime>(connectedAt);
+    }
+    if (!nullToAbsent || disconnectedAt != null) {
+      map['disconnected_at'] = Variable<DateTime>(disconnectedAt);
+    }
+    map['is_visible_on_profile'] = Variable<bool>(isVisibleOnProfile);
+    return map;
+  }
+
+  LoveConnectionsCompanion toCompanion(bool nullToAbsent) {
+    return LoveConnectionsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      partnerUsername: Value(partnerUsername),
+      partnerUserId: partnerUserId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(partnerUserId),
+      partnerPublicKey: partnerPublicKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(partnerPublicKey),
+      status: Value(status),
+      createdAt: Value(createdAt),
+      connectedAt: connectedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(connectedAt),
+      disconnectedAt: disconnectedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(disconnectedAt),
+      isVisibleOnProfile: Value(isVisibleOnProfile),
+    );
+  }
+
+  factory DbLoveConnection.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DbLoveConnection(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      partnerUsername: serializer.fromJson<String>(json['partnerUsername']),
+      partnerUserId: serializer.fromJson<String?>(json['partnerUserId']),
+      partnerPublicKey: serializer.fromJson<String?>(json['partnerPublicKey']),
+      status: serializer.fromJson<String>(json['status']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      connectedAt: serializer.fromJson<DateTime?>(json['connectedAt']),
+      disconnectedAt: serializer.fromJson<DateTime?>(json['disconnectedAt']),
+      isVisibleOnProfile: serializer.fromJson<bool>(json['isVisibleOnProfile']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'partnerUsername': serializer.toJson<String>(partnerUsername),
+      'partnerUserId': serializer.toJson<String?>(partnerUserId),
+      'partnerPublicKey': serializer.toJson<String?>(partnerPublicKey),
+      'status': serializer.toJson<String>(status),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'connectedAt': serializer.toJson<DateTime?>(connectedAt),
+      'disconnectedAt': serializer.toJson<DateTime?>(disconnectedAt),
+      'isVisibleOnProfile': serializer.toJson<bool>(isVisibleOnProfile),
+    };
+  }
+
+  DbLoveConnection copyWith({
+    String? id,
+    String? userId,
+    String? partnerUsername,
+    Value<String?> partnerUserId = const Value.absent(),
+    Value<String?> partnerPublicKey = const Value.absent(),
+    String? status,
+    DateTime? createdAt,
+    Value<DateTime?> connectedAt = const Value.absent(),
+    Value<DateTime?> disconnectedAt = const Value.absent(),
+    bool? isVisibleOnProfile,
+  }) => DbLoveConnection(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    partnerUsername: partnerUsername ?? this.partnerUsername,
+    partnerUserId: partnerUserId.present
+        ? partnerUserId.value
+        : this.partnerUserId,
+    partnerPublicKey: partnerPublicKey.present
+        ? partnerPublicKey.value
+        : this.partnerPublicKey,
+    status: status ?? this.status,
+    createdAt: createdAt ?? this.createdAt,
+    connectedAt: connectedAt.present ? connectedAt.value : this.connectedAt,
+    disconnectedAt: disconnectedAt.present
+        ? disconnectedAt.value
+        : this.disconnectedAt,
+    isVisibleOnProfile: isVisibleOnProfile ?? this.isVisibleOnProfile,
+  );
+  DbLoveConnection copyWithCompanion(LoveConnectionsCompanion data) {
+    return DbLoveConnection(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      partnerUsername: data.partnerUsername.present
+          ? data.partnerUsername.value
+          : this.partnerUsername,
+      partnerUserId: data.partnerUserId.present
+          ? data.partnerUserId.value
+          : this.partnerUserId,
+      partnerPublicKey: data.partnerPublicKey.present
+          ? data.partnerPublicKey.value
+          : this.partnerPublicKey,
+      status: data.status.present ? data.status.value : this.status,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      connectedAt: data.connectedAt.present
+          ? data.connectedAt.value
+          : this.connectedAt,
+      disconnectedAt: data.disconnectedAt.present
+          ? data.disconnectedAt.value
+          : this.disconnectedAt,
+      isVisibleOnProfile: data.isVisibleOnProfile.present
+          ? data.isVisibleOnProfile.value
+          : this.isVisibleOnProfile,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbLoveConnection(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('partnerUsername: $partnerUsername, ')
+          ..write('partnerUserId: $partnerUserId, ')
+          ..write('partnerPublicKey: $partnerPublicKey, ')
+          ..write('status: $status, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('connectedAt: $connectedAt, ')
+          ..write('disconnectedAt: $disconnectedAt, ')
+          ..write('isVisibleOnProfile: $isVisibleOnProfile')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    partnerUsername,
+    partnerUserId,
+    partnerPublicKey,
+    status,
+    createdAt,
+    connectedAt,
+    disconnectedAt,
+    isVisibleOnProfile,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DbLoveConnection &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.partnerUsername == this.partnerUsername &&
+          other.partnerUserId == this.partnerUserId &&
+          other.partnerPublicKey == this.partnerPublicKey &&
+          other.status == this.status &&
+          other.createdAt == this.createdAt &&
+          other.connectedAt == this.connectedAt &&
+          other.disconnectedAt == this.disconnectedAt &&
+          other.isVisibleOnProfile == this.isVisibleOnProfile);
+}
+
+class LoveConnectionsCompanion extends UpdateCompanion<DbLoveConnection> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<String> partnerUsername;
+  final Value<String?> partnerUserId;
+  final Value<String?> partnerPublicKey;
+  final Value<String> status;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> connectedAt;
+  final Value<DateTime?> disconnectedAt;
+  final Value<bool> isVisibleOnProfile;
+  final Value<int> rowid;
+  const LoveConnectionsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.partnerUsername = const Value.absent(),
+    this.partnerUserId = const Value.absent(),
+    this.partnerPublicKey = const Value.absent(),
+    this.status = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.connectedAt = const Value.absent(),
+    this.disconnectedAt = const Value.absent(),
+    this.isVisibleOnProfile = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LoveConnectionsCompanion.insert({
+    required String id,
+    required String userId,
+    required String partnerUsername,
+    this.partnerUserId = const Value.absent(),
+    this.partnerPublicKey = const Value.absent(),
+    required String status,
+    required DateTime createdAt,
+    this.connectedAt = const Value.absent(),
+    this.disconnectedAt = const Value.absent(),
+    this.isVisibleOnProfile = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       partnerUsername = Value(partnerUsername),
+       status = Value(status),
+       createdAt = Value(createdAt);
+  static Insertable<DbLoveConnection> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<String>? partnerUsername,
+    Expression<String>? partnerUserId,
+    Expression<String>? partnerPublicKey,
+    Expression<String>? status,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? connectedAt,
+    Expression<DateTime>? disconnectedAt,
+    Expression<bool>? isVisibleOnProfile,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (partnerUsername != null) 'partner_username': partnerUsername,
+      if (partnerUserId != null) 'partner_user_id': partnerUserId,
+      if (partnerPublicKey != null) 'partner_public_key': partnerPublicKey,
+      if (status != null) 'status': status,
+      if (createdAt != null) 'created_at': createdAt,
+      if (connectedAt != null) 'connected_at': connectedAt,
+      if (disconnectedAt != null) 'disconnected_at': disconnectedAt,
+      if (isVisibleOnProfile != null)
+        'is_visible_on_profile': isVisibleOnProfile,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LoveConnectionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<String>? partnerUsername,
+    Value<String?>? partnerUserId,
+    Value<String?>? partnerPublicKey,
+    Value<String>? status,
+    Value<DateTime>? createdAt,
+    Value<DateTime?>? connectedAt,
+    Value<DateTime?>? disconnectedAt,
+    Value<bool>? isVisibleOnProfile,
+    Value<int>? rowid,
+  }) {
+    return LoveConnectionsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      partnerUsername: partnerUsername ?? this.partnerUsername,
+      partnerUserId: partnerUserId ?? this.partnerUserId,
+      partnerPublicKey: partnerPublicKey ?? this.partnerPublicKey,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      connectedAt: connectedAt ?? this.connectedAt,
+      disconnectedAt: disconnectedAt ?? this.disconnectedAt,
+      isVisibleOnProfile: isVisibleOnProfile ?? this.isVisibleOnProfile,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (partnerUsername.present) {
+      map['partner_username'] = Variable<String>(partnerUsername.value);
+    }
+    if (partnerUserId.present) {
+      map['partner_user_id'] = Variable<String>(partnerUserId.value);
+    }
+    if (partnerPublicKey.present) {
+      map['partner_public_key'] = Variable<String>(partnerPublicKey.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (connectedAt.present) {
+      map['connected_at'] = Variable<DateTime>(connectedAt.value);
+    }
+    if (disconnectedAt.present) {
+      map['disconnected_at'] = Variable<DateTime>(disconnectedAt.value);
+    }
+    if (isVisibleOnProfile.present) {
+      map['is_visible_on_profile'] = Variable<bool>(isVisibleOnProfile.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LoveConnectionsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('partnerUsername: $partnerUsername, ')
+          ..write('partnerUserId: $partnerUserId, ')
+          ..write('partnerPublicKey: $partnerPublicKey, ')
+          ..write('status: $status, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('connectedAt: $connectedAt, ')
+          ..write('disconnectedAt: $disconnectedAt, ')
+          ..write('isVisibleOnProfile: $isVisibleOnProfile, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $MessagesTable messages = $MessagesTable(this);
   late final $UserAccountsTable userAccounts = $UserAccountsTable(this);
   late final $SecurityLogsTable securityLogs = $SecurityLogsTable(this);
+  late final $LoveConnectionsTable loveConnections = $LoveConnectionsTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1442,6 +2092,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     messages,
     userAccounts,
     securityLogs,
+    loveConnections,
   ];
 }
 
@@ -2165,6 +2816,319 @@ typedef $$SecurityLogsTableProcessedTableManager =
       DbSecurityLog,
       PrefetchHooks Function()
     >;
+typedef $$LoveConnectionsTableCreateCompanionBuilder =
+    LoveConnectionsCompanion Function({
+      required String id,
+      required String userId,
+      required String partnerUsername,
+      Value<String?> partnerUserId,
+      Value<String?> partnerPublicKey,
+      required String status,
+      required DateTime createdAt,
+      Value<DateTime?> connectedAt,
+      Value<DateTime?> disconnectedAt,
+      Value<bool> isVisibleOnProfile,
+      Value<int> rowid,
+    });
+typedef $$LoveConnectionsTableUpdateCompanionBuilder =
+    LoveConnectionsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<String> partnerUsername,
+      Value<String?> partnerUserId,
+      Value<String?> partnerPublicKey,
+      Value<String> status,
+      Value<DateTime> createdAt,
+      Value<DateTime?> connectedAt,
+      Value<DateTime?> disconnectedAt,
+      Value<bool> isVisibleOnProfile,
+      Value<int> rowid,
+    });
+
+class $$LoveConnectionsTableFilterComposer
+    extends Composer<_$AppDatabase, $LoveConnectionsTable> {
+  $$LoveConnectionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get partnerUsername => $composableBuilder(
+    column: $table.partnerUsername,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get partnerUserId => $composableBuilder(
+    column: $table.partnerUserId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get partnerPublicKey => $composableBuilder(
+    column: $table.partnerPublicKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get connectedAt => $composableBuilder(
+    column: $table.connectedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get disconnectedAt => $composableBuilder(
+    column: $table.disconnectedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isVisibleOnProfile => $composableBuilder(
+    column: $table.isVisibleOnProfile,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LoveConnectionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $LoveConnectionsTable> {
+  $$LoveConnectionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get partnerUsername => $composableBuilder(
+    column: $table.partnerUsername,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get partnerUserId => $composableBuilder(
+    column: $table.partnerUserId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get partnerPublicKey => $composableBuilder(
+    column: $table.partnerPublicKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get connectedAt => $composableBuilder(
+    column: $table.connectedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get disconnectedAt => $composableBuilder(
+    column: $table.disconnectedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isVisibleOnProfile => $composableBuilder(
+    column: $table.isVisibleOnProfile,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LoveConnectionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LoveConnectionsTable> {
+  $$LoveConnectionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get partnerUsername => $composableBuilder(
+    column: $table.partnerUsername,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get partnerUserId => $composableBuilder(
+    column: $table.partnerUserId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get partnerPublicKey => $composableBuilder(
+    column: $table.partnerPublicKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get connectedAt => $composableBuilder(
+    column: $table.connectedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get disconnectedAt => $composableBuilder(
+    column: $table.disconnectedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isVisibleOnProfile => $composableBuilder(
+    column: $table.isVisibleOnProfile,
+    builder: (column) => column,
+  );
+}
+
+class $$LoveConnectionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $LoveConnectionsTable,
+          DbLoveConnection,
+          $$LoveConnectionsTableFilterComposer,
+          $$LoveConnectionsTableOrderingComposer,
+          $$LoveConnectionsTableAnnotationComposer,
+          $$LoveConnectionsTableCreateCompanionBuilder,
+          $$LoveConnectionsTableUpdateCompanionBuilder,
+          (
+            DbLoveConnection,
+            BaseReferences<
+              _$AppDatabase,
+              $LoveConnectionsTable,
+              DbLoveConnection
+            >,
+          ),
+          DbLoveConnection,
+          PrefetchHooks Function()
+        > {
+  $$LoveConnectionsTableTableManager(
+    _$AppDatabase db,
+    $LoveConnectionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LoveConnectionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LoveConnectionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LoveConnectionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> partnerUsername = const Value.absent(),
+                Value<String?> partnerUserId = const Value.absent(),
+                Value<String?> partnerPublicKey = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> connectedAt = const Value.absent(),
+                Value<DateTime?> disconnectedAt = const Value.absent(),
+                Value<bool> isVisibleOnProfile = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LoveConnectionsCompanion(
+                id: id,
+                userId: userId,
+                partnerUsername: partnerUsername,
+                partnerUserId: partnerUserId,
+                partnerPublicKey: partnerPublicKey,
+                status: status,
+                createdAt: createdAt,
+                connectedAt: connectedAt,
+                disconnectedAt: disconnectedAt,
+                isVisibleOnProfile: isVisibleOnProfile,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required String partnerUsername,
+                Value<String?> partnerUserId = const Value.absent(),
+                Value<String?> partnerPublicKey = const Value.absent(),
+                required String status,
+                required DateTime createdAt,
+                Value<DateTime?> connectedAt = const Value.absent(),
+                Value<DateTime?> disconnectedAt = const Value.absent(),
+                Value<bool> isVisibleOnProfile = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LoveConnectionsCompanion.insert(
+                id: id,
+                userId: userId,
+                partnerUsername: partnerUsername,
+                partnerUserId: partnerUserId,
+                partnerPublicKey: partnerPublicKey,
+                status: status,
+                createdAt: createdAt,
+                connectedAt: connectedAt,
+                disconnectedAt: disconnectedAt,
+                isVisibleOnProfile: isVisibleOnProfile,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LoveConnectionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $LoveConnectionsTable,
+      DbLoveConnection,
+      $$LoveConnectionsTableFilterComposer,
+      $$LoveConnectionsTableOrderingComposer,
+      $$LoveConnectionsTableAnnotationComposer,
+      $$LoveConnectionsTableCreateCompanionBuilder,
+      $$LoveConnectionsTableUpdateCompanionBuilder,
+      (
+        DbLoveConnection,
+        BaseReferences<_$AppDatabase, $LoveConnectionsTable, DbLoveConnection>,
+      ),
+      DbLoveConnection,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2175,4 +3139,6 @@ class $AppDatabaseManager {
       $$UserAccountsTableTableManager(_db, _db.userAccounts);
   $$SecurityLogsTableTableManager get securityLogs =>
       $$SecurityLogsTableTableManager(_db, _db.securityLogs);
+  $$LoveConnectionsTableTableManager get loveConnections =>
+      $$LoveConnectionsTableTableManager(_db, _db.loveConnections);
 }

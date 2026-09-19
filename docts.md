@@ -1,5 +1,5 @@
 # ourPlace — Master Project Documentation & Task Tracking Context
-> **Document Version:** 3.7.0  
+> **Document Version:** 3.8.0  
 > **Last Updated:** 2026-09-19  
 > **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
 > **Lead Framework:** Flutter (Dart 3.11+)
@@ -34,10 +34,10 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
 
 | Metric | Status |
 | :--- | :--- |
-| **Current Phase** | **Phase 15 — Media Messaging** |
-| **Current Status** | **COMPLETED** (Ready for Phase 16: Love Connection) |
-| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications), **Phase 15** (Media Messaging) |
-| **Next Phase** | **Phase 16 — Love Connection** |
+| **Current Phase** | **Phase 16 — Love Connection** |
+| **Current Status** | **COMPLETED** (Ready for Phase 17: One-Time Love Code & Conversation Sharing) |
+| **Completed Phases** | **Phase 1** (UI Prototypes), **Phase 2** (Message Architecture), **Phase 3** (Functional Local Chat), **Phase 4** (Local Database), **Phase 5** (Application Architecture), **Phase 6** (Inbox & Multi-Conversation UI), **Phase 7** (Anonymous Account Authentication), **Phase 8** (Local App Passcode & Device Lock), **Phase 9** (Account & Access Security), **Phase 10** (End-to-End Encryption Layer), **Phase 11** (Temporary Firebase Relay), **Phase 12** (Message Synchronization), **Phase 13** (Real-Time Features), **Phase 14** (Push Notifications), **Phase 15** (Media Messaging), **Phase 16** (Love Connection) |
+| **Next Phase** | **Phase 17 — One-Time Love Code & Conversation Sharing** |
 
 ---
 
@@ -65,7 +65,7 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
                                                                           │
                                                                           ▼
 [Phase 18: Couple Feat.] ◄──  [Phase 17: Love Code/Share]◄── [Phase 16: Love Connection]
-       (PLANNED)                       (PLANNED)                       (NEXT)
+       (PLANNED)                       (NEXT)                          (COMPLETED)
 ```
 
 #### Detailed Phase Progress Breakdown
@@ -207,10 +207,16 @@ In accordance with the **Master Development Rules**, progress is tracked strictl
   - [x] Fullscreen `PrivateMediaViewerScreen` with interactive pinch-to-zoom, audio playback, E2EE audit dialog, and safe export confirmation
   - [x] Comprehensive test suite (116/116 tests passing, 0 analyzer issues)
 
-- [ ] **Phase 16 — Love Connection**
-  - [ ] Mutually accepted 1-to-1 couple connection (0 or 1 active connection)
-  - [ ] Search username, send request, accept/decline
-  - [ ] Hide/show Love Connection on profile
+- [x] **Phase 16 — Love Connection**
+  - [x] Mutually accepted 1-to-1 couple connection (strictly 0 or 1 active connection invariant)
+  - [x] Ephemeral relay signaling handshake (`love_request`, `love_accept`, `love_decline`, `love_cancel`, `love_unlink`)
+  - [x] Partner discovery via anonymous `@username` search (zero PII, no email/phone)
+  - [x] Drift SQLite database schema migration to v5 (`LoveConnections` table with reactive streams)
+  - [x] Dedicated Love Connection romantic card in `ProfileScreen` handling all states (`none`, `requestSent`, `requestReceived`, `connected`)
+  - [x] Privacy toggle: Hide/show Love Connection presence on profile
+  - [x] Top pinned `❤️ LOVE CONNECTION` section in `InboxScreen` with romantic empty invitation card
+  - [x] Graceful unlink / disconnect flow preserving device-local SQLite chat history while demoting couple privileges
+  - [x] Comprehensive test suite (132/132 tests passing, 0 analyzer issues)
 
 - [ ] **Phase 17 — One-Time Love Code & Conversation Sharing**
   - [ ] Generate 60-second single-use Love Code for explicit sharing authorization
@@ -243,27 +249,32 @@ e:\ourPlace\
     │   ├── main.dart                        # Application entry point with AuthGate
     │   ├── core/
     │   │   ├── constants/app_constants.dart # App constants & username/password rules
-    │   │   ├── errors/app_exception.dart    # Centralized exception hierarchy (SecurityException)
+    │   │   ├── errors/app_exception.dart    # Centralized exception hierarchy (SecurityException, LoveConnectionException)
     │   │   ├── theme/app_theme.dart         # Design tokens & dark theme
     │   │   └── utils/
-    │   │       ├── crypto_key_utils.dart    # X25519, HKDF-SHA256 & AES-256-GCM AEAD primitives
+    │   │       ├── crypto_key_utils.dart    # X25519, HKDF-SHA256 & text/binary AES-256-GCM AEAD primitives
     │   │       ├── hash_utils.dart          # Cryptographic salt & SHA-256 verifiers
     │   │       └── recovery_key_utils.dart  # BIP-39 mnemonic generation & phrase hashing
     │   ├── database/
-    │   │   ├── app_database.dart            # Drift database (Messages, UserAccounts, SecurityLogs - v3)
+    │   │   ├── app_database.dart            # Drift database (Messages, UserAccounts, SecurityLogs, LoveConnections - v5)
     │   │   ├── app_database.g.dart          # Drift generated code
-    │   │   └── local_database.dart          # Local database singleton & CRUD methods
+    │   │   └── local_database.dart          # Local database singleton & CRUD methods (LoveConnection persistence)
     │   ├── models/
     │   │   ├── conversation.dart            # Conversation model with Love Connection support
     │   │   ├── encrypted_payload.dart       # E2EE ciphertext envelope (version, pubKey, nonce, ct, mac)
-    │   │   ├── ephemeral_relay_envelope.dart # Ephemeral wire envelope (id, sender, recipient, ct, ttl)
+    │   │   ├── ephemeral_relay_envelope.dart # Ephemeral wire envelope with Love signaling factories
+    │   │   ├── love_connection.dart         # Love Connection domain model, status lifecycle & visibility
+    │   │   ├── media_attachment.dart        # Encrypted media metadata, Base64 keys, waveforms, and file sizes
     │   │   ├── message.dart                 # ChatMessage domain model & enums
+    │   │   ├── notification_settings.dart   # Notification preferences & Discreet Mode
+    │   │   ├── push_wakeup_signal.dart      # Zero-knowledge silent background wakeup signal
     │   │   ├── security_log.dart            # Device-local security event audit model
     │   │   ├── user.dart                    # Anonymous User domain model
-    │   │   └── user_account.dart            # UserAccount credentials & verification
+    │   │   ├── user_account.dart            # UserAccount credentials & verification
+    │   │   └── user_presence.dart           # User online status, relative last seen, and formatting
     │   ├── repositories/
     │   │   ├── auth_repository.dart         # AuthRepository contract & default implementation
-    │   │   ├── chat_repository.dart         # ChatRepository contract & LocalChatRepository (E2EE + Relay)
+    │   │   ├── chat_repository.dart         # ChatRepository contract & LocalChatRepository (E2EE + Relay + Media)
     │   │   └── conversation_repository.dart # ConversationRepository & LocalConversationRepository
     │   ├── screens/
     │   │   ├── auth/
@@ -274,8 +285,10 @@ e:\ourPlace\
     │   │   ├── home_screen.dart             # Primary Home screen hosting Inbox & Profile nav
     │   │   ├── inbox/
     │   │   │   └── inbox_screen.dart        # Inbox displaying Love Connection & Conversations
+    │   │   ├── media/
+    │   │   │   └── private_media_viewer_screen.dart # Fullscreen private media viewer with zoom & audio
     │   │   ├── profile/
-    │   │   │   └── profile_screen.dart      # User Profile, Security/Passcode, Recovery Key & Audit Log
+    │   │   │   └── profile_screen.dart      # User Profile, Love Connection Card, Security/Passcode & Audit Log
     │   │   └── chat_screen.dart             # Modular ChatScreen widget with active user context
     │   ├── services/
     │   │   ├── access_throttling_service.dart # Exponential backoff & login rate-limiting service
@@ -284,20 +297,27 @@ e:\ourPlace\
     │   │   ├── auth_service.dart            # AuthService contract & LocalAuthService (E2EE Keygen)
     │   │   ├── chat_service.dart            # Chat transport service coordinating with RelayService
     │   │   ├── encryption_service.dart      # StandardE2EEEncryptionService (X25519 + AES-GCM) & NoOp
-    │   │   ├── notification_service.dart    # Push notifications contract & stub
+    │   │   ├── love_connection_service.dart # 1-to-1 couple invariant, invitation handshake & unlink service
+    │   │   ├── media_encryption_service.dart # Binary AES-256-GCM media encryption service
+    │   │   ├── media_relay_service.dart      # Ephemeral cloud media blob relay service
+    │   │   ├── media_storage_service.dart    # Sandboxed local device storage service
+    │   │   ├── notification_service.dart    # Push notifications contract, discreet alerts & silent wakeups
+    │   │   ├── realtime_service.dart        # Debounced typing indicators & online presence heartbeats
     │   │   ├── relay_service.dart           # Ephemeral Relay contract, InMemory & Firestore implementations
-    │   │   └── secure_storage_service.dart  # Hardware-backed encrypted key-value storage (with test mode)
+    │   │   ├── secure_storage_service.dart  # Hardware-backed encrypted key-value storage (with test mode)
+    │   │   └── sync_service.dart            # Offline queueing, receipts, E2EE sync & love signal routing
     │   └── widgets/
     │       ├── chat_header.dart             # Floating pill header with back button, user & partner
-    │       ├── chat_input_field.dart        # Message input bar and send button
+    │       ├── chat_input_field.dart        # Message input bar, attachments & voice recording bar
     │       ├── conversation_tile.dart       # Reusable conversation tile component
     │       ├── date_divider.dart            # Date group divider ("Today", "Yesterday")
-    │       ├── message_bubble.dart          # Chat message bubble container
+    │       ├── message_bubble.dart          # Chat message bubble container (text, media, audio)
     │       ├── numeric_keypad.dart          # Tactile dark numeric keypad with biometric button
     │       ├── passcode_dots.dart           # Animated passcode dots indicator with shake feedback
     │       └── timestamp_indicator.dart     # Timestamp indicator widget
     └── test/
-        └── widget_test.dart                 # Automated test suite (61/61 tests passing)
+        └── widget_test.dart                 # Automated test suite (132/132 tests passing)
+```
 ```
 
 ---
@@ -918,6 +938,65 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 
 ---
 
+### 7.11. Phase 16 Completion Report — Love Connection
+
+- **Current Phase:** Phase 16 — Love Connection
+- **Phase Status:** COMPLETED
+
+#### Completed Work
+1. **Domain Model & Wire Signaling (`LoveConnection` & `EphemeralRelayEnvelope`):**
+   - Created `LoveConnection` domain model with `LoveConnectionStatus` enum (`none`, `requestSent`, `requestReceived`, `connected`, `disconnected`), SQLite serialization, JSON encoding, and status convenience helpers.
+   - Extended `EphemeralRelayEnvelope` with specialized love signaling factories (`loveRequest`, `loveAccept`, `loveDecline`, `loveCancel`, `loveUnlink`) and `isLoveSignal` discriminator.
+   - Added `LoveConnectionException` to centralized exception hierarchy.
+2. **Local SQLite Database Schema v5 Migration (`AppDatabase` & `LocalDatabase`):**
+   - Added `LoveConnections` table with primary key `id`, `partnerUsername`, `status`, `connectedAt`, `updatedAt`, and `isVisibleOnProfile`.
+   - Incremented schema version to 5 with table creation migration.
+   - Regenerated Drift code (`app_database.g.dart`) with zero build errors.
+   - Added reactive streams (`watchLoveConnection`), CRUD operations, and status updaters in `LocalDatabase`.
+3. **Love Connection Service (`LoveConnectionService`):**
+   - Enforced 1-to-1 invariant: strictly 0 or 1 active Love Connection per account.
+   - Self-connection rejection: blocks connecting to own `@username`.
+   - Ephemeral relay signaling: dispatches typed envelopes (`love_request`, `love_accept`, etc.) through `RelayService`.
+   - Mutual acceptance handshake: promoted to `connected` upon handshake receipt.
+   - Graceful unlink: dispatches `love_unlink`, updates status to `disconnected`, demotes couple privileges, while preserving all local SQLite messages in `Messages` table.
+   - Added `InMemoryLoveConnectionService` for hermetic testing and UI fallback.
+4. **Sync & Conversation Repository Integration:**
+   - Updated `DefaultSyncService` to intercept `envelope.isLoveSignal` in `processInboundEnvelopes` and immediately purge relay signaling envelopes (zero server metadata footprint).
+   - Added `demoteLoveConnection` in `ConversationRepository` to cleanly downgrade conversation status without clearing chat history.
+   - Updated `startOrGetConversation` to handle dynamic promotion to `isLoveConnection = true`.
+5. **UI Components & User Experience:**
+   - `ProfileScreen`: Implemented romantic Love Connection card displaying partner avatar, status pills, Connect Partner dialog, Cancel Request, Accept/Decline actions, profile visibility toggle, and Graceful Unlink confirmation.
+   - `InboxScreen`: Added top pinned `❤️ LOVE CONNECTION` section with romantic empty invitation card ("Connect your Love Partner (0/1) ❤️") and dedicated chat tile when connected.
+6. **Automated Test Suite Expansion (16 New Tests):**
+   - Domain model serialization, copyWith, and status helpers.
+   - SQLite v5 persistence, schema migration, and reactive streams.
+   - Ephemeral relay envelope love signaling factories and validation.
+   - DefaultLoveConnectionService: send request, 1-to-1 invariant check, self-connection blocking, mutual acceptance, decline, cancel, and graceful unlink with message preservation.
+   - SyncService inbound signal handling and immediate relay envelope purge.
+   - ConversationRepository couple demotion.
+   - ProfileScreen Love Connection card and InboxScreen pinned section widget tests.
+   - Test suite elevated from **116 to 132 tests (100% passing)** with **0 analyzer issues**.
+
+#### Files Created
+- `chatbox/lib/models/love_connection.dart`: Domain model and status enum for 1-to-1 couple connection.
+- `chatbox/lib/services/love_connection_service.dart`: 1-to-1 invariant enforcement, handshake protocol, and unlink service.
+
+#### Files Modified
+- `chatbox/lib/core/errors/app_exception.dart`: Added `LoveConnectionException`.
+- `chatbox/lib/models/ephemeral_relay_envelope.dart`: Added love signaling factories and `isLoveSignal`.
+- `chatbox/lib/database/app_database.dart`: Added `LoveConnections` table and bumped `schemaVersion` to 5.
+- `chatbox/lib/database/app_database.g.dart`: Generated Drift schema v5 code.
+- `chatbox/lib/database/local_database.dart`: Added Love Connection CRUD and reactive streams.
+- `chatbox/lib/services/sync_service.dart`: Handled inbound love signals with immediate relay purge.
+- `chatbox/lib/repositories/chat_repository.dart`: Added `loveConnectionService` getter and imports.
+- `chatbox/lib/repositories/conversation_repository.dart`: Added `demoteLoveConnection` and dynamic promotion.
+- `chatbox/lib/screens/profile/profile_screen.dart`: Added Love Connection card and actions.
+- `chatbox/lib/screens/inbox/inbox_screen.dart`: Added pinned Love Connection section with invitation card.
+- `chatbox/test/widget_test.dart`: Added 16 new tests (132 tests total).
+- `docts.md`: Updated master documentation to Version 3.8.0.
+
+---
+
 ## 8. Verification & Testing Matrix
 
 ### Current Automated Test Suite Status
@@ -969,40 +1048,49 @@ Every contributor and agent interacting with this codebase **must** adhere to th
 | **Phase 15: LocalDatabase Schema v4** | 1 | Save and retrieve ChatMessage with MediaAttachment in SQLite |
 | **Phase 15: End-to-End Media Messaging Integration** | 1 | Alice sends photo -> relay upload -> Bob syncs, downloads, decrypts, and relay blob is purged |
 | **Phase 15: Media UI Widget Tests** | 5 | `MessageBubble` image card with E2EE badge, `MessageBubble` audio waveform bar, `ChatInputField` attachment button & staged preview, `ChatInputField` voice recording mode, `PrivateMediaViewerScreen` fullscreen viewer & actions |
-| **Total Test Suite** | **116** | **100% Passing — Zero Analyzer Issues** |
+| **Phase 16: LoveConnection Domain Model** | 1 | `LoveConnection` serialization roundtrip, status helper properties, and `copyWith` mutations |
+| **Phase 16: LocalDatabase Schema v5** | 2 | Drift SQLite v5 persistence, schema migration, status updating, and `watchLoveConnection` reactive stream emission |
+| **Phase 16: Ephemeral Wire Signaling** | 1 | `EphemeralRelayEnvelope` love signaling factories (`loveRequest`, `loveAccept`, etc.) and `isLoveSignal` validation |
+| **Phase 16: LoveConnectionService Handshake** | 7 | Send request, 1-to-1 invariant enforcement (blocking 2nd connection), self-connection blocking, mutual acceptance handshake, decline request, cancel request, and visibility toggle |
+| **Phase 16: Chat History Safety on Unlink** | 1 | Unlink disconnection demoting couple connection on wire while strictly preserving local SQLite messages |
+| **Phase 16: SyncService & Relay Purge** | 1 | Inbound love signal handling and immediate relay signaling envelope purge (zero metadata footprint) |
+| **Phase 16: ConversationRepository Couple Demotion** | 1 | Demoting love connection status without clearing messages |
+| **Phase 16: Love Connection UI Widget Tests** | 2 | `ProfileScreen` Love Connection card with status states & dialogs; `InboxScreen` pinned Love Connection section with invitation card |
+| **Total Test Suite** | **132** | **100% Passing — Zero Analyzer Issues** |
 
 ---
 
 ## 9. Immediate Action Items & Next Milestone
 
-### Phase 15: Media Messaging (COMPLETED ✅ — 2026-09-19)
-- Client-side AES-256-GCM binary media encryption with X25519 key wrapping.
-- Ephemeral cloud blob relay with 24-hour TTL and immediate delivery ACK purge (zero cloud media retention).
-- Private sandboxed device storage (`app_sandbox/media/`) preventing automatic leakage to system photo galleries.
-- SQLite Drift schema upgraded to v4.
-- In-chat image previews, waveform audio notes, and fullscreen `PrivateMediaViewerScreen`.
-- 116/116 automated unit and widget tests passing with 0 analyzer issues.
+### Phase 16: Love Connection (COMPLETED ✅ — 2026-09-19)
+- Mutually accepted 1-to-1 couple connection strictly enforcing the 0 or 1 active connection invariant.
+- Partner discovery via anonymous `@username` search (zero PII, no email/phone lookup).
+- Ephemeral relay signaling handshake (`love_request`, `love_accept`, `love_decline`, `love_cancel`, `love_unlink`) with immediate delivery ACK purge.
+- SQLite Drift schema upgraded to v5 (`LoveConnections` table with reactive streams).
+- Graceful unlink / disconnect flow preserving device-local SQLite chat history.
+- Romantic Love Connection card in `ProfileScreen` and top pinned `❤️ LOVE CONNECTION` section in `InboxScreen`.
+- 132/132 automated unit and widget tests passing with 0 analyzer issues.
 
 ---
 
-### Next Phase: Phase 16 — Love Connection
+### Next Phase: Phase 17 — One-Time Love Code & Conversation Sharing
 
-Phase 16 implements the core couple subsystem of `ourPlace`: the mutually accepted 1-to-1 **Love Connection** (0 or 1 active connection).
+Phase 17 implements cryptographic single-use session authorization for selective conversation sharing between connected partners.
 
-#### Key Objectives for Phase 16:
-1. **1-to-1 Couple Connection Invariant:**
-   - Enforce strictly 0 or 1 active Love Connection per account.
-   - Prevent initiating or accepting a second Love Connection while an active connection exists.
-2. **Love Connection Invitation Protocol:**
-   - Partner discovery via anonymous username search (no email or phone lookup).
-   - Ephemeral connection request envelope via relay.
-   - Mutual acceptance handshake: both users must agree to form the Love Connection.
-   - Ability to decline or cancel pending requests.
-3. **Connection State Management:**
-   - Connection statuses: `none`, `request_sent`, `request_received`, `connected`, `disconnected`.
-   - Persist Love Connection state locally in Drift SQLite.
-4. **Profile & UI Controls:**
-   - Prominent Love Connection card in `ProfileScreen` and top pinned section in `InboxScreen`.
-   - Privacy toggle: Hide/show Love Connection presence on profile.
-   - Graceful disconnection / unlink flow with clear local retention confirmation.
+#### Key Objectives for Phase 17:
+1. **60-Second Single-Use Love Code Generator:**
+   - Cryptographically random 6-digit or alphanumeric one-time code (OTC) with 60-second strict expiration.
+   - Single-use replay protection: code is invalidated immediately upon first redemption or upon timeout.
+2. **Selective Conversation Sharing Authorization:**
+   - Explicit user consent workflow before initiating transfer.
+   - Choice of sharing specific conversation history or full timeline with the Love Partner.
+3. **End-to-End Encrypted Data Transfer:**
+   - Secure payload packaging and asymmetric key agreement using the one-time code and partner's X25519 identity.
+   - Ephemeral chunking and transfer over relay with immediate post-transfer purge.
+4. **Partner Device Ingestion & Deduplication:**
+   - Partner device validates code, decrypts transfer package, and merges conversation messages into local SQLite database without duplication.
+5. **UI & Security Controls:**
+   - Love Code generation dialog / bottom sheet in `ProfileScreen` and `ChatScreen`.
+   - Real-time countdown progress bar / visual timer for the 60-second expiration.
+   - Comprehensive unit and widget tests for code generation, expiry, replay rejection, and E2EE transfer.
 

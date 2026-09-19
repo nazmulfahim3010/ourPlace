@@ -4,8 +4,10 @@ import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
+import 'package:chatbox/repositories/conversation_repository.dart';
 import 'package:chatbox/services/chat_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/love_connection_service.dart';
 import 'package:chatbox/services/media_encryption_service.dart';
 import 'package:chatbox/services/media_relay_service.dart';
 import 'package:chatbox/services/media_storage_service.dart';
@@ -50,6 +52,9 @@ abstract class ChatRepository {
   MediaStorageService get mediaStorageService;
   MediaEncryptionService get mediaEncryptionService;
   Future<void> sendMediaMessage(ChatMessage message, List<int> mediaBytes);
+
+  // Phase 16 Love Connection additions
+  LoveConnectionService get loveConnectionService;
 }
 
 /// Primary implementation coordinating local SQLite storage, E2EE, and chat transport
@@ -63,6 +68,7 @@ class LocalChatRepository implements ChatRepository {
   final MediaRelayService _mediaRelayService;
   final MediaStorageService _mediaStorageService;
   final MediaEncryptionService _mediaEncryptionService;
+  final LoveConnectionService _loveConnectionService;
 
   LocalChatRepository({
     LocalDatabase? database,
@@ -74,6 +80,8 @@ class LocalChatRepository implements ChatRepository {
     MediaRelayService? mediaRelayService,
     MediaStorageService? mediaStorageService,
     MediaEncryptionService? mediaEncryptionService,
+    LoveConnectionService? loveConnectionService,
+    ConversationRepository? conversationRepository,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
         _encryptionService = encryptionService,
@@ -81,6 +89,13 @@ class LocalChatRepository implements ChatRepository {
         _mediaRelayService = mediaRelayService ?? InMemoryMediaRelayService(),
         _mediaStorageService = mediaStorageService ?? DefaultMediaStorageService(),
         _mediaEncryptionService = mediaEncryptionService ?? StandardMediaEncryptionService(),
+        _loveConnectionService = loveConnectionService ??
+            DefaultLoveConnectionService(
+              database: database ?? LocalDatabase(),
+              relayService: (chatService ?? ChatService()).relayService,
+              conversationRepository: conversationRepository ??
+                  LocalConversationRepository(database: database),
+            ),
         _syncService = syncService ??
             DefaultSyncService(
               database: database ?? LocalDatabase(),
@@ -90,11 +105,15 @@ class LocalChatRepository implements ChatRepository {
               mediaRelayService: mediaRelayService ?? InMemoryMediaRelayService(),
               mediaStorageService: mediaStorageService ?? DefaultMediaStorageService(),
               mediaEncryptionService: mediaEncryptionService ?? StandardMediaEncryptionService(),
+              loveConnectionService: loveConnectionService,
             ),
         _realtimeService = realtimeService ??
             DefaultRealtimeService(
               chatService: chatService ?? ChatService(),
             );
+
+  @override
+  LoveConnectionService get loveConnectionService => _loveConnectionService;
 
   @override
   SyncService get syncService => _syncService;

@@ -3,11 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:chatbox/core/theme/app_theme.dart';
 import 'package:chatbox/core/utils/recovery_key_utils.dart';
 import 'package:chatbox/database/local_database.dart';
+import 'package:chatbox/models/love_connection.dart';
 import 'package:chatbox/models/security_log.dart';
 import 'package:chatbox/models/user.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
-
 import 'package:chatbox/services/app_lock_service.dart';
+import 'package:chatbox/services/love_connection_service.dart';
 import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/screens/auth/app_lock_screen.dart';
@@ -20,6 +21,7 @@ class ProfileScreen extends StatefulWidget {
   final AppLockService? appLockService;
   final RealtimeService? realtimeService;
   final NotificationService? notificationService;
+  final LoveConnectionService? loveConnectionService;
 
   const ProfileScreen({
     super.key,
@@ -28,6 +30,7 @@ class ProfileScreen extends StatefulWidget {
     this.appLockService,
     this.realtimeService,
     this.notificationService,
+    this.loveConnectionService,
   });
 
   @override
@@ -35,6 +38,7 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  late final LoveConnectionService _loveConnectionService;
   bool _hideLoveConnection = false;
   bool _biometricsEnabled = false;
   bool _biometricsAvailable = false;
@@ -49,6 +53,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _loveConnectionService = widget.loveConnectionService ??
+        InMemoryLoveConnectionService();
     _realtimeService = widget.realtimeService ?? DefaultRealtimeService();
     _notificationService =
         widget.notificationService ?? DefaultNotificationService();
@@ -568,6 +574,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 20),
 
+
+
               /// Security & App Lock Card (Phase 8)
               if (widget.appLockService != null) ...[
                 Container(
@@ -736,6 +744,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 20),
 
               ],
+
+              /// Love Connection Card (Phase 16)
+              _buildLoveConnectionCard(),
+              const SizedBox(height: 20),
 
               /// Privacy & Real-Time Presence Card (Phase 13)
               Container(
@@ -1065,6 +1077,397 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Love Connection Card Component (Phase 16)
+  Widget _buildLoveConnectionCard() {
+    final currentUserId = widget.currentUser?.id ?? 'current_user';
+    final currentUsername = widget.currentUser?.username ?? '@alex';
+
+    return StreamBuilder<LoveConnection?>(
+      stream: _loveConnectionService.watchLoveConnection(currentUserId: currentUserId),
+      builder: (context, snapshot) {
+        final conn = snapshot.data;
+        final isConnected = conn != null && conn.isConnected;
+        final isPendingSent = conn != null && conn.isPendingSent;
+        final isPendingReceived = conn != null && conn.isPendingReceived;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: isConnected
+                ? const Color(0xFF2E2428)
+                : const Color(0xFF242424),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isConnected
+                  ? const Color(0xFFFF6B81).withValues(alpha: 0.5)
+                  : const Color(0xFF333333),
+              width: isConnected ? 1.5 : 1.0,
+            ),
+          ),
+          padding: const EdgeInsets.all(18.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Text(isConnected ? '❤️' : '🤍', style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Love Connection',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isConnected
+                          ? Colors.pinkAccent.withValues(alpha: 0.2)
+                          : isPendingSent || isPendingReceived
+                              ? Colors.amberAccent.withValues(alpha: 0.15)
+                              : Colors.white10,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      isConnected
+                          ? 'CONNECTED'
+                          : isPendingSent
+                              ? 'INVITATION SENT'
+                              : isPendingReceived
+                                  ? 'REQUEST RECEIVED'
+                                  : '0 OF 1 ACTIVE',
+                      style: TextStyle(
+                        color: isConnected
+                            ? const Color(0xFFFF6B81)
+                            : isPendingSent || isPendingReceived
+                                ? Colors.amberAccent
+                                : Colors.white60,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              if (isConnected) ...[
+                // Connected Partner Details
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: const Color(0xFFFF6B81).withValues(alpha: 0.2),
+                      child: const Text('💕', style: TextStyle(fontSize: 18)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            conn.partnerUsername,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            conn.connectedAt != null
+                                ? 'Connected since ${conn.connectedAt!.month}/${conn.connectedAt!.day}/${conn.connectedAt!.year}'
+                                : 'Active Love Connection',
+                            style: const TextStyle(
+                              color: Color(0xFFAAAAAA),
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(color: Color(0xFF383838), height: 24),
+                // Privacy Toggle
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Show in Profile',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Display couple badge on identity',
+                          style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                    Switch(
+                      value: conn.isVisibleOnProfile,
+                      activeThumbColor: Colors.pinkAccent,
+                      activeTrackColor: Colors.pinkAccent.withValues(alpha: 0.4),
+                      onChanged: (val) async {
+                        await _loveConnectionService.setVisibilityOnProfile(
+                          val,
+                          currentUserId: currentUserId,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const Divider(color: Color(0xFF383838), height: 24),
+                // Disconnect action
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.link_off_rounded, color: Colors.white70, size: 16),
+                    label: const Text(
+                      'Disconnect Love Partner',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF555555)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    onPressed: () => _confirmUnlinkLoveConnection(currentUserId, currentUsername),
+                  ),
+                ),
+              ] else if (isPendingSent) ...[
+                // Request Sent pending
+                Text(
+                  'Waiting for ${conn.partnerUsername} to accept your invitation...',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 38,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await _loveConnectionService.cancelConnectionRequest(
+                        currentUserId: currentUserId,
+                        currentUsername: currentUsername,
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF555555)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: const Text('Cancel Request', style: TextStyle(color: Colors.white70)),
+                  ),
+                ),
+              ] else if (isPendingReceived) ...[
+                // Request Received
+                Text(
+                  '${conn.partnerUsername} wants to establish a Love Connection with you! ❤️',
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.pinkAccent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        onPressed: () async {
+                          await _loveConnectionService.acceptConnectionRequest(
+                            partnerUsername: conn.partnerUsername,
+                            currentUserId: currentUserId,
+                            currentUsername: currentUsername,
+                          );
+                        },
+                        child: const Text('Accept ❤️', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    TextButton(
+                      onPressed: () async {
+                        await _loveConnectionService.declineConnectionRequest(
+                          partnerUsername: conn.partnerUsername,
+                          currentUserId: currentUserId,
+                          currentUsername: currentUsername,
+                        );
+                      },
+                      child: const Text('Decline', style: TextStyle(color: Colors.white60)),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                // None
+                const Text(
+                  'ourPlace is strictly 1-to-1 for couples. Connect with your partner using their anonymous @username to activate couple features.',
+                  style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 13),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 42,
+                  child: ElevatedButton.icon(
+                    icon: const Text('❤️', style: TextStyle(fontSize: 16)),
+                    label: const Text(
+                      'Connect with Partner',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    ),
+                    onPressed: () => _showConnectPartnerDialog(currentUserId, currentUsername),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showConnectPartnerDialog(String currentUserId, String currentUsername) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF242424),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Connect with Partner', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter your partner\'s anonymous @username to send a Love Connection request:',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF383838),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              child: TextField(
+                controller: controller,
+                style: const TextStyle(color: Colors.white),
+                cursorColor: Colors.white,
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  prefixText: '@',
+                  prefixStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  hintText: 'partner_username',
+                  hintStyle: TextStyle(color: Colors.white38),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.pinkAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            onPressed: () async {
+              final text = controller.text.trim();
+              if (text.isEmpty) return;
+              Navigator.of(ctx).pop();
+              try {
+                await _loveConnectionService.sendConnectionRequest(
+                  partnerUsername: text,
+                  currentUserId: currentUserId,
+                  currentUsername: currentUsername,
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Love Connection request sent to @$text! ❤️'),
+                      backgroundColor: const Color(0xFF2E2428),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(e.toString()), backgroundColor: Colors.redAccent),
+                  );
+                }
+              }
+            },
+            child: const Text('Send Request'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmUnlinkLoveConnection(String currentUserId, String currentUsername) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF242424),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Disconnect Partner?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Are you sure you want to disconnect? Your device\'s local chat history will remain completely safe on your phone, but couple features will be paused.',
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Keep Connected', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await _loveConnectionService.unlinkLoveConnection(
+                currentUserId: currentUserId,
+                currentUsername: currentUsername,
+              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Love Connection unlinked.'), backgroundColor: Color(0xFF383838)),
+                );
+              }
+            },
+            child: const Text('Disconnect'),
+          ),
+        ],
       ),
     );
   }

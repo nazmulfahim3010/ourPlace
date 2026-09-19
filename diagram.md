@@ -436,7 +436,7 @@ sequenceDiagram
 
 ## 9. Local Database Schema & Entity Relationships
 
-The local Drift SQLite database (Schema Version 3) enforces local persistence for accounts, chat messages, and device security logs:
+The local Drift SQLite database (Schema Version 5) enforces local persistence for accounts, chat messages, device security logs, and couple love connections:
 
 ```mermaid
 erDiagram
@@ -460,6 +460,7 @@ erDiagram
         INTEGER type "MessageType enum (0:text, 1:image, 2:audio, 3:video, 4:system)"
         INTEGER status "MessageStatus enum (0:sending, 1:sent, 2:delivered, 3:read, 4:failed)"
         DATETIME timestamp "UTC timestamp"
+        TEXT media_data "Nullable JSON encrypted media attachment metadata"
     }
 
     SECURITY_LOGS {
@@ -469,6 +470,15 @@ erDiagram
         TEXT description "Human-readable event audit description"
         DATETIME timestamp "UTC event timestamp"
         TEXT metadata_json "Nullable JSON serialized audit details"
+    }
+
+    LOVE_CONNECTIONS {
+        TEXT id PK "Unique connection UUID"
+        TEXT partner_username "Partner @username"
+        TEXT status "LoveConnectionStatus (none, requestSent, requestReceived, connected, disconnected)"
+        DATETIME connected_at "Nullable timestamp when connected"
+        DATETIME updated_at "Timestamp of last status mutation"
+        BOOLEAN is_visible_on_profile "Profile visibility toggle"
     }
 
     CONVERSATION_DOMAIN {
