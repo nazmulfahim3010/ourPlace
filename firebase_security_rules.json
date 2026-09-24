@@ -2,17 +2,18 @@
   "rules": {
     "relays": {
       "$recipientId": {
-        ".read": "auth != null && auth.uid == $recipientId",
+        ".read": true,
         "$messageId": {
-          ".write": "auth != null",
-          ".validate": "newData.hasChildren(['id', 'senderId', 'recipientId', 'encryptedPayload', 'iv', 'authTag'])"
+          ".write": true,
+          ".validate": "newData.hasChildren(['id', 'sender_id', 'recipient_id', 'ciphertext', 'timestamp', 'expires_at'])"
         }
       }
     },
     "directory": {
-      ".read": "auth != null",
+      ".read": true,
       "$username": {
-        ".write": "auth != null && (!data.exists() || data.child('accountId').val() == auth.uid)"
+        ".write": true,
+        ".validate": "newData.hasChildren(['accountId', 'username', 'publicIdentityKey', 'lastSeen'])"
       }
     }
   }

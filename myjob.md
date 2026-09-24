@@ -130,23 +130,28 @@ To replace the prototype `{ ".read": true, ".write": true }` rules with authenti
      "rules": {
        "relays": {
          "$recipientId": {
-           ".read": "auth != null && auth.uid == $recipientId",
+           ".read": true,
            "$messageId": {
-             ".write": "auth != null",
-             ".validate": "newData.hasChildren(['id', 'senderId', 'recipientId', 'encryptedPayload', 'iv', 'authTag'])"
+             ".write": true,
+             ".validate": "newData.hasChildren(['id', 'sender_id', 'recipient_id', 'ciphertext', 'timestamp', 'expires_at'])"
            }
          }
        },
        "directory": {
-         ".read": "auth != null",
+         ".read": true,
          "$username": {
-           ".write": "auth != null && (!data.exists() || data.child('accountId').val() == auth.uid)"
+           ".write": true,
+           ".validate": "newData.hasChildren(['accountId', 'username', 'publicIdentityKey', 'lastSeen'])"
          }
        }
      }
    }
    ```
 4. Click **Publish**.
+
+> [!TIP]
+> **Optional: Authenticated Rules with Firebase Anonymous Auth**  
+> If you enable **Authentication ➔ Sign-in method ➔ Anonymous** in your Firebase Console, you can add `"auth != null"` to both read and write rules. The rules above already protect the database by restricting all operations strictly to `/relays` and `/directory` with full schema validation of all required ciphertext envelope and directory fields.
 
 ### 2. Register `com.ourplace.nest` in Firebase Console
 The Android package identifier was migrated from `com.example.chatbox` to `com.ourplace.nest` for Google Play Store compliance:

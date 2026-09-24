@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:chatbox/core/config/app_environment.dart';
 import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/core/theme/app_theme.dart';
@@ -15,6 +16,11 @@ void main() async {
   AppEnvironment.setEnvironment(EnvironmentType.production);
   try {
     await Firebase.initializeApp();
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+    } catch (authError) {
+      debugPrint('FirebaseAuth notice (anonymous sign-in optional): $authError');
+    }
   } catch (e) {
     debugPrint('Firebase initialization notice: $e');
   }
