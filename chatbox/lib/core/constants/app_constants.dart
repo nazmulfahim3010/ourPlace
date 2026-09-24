@@ -1,6 +1,6 @@
-/// Application-wide constants adhering to ourPlace privacy principles
+/// Application-wide constants adhering to Nest privacy principles
 class AppConstants {
-  static const String appName = 'ourPlace';
+  static const String appName = 'Nest';
   static const String appTagline = 'Private • Anonymous • Local-first';
 
   // Identity Validation Rules
@@ -12,8 +12,8 @@ class AppConstants {
   static const String defaultPartnerId = 'partner_user_id';
   static const String defaultPartnerName = '@twilight';
   static const String currentUserId = 'current_user';
-  static const String databaseName = 'ourplace_chat';
+  static const String databaseName = 'nest_chat';
 
   // Persistence Keys
-  static const String prefActiveUserId = 'ourplace_active_account_id';
+  static const String prefActiveUserId = 'nest_active_account_id';
 }

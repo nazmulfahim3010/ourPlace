@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:chatbox/core/theme/app_theme.dart';
 import 'package:chatbox/models/conversation.dart';
@@ -32,6 +33,8 @@ class InboxScreen extends StatefulWidget {
 class _InboxScreenState extends State<InboxScreen> {
   late final ConversationRepository _conversationRepo;
   final TextEditingController _searchController = TextEditingController();
+  StreamSubscription<List<Conversation>>? _conversationsSub;
+  StreamSubscription<dynamic>? _notificationSub;
 
   List<Conversation> _allConversations = [];
   List<Conversation> _filteredConversations = [];
@@ -45,29 +48,49 @@ class _InboxScreenState extends State<InboxScreen> {
         widget.conversationRepository ?? LocalConversationRepository();
     _searchController.addListener(_onSearchChanged);
     _loadConversations();
+    _conversationsSub = _conversationRepo
+        .watchConversations(currentUserId: widget.currentUser?.id)
+        .listen((conversations) {
+      if (mounted) {
+        setState(() {
+          _allConversations = conversations;
+          _applySearchFilter();
+          _isLoading = false;
+        });
+      }
+    });
+    _notificationSub = widget.chatRepository?.notificationService.onNotificationDisplayed
+        .listen((_) => _loadConversations());
   }
 
   @override
   void dispose() {
+    _conversationsSub?.cancel();
+    _notificationSub?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _applySearchFilter() {
+    final query = _searchQuery;
+    if (query.isEmpty) {
+      _filteredConversations = _allConversations;
+    } else {
+      _filteredConversations = _allConversations.where((c) {
+        final nameMatch = c.partner.displayName.toLowerCase().contains(query);
+        final usernameMatch = c.partner.username.toLowerCase().contains(query);
+        final messageMatch = c.lastMessage?.text.toLowerCase().contains(query) ?? false;
+        return nameMatch || usernameMatch || messageMatch;
+      }).toList();
+    }
   }
 
   void _onSearchChanged() {
     final query = _searchController.text.trim().toLowerCase();
     setState(() {
       _searchQuery = query;
-      if (query.isEmpty) {
-        _filteredConversations = _allConversations;
-      } else {
-        _filteredConversations = _allConversations.where((c) {
-          final nameMatch = c.partner.displayName.toLowerCase().contains(query);
-          final usernameMatch = c.partner.username.toLowerCase().contains(query);
-          final messageMatch = c.lastMessage?.text.toLowerCase().contains(query) ?? false;
-          return nameMatch || usernameMatch || messageMatch;
-        }).toList();
-      }
+      _applySearchFilter();
     });
   }
 
@@ -78,7 +101,7 @@ class _InboxScreenState extends State<InboxScreen> {
     if (mounted) {
       setState(() {
         _allConversations = conversations;
-        _filteredConversations = conversations;
+        _applySearchFilter();
         _isLoading = false;
       });
     }
@@ -94,6 +117,7 @@ class _InboxScreenState extends State<InboxScreen> {
           currentUser: widget.currentUser,
           repository: widget.chatRepository,
           authRepository: widget.authRepository,
+          isLoveConnection: conversation.isLoveConnection,
         ),
         settings: const RouteSettings(name: '/chat'),
       ),
@@ -159,11 +183,15 @@ class _InboxScreenState extends State<InboxScreen> {
               onPressed: () async {
                 final raw = usernameController.text.trim();
                 if (raw.isEmpty) return;
-                final clean = raw.replaceAll('@', '');
+                final clean = raw.replaceAll('@', '').trim();
+                if (clean.isEmpty) return;
+                final displayName = clean.length > 1
+                    ? clean[0].toUpperCase() + clean.substring(1)
+                    : clean.toUpperCase();
                 final partnerUser = User(
                   id: 'user_$clean',
                   username: '@$clean',
-                  displayName: clean[0].toUpperCase() + clean.substring(1),
+                  displayName: displayName,
                   isCurrentUser: false,
                 );
 
@@ -216,8 +244,20 @@ class _InboxScreenState extends State<InboxScreen> {
                           : ListView(
                               padding: const EdgeInsets.only(bottom: 24),
                               children: [
-                                /// Love Connection Section (Always pinned at top when not searching)
-                                if (_searchQuery.isEmpty) ...[
+                                if (_searchQuery.isNotEmpty) ...[
+                                  /// Filtered Search Results (includes all matching conversations)
+                                  _buildSectionHeader(
+                                    'SEARCH RESULTS (${_filteredConversations.length})',
+                                  ),
+                                  ..._filteredConversations.map(
+                                    (conv) => ConversationTile(
+                                      conversation: conv,
+                                      currentUserId: widget.currentUser?.id ?? 'current_user',
+                                      onTap: () => _openConversation(conv),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  /// Love Connection Section (Always pinned at top when not searching)
                                   _buildSectionHeader(
                                     loveConversations.isNotEmpty
                                         ? '❤️ LOVE CONNECTION'
@@ -235,23 +275,23 @@ class _InboxScreenState extends State<InboxScreen> {
                                   else
                                     _buildEmptyLoveCard(),
                                   const SizedBox(height: 14),
-                                ],
 
-                                /// Regular Conversations Section
-                                if (otherConversations.isNotEmpty) ...[
-                                  _buildSectionHeader(
-                                    'CONVERSATIONS (${otherConversations.length})',
-                                  ),
-                                  ...otherConversations.map(
-                                    (conv) => ConversationTile(
-                                      conversation: conv,
-                                      currentUserId: widget.currentUser?.id ?? 'current_user',
-                                      onTap: () => _openConversation(conv),
+                                  /// Regular Conversations Section
+                                  if (otherConversations.isNotEmpty) ...[
+                                    _buildSectionHeader(
+                                      'CONVERSATIONS (${otherConversations.length})',
                                     ),
-                                  ),
-                                ] else if (_searchQuery.isEmpty && loveConversations.isEmpty) ...[
-                                  const SizedBox(height: 32),
-                                  _buildNoConversationsPlaceholder(),
+                                    ...otherConversations.map(
+                                      (conv) => ConversationTile(
+                                        conversation: conv,
+                                        currentUserId: widget.currentUser?.id ?? 'current_user',
+                                        onTap: () => _openConversation(conv),
+                                      ),
+                                    ),
+                                  ] else if (loveConversations.isEmpty) ...[
+                                    const SizedBox(height: 32),
+                                    _buildNoConversationsPlaceholder(),
+                                  ],
                                 ],
                               ],
                             ),
@@ -274,6 +314,10 @@ class _InboxScreenState extends State<InboxScreen> {
 
   Widget _buildInboxHeader() {
     final currentUsername = widget.currentUser?.username ?? '@alex';
+    final cleanUsername = currentUsername.replaceFirst(RegExp(r'^@+'), '').trim();
+    final avatarChar = cleanUsername.isNotEmpty
+        ? cleanUsername[0].toUpperCase()
+        : (currentUsername.isNotEmpty ? currentUsername[0].toUpperCase() : '?');
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -288,10 +332,22 @@ class _InboxScreenState extends State<InboxScreen> {
             /// App Logo / Name
             Row(
               children: [
-                const Text('❤️', style: TextStyle(fontSize: 18)),
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  padding: const EdgeInsets.all(3.5),
+                  child: Image.asset(
+                    'assets/images/logo_icon.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 const Text(
-                  'ourPlace',
+                  'Nest',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -318,9 +374,7 @@ class _InboxScreenState extends State<InboxScreen> {
                       radius: 11,
                       backgroundColor: Colors.white,
                       child: Text(
-                        currentUsername.length > 1
-                            ? currentUsername[1].toUpperCase()
-                            : '?',
+                        avatarChar,
                         style: const TextStyle(
                           color: Colors.black,
                           fontSize: 11,

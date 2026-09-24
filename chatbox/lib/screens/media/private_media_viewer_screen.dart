@@ -85,7 +85,7 @@ class _PrivateMediaViewerScreenState extends State<PrivateMediaViewerScreen> {
           ],
         ),
         content: const Text(
-          'Saving this media exports it outside ourPlace secure sandbox and makes it '
+          'Saving this media exports it outside Nest secure sandbox and makes it '
           'accessible to other apps on your physical device. Do you wish to proceed?',
           style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 14, height: 1.4),
         ),

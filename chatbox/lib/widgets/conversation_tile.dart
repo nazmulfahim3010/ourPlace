@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:chatbox/models/conversation.dart';
+import 'package:chatbox/models/message.dart';
 
 /// Reusable tile component representing a single conversation item in the Inbox
 class ConversationTile extends StatelessWidget {
@@ -20,18 +21,26 @@ class ConversationTile extends StatelessWidget {
     final lastMsg = conversation.lastMessage;
     final isLove = conversation.isLoveConnection;
 
-    final initial = partner.displayName.isNotEmpty
-        ? (partner.displayName.startsWith('@')
-            ? partner.displayName.substring(1)[0].toUpperCase()
-            : partner.displayName[0].toUpperCase())
-        : '?';
+    final trimmedName = partner.displayName.trim();
+    final cleanName = trimmedName.replaceFirst(RegExp(r'^@+'), '').trim();
+    final initial = cleanName.isNotEmpty ? cleanName[0].toUpperCase() : '?';
 
     // Preview snippet
     String messageSnippet = 'No messages yet';
     if (lastMsg != null) {
       final isSentByMe = lastMsg.isSentBy(currentUserId);
       final prefix = isSentByMe ? 'You: ' : '';
-      messageSnippet = '$prefix${lastMsg.text}';
+      if (lastMsg.type == MessageType.image) {
+        messageSnippet = '$prefix📷 Photo';
+      } else if (lastMsg.type == MessageType.audio) {
+        messageSnippet = '$prefix🎙️ Voice note';
+      } else if (lastMsg.type == MessageType.video) {
+        messageSnippet = '$prefix🎥 Video';
+      } else if (lastMsg.text.isNotEmpty) {
+        messageSnippet = '$prefix${lastMsg.text}';
+      } else if (lastMsg.mediaAttachment != null) {
+        messageSnippet = '$prefix📎 Attachment';
+      }
     }
 
     return Padding(
@@ -117,18 +126,19 @@ class ConversationTile extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          Text(
-                            conversation.formattedTimestamp,
-                            style: TextStyle(
-                              color: conversation.hasUnread
-                                  ? (isLove ? const Color(0xFFFF6B81) : Colors.white)
-                                  : Colors.white54,
-                              fontSize: 12,
-                              fontWeight: conversation.hasUnread
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                          if (conversation.formattedTimestamp.isNotEmpty)
+                            Text(
+                              conversation.formattedTimestamp,
+                              style: TextStyle(
+                                color: conversation.hasUnread
+                                    ? (isLove ? const Color(0xFFFF6B81) : Colors.white)
+                                    : Colors.white54,
+                                fontSize: 12,
+                                fontWeight: conversation.hasUnread
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
                             ),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 5),

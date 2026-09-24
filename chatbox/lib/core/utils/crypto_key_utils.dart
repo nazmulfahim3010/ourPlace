@@ -14,8 +14,8 @@ class CryptoKeyUtils {
   static final AesGcm _aesGcm = AesGcm.with256bits();
   static final Hkdf _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
-  /// Key derivation info tag for ourPlace messaging protocol
-  static final List<int> _hkdfInfo = utf8.encode('ourPlace-e2ee-message-v1');
+  /// Key derivation info tag for Nest messaging protocol
+  static final List<int> _hkdfInfo = utf8.encode('nest-e2ee-message-v1');
 
   /// Generate a new random X25519 KeyPair
   static Future<SimpleKeyPair> generateX25519KeyPair() async {

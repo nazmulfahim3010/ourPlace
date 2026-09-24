@@ -87,7 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _handleTestNotification() {
     _notificationService.showLocalAlert(
-      title: widget.currentUser?.displayName ?? 'ourPlace Partner',
+      title: widget.currentUser?.displayName ?? 'Nest Partner',
       body: '❤️ This is a private test message.',
       conversationId: widget.currentUser?.id ?? '@partner',
     );
@@ -95,10 +95,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
       SnackBar(
         content: Text(
           _discreetModeEnabled
-              ? 'Discreet alert triggered: "ourPlace • New private message received"'
+              ? 'Discreet alert triggered: "Nest • New private message received"'
               : 'Alert triggered with cleartext preview.',
+          style: const TextStyle(
+            color: AppTheme.notificationTextPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-        backgroundColor: const Color(0xFF2E2E2E),
+        backgroundColor: AppTheme.notificationSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: _discreetModeEnabled
+                ? AppTheme.notificationDiscreetGold
+                : AppTheme.notificationBorder,
+            width: 1.2,
+          ),
+        ),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -1388,7 +1401,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ] else ...[
                 // None
                 const Text(
-                  'ourPlace is strictly 1-to-1 for couples. Connect with your partner using their anonymous @username to activate couple features.',
+                  'Nest is strictly 1-to-1 for couples. Connect with your partner using their anonymous @username to activate couple features.',
                   style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 13),
                 ),
                 const SizedBox(height: 14),

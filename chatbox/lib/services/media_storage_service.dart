@@ -53,7 +53,7 @@ class DefaultMediaStorageService implements MediaStorageService {
     required MessageType type,
   }) async {
     final subDir = type.name;
-    final cleanPath = 'sandbox://ourPlace/media/$subDir/$fileName';
+    final cleanPath = 'sandbox://nest/media/$subDir/$fileName';
     _storage[cleanPath] = Uint8List.fromList(bytes);
     return cleanPath;
   }

@@ -98,7 +98,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     setState(() => _isChecking = true);
 
     final success = await widget.appLockService.authenticateWithBiometrics(
-      reason: 'Unlock ourPlace to access private messages',
+      reason: 'Unlock Nest to access private messages',
     );
 
     if (!mounted) return;
@@ -222,23 +222,38 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
                       /// Lock Icon / Shield
                       Container(
-                        width: 56,
-                        height: 56,
-                        decoration: const BoxDecoration(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color(0xFF282828),
+                          color: isVerifyOnly ? const Color(0xFF282828) : Colors.white,
+                          boxShadow: isVerifyOnly
+                              ? null
+                              : [
+                                  BoxShadow(
+                                    color: const Color(0xFF1D525D).withValues(alpha: 0.35),
+                                    blurRadius: 18,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
                         ),
-                        child: const Icon(
-                          Icons.lock_outline_rounded,
-                          color: Colors.white,
-                          size: 28,
-                        ),
+                        padding: isVerifyOnly ? EdgeInsets.zero : const EdgeInsets.all(9),
+                        child: isVerifyOnly
+                            ? const Icon(
+                                Icons.lock_outline_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              )
+                            : Image.asset(
+                                'assets/images/logo_icon.png',
+                                fit: BoxFit.contain,
+                              ),
                       ),
                       const SizedBox(height: 16),
 
                       /// Title
                       Text(
-                        isVerifyOnly ? 'Confirm Passcode' : 'ourPlace',
+                        isVerifyOnly ? 'Confirm Passcode' : 'Nest',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 22,

@@ -64,6 +64,8 @@ import 'package:chatbox/screens/memories/shared_memories_screen.dart';
 import 'package:chatbox/screens/couple/couple_milestones_screen.dart';
 import 'package:chatbox/screens/couple/love_notes_screen.dart';
 import 'package:chatbox/main.dart';
+import 'package:chatbox/core/theme/app_theme.dart';
+import 'package:chatbox/widgets/top_notification_banner.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'dart:async';
 
@@ -433,7 +435,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify header and branding
-      expect(find.text('ourPlace'), findsOneWidget);
+      expect(find.text('Nest'), findsOneWidget);
       expect(find.text('Search conversations or @username...'), findsOneWidget);
 
       // Verify sections
@@ -483,6 +485,119 @@ void main() {
       // Returned to InboxScreen
       expect(find.byType(InboxScreen), findsOneWidget);
     });
+
+    testWidgets('InboxScreen searching for Love Connection renders SEARCH RESULTS and avoids blank screen',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InboxScreen(
+            conversationRepository: convRepo,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Search for Love Connection partner 'Twilight'
+      await tester.enterText(find.byType(TextField), 'Twilight');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('SEARCH RESULTS (1)'), findsOneWidget);
+      expect(find.widgetWithText(ConversationTile, 'Twilight'), findsOneWidget);
+      expect(find.widgetWithText(ConversationTile, 'Sarah'), findsNothing);
+    });
+
+    testWidgets('ConversationTile safely handles @ and empty displayName without RangeError',
+        (WidgetTester tester) async {
+      final edgeUser = User(
+        id: 'u_edge',
+        username: '@',
+        displayName: '@',
+        isCurrentUser: false,
+      );
+      final edgeConv = Conversation(
+        id: 'c_edge',
+        partner: edgeUser,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ConversationTile(
+              conversation: edgeConv,
+              onTap: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Renders without throwing RangeError
+      expect(find.text('@'), findsOneWidget);
+      expect(find.text('?'), findsOneWidget);
+      expect(find.text('No messages yet'), findsOneWidget);
+    });
+
+    testWidgets('ConversationTile displays photo, voice, video snippets and suppresses empty timestamp',
+        (WidgetTester tester) async {
+      final photoConv = Conversation(
+        id: 'c_photo',
+        partner: User(id: 'p1', username: '@sarah', displayName: 'Sarah'),
+        lastMessage: ChatMessage(
+          id: 'm_photo',
+          senderId: 'p1',
+          recipientId: 'current_user',
+          text: '',
+          type: MessageType.image,
+          timestamp: DateTime.now(),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ConversationTile(
+              conversation: photoConv,
+              onTap: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('📷 Photo'), findsOneWidget);
+    });
+
+    testWidgets('InboxScreen start conversation dialog safely guards single @ or whitespace input',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InboxScreen(
+            conversationRepository: convRepo,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Open new conversation dialog
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Start a Conversation'), findsOneWidget);
+
+      // Enter only '@' and tap Start Chat - should NOT throw RangeError and dialog remains open
+      await tester.enterText(find.byType(TextField).last, '@');
+      await tester.pump();
+      await tester.tap(find.text('Start Chat'));
+      await tester.pump();
+
+      // Dialog is still open because invalid clean username was ignored
+      expect(find.text('Start a Conversation'), findsOneWidget);
+
+      // Cancel dialog
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+    });
   });
 
   group('AuthScreen & AuthGate UI Tests', () {
@@ -514,7 +629,7 @@ void main() {
 
       expect(find.widgetWithText(Tab, 'Sign In'), findsOneWidget);
       expect(find.widgetWithText(Tab, 'Create Account'), findsOneWidget);
-      expect(find.text('ourPlace'), findsOneWidget);
+      expect(find.text('Nest'), findsOneWidget);
 
       // Switch to Create Account tab
       await tester.tap(find.widgetWithText(Tab, 'Create Account'));
@@ -807,7 +922,7 @@ void main() {
         ),
       );
 
-      expect(find.text('ourPlace'), findsOneWidget);
+      expect(find.text('Nest'), findsOneWidget);
       expect(find.text('Enter your 4-digit passcode to unlock'), findsOneWidget);
 
       // Enter incorrect code 1234
@@ -1353,7 +1468,7 @@ void main() {
       );
       final key = await CryptoKeyUtils.deriveMessageKey(sharedSecret: secret);
 
-      const plaintext = 'Secret love letter for ourPlace 💌';
+      const plaintext = 'Secret love letter for Nest 💌';
       final secretBox = await CryptoKeyUtils.encryptAesGcm(
         plaintext: plaintext,
         secretKey: key,
@@ -2551,7 +2666,7 @@ void main() {
 
       expect(service.displayedAlerts.length, equals(1));
       final alert = service.displayedAlerts.first;
-      expect(alert['title'], equals('ourPlace'));
+      expect(alert['title'], equals('Nest'));
       expect(alert['body'], equals('New private message received'));
       expect(alert['isDiscreet'], isTrue);
     });
@@ -2631,7 +2746,7 @@ void main() {
       final processed = await syncService.processInboundEnvelopes(currentUserId: '@bob');
       expect(processed.length, equals(1));
       expect(notificationService.displayedAlerts.length, equals(1));
-      expect(notificationService.displayedAlerts.first['title'], equals('ourPlace'));
+      expect(notificationService.displayedAlerts.first['title'], equals('Nest'));
       expect(notificationService.displayedAlerts.first['body'], equals('New private message received'));
 
       relay.dispose();
@@ -2688,7 +2803,7 @@ void main() {
         fileName: 'vacation.jpg',
         mimeType: 'image/jpeg',
         fileSizeBytes: 1048576,
-        localPath: 'sandbox://ourPlace/media/image/vacation.jpg',
+        localPath: 'sandbox://nest/media/image/vacation.jpg',
         remoteUrl: 'relay://ephemeral-media/blob_123',
         encryptedMediaKey: 'encKeyBase64==',
         nonce: 'nonceBase64==',
@@ -2707,7 +2822,7 @@ void main() {
       expect(restored.fileName, equals('vacation.jpg'));
       expect(restored.mimeType, equals('image/jpeg'));
       expect(restored.fileSizeBytes, equals(1048576));
-      expect(restored.localPath, equals('sandbox://ourPlace/media/image/vacation.jpg'));
+      expect(restored.localPath, equals('sandbox://nest/media/image/vacation.jpg'));
       expect(restored.remoteUrl, equals('relay://ephemeral-media/blob_123'));
       expect(restored.encryptedMediaKey, equals('encKeyBase64=='));
       expect(restored.nonce, equals('nonceBase64=='));
@@ -2987,7 +3102,7 @@ void main() {
         type: MessageType.audio,
       );
 
-      expect(path, contains('ourPlace/media/audio/note.m4a'));
+      expect(path, contains('nest/media/audio/note.m4a'));
       expect(await storage.fileExistsInSandbox(path), isTrue);
 
       final read = await storage.readFromSandbox(path);
@@ -3030,7 +3145,7 @@ void main() {
           fileName: 'sunset.png',
           mimeType: 'image/png',
           fileSizeBytes: 2048,
-          localPath: 'sandbox://ourPlace/media/image/sunset.png',
+          localPath: 'sandbox://nest/media/image/sunset.png',
           remoteUrl: 'relay://ephemeral-media/sunset_blob',
         ),
       );
@@ -5039,6 +5154,166 @@ void main() {
       expect(find.text('Seal & Send 💌'), findsOneWidget);
 
       await db.close();
+    });
+  });
+
+  group('Phase 18+ — High-Visibility Top Notification Popup & Contrast Tests', () {
+    test('AppTheme high-visibility notification color tokens have valid contrast and values', () {
+      expect(AppTheme.notificationSurface, equals(const Color(0xFF1E1E26)));
+      expect(AppTheme.notificationBorder, equals(const Color(0xFF4D4D62)));
+      expect(AppTheme.notificationTextPrimary, equals(Colors.white));
+      expect(AppTheme.notificationTextSecondary, equals(const Color(0xFFE2E2EC)));
+      expect(AppTheme.notificationDiscreetGold, equals(const Color(0xFFFFB300)));
+      expect(AppTheme.notificationLovePink, equals(const Color(0xFFFF4081)));
+      expect(AppTheme.notificationChatBlue, equals(const Color(0xFF00E5FF)));
+      expect(AppTheme.notificationSuccessGreen, equals(const Color(0xFF00E676)));
+    });
+
+    test('DefaultNotificationService onNotificationDisplayed emits when showLocalAlert is called', () async {
+      final service = DefaultNotificationService();
+      service.clearLogs();
+
+      Map<String, dynamic>? receivedPayload;
+      final sub = service.onNotificationDisplayed.listen((payload) {
+        receivedPayload = payload;
+      });
+
+      await service.showLocalAlert(
+        title: '@twilight',
+        body: 'I adore you ❤️',
+        conversationId: '@twilight',
+        isDiscreet: false,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(receivedPayload, isNotNull);
+      expect(receivedPayload!['title'], equals('@twilight'));
+      expect(receivedPayload!['body'], equals('I adore you ❤️'));
+      expect(receivedPayload!['conversationId'], equals('@twilight'));
+      expect(receivedPayload!['isDiscreet'], isFalse);
+
+      await sub.cancel();
+    });
+
+    testWidgets('TopNotificationBanner renders title and body with high contrast colors at the top of the screen', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                Center(child: Text('Main Content')),
+                TopNotificationBanner(
+                  title: 'Nest Partner',
+                  body: 'Secret romantic message 💕',
+                  isDiscreet: false,
+                  displayDuration: Duration(seconds: 10),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nest Partner'), findsOneWidget);
+      expect(find.text('Secret romantic message 💕'), findsOneWidget);
+      expect(find.byType(TopNotificationBanner), findsOneWidget);
+
+      final titleText = tester.widget<Text>(find.text('Nest Partner'));
+      expect(titleText.style?.color, equals(AppTheme.notificationTextPrimary));
+      expect(titleText.style?.fontWeight, equals(FontWeight.bold));
+
+      final bodyText = tester.widget<Text>(find.text('Secret romantic message 💕'));
+      expect(bodyText.style?.color, equals(AppTheme.notificationTextSecondary));
+    });
+
+    testWidgets('TopNotificationBanner shows DISCREET badge when isDiscreet is true', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                TopNotificationBanner(
+                  title: 'Nest',
+                  body: 'New private message received',
+                  isDiscreet: true,
+                  displayDuration: Duration(seconds: 10),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nest'), findsOneWidget);
+      expect(find.text('New private message received'), findsOneWidget);
+      expect(find.text('DISCREET'), findsOneWidget);
+    });
+
+    testWidgets('TopNotificationBanner invokes onDismiss when close button is tapped', (tester) async {
+      bool dismissed = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                TopNotificationBanner(
+                  title: 'Alert',
+                  body: 'Testing close',
+                  displayDuration: const Duration(seconds: 10),
+                  onDismiss: () {
+                    dismissed = true;
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      await tester.pumpAndSettle();
+
+      expect(dismissed, isTrue);
+    });
+
+    testWidgets('InAppNotificationOverlay displays top banner when notification is triggered', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InAppNotificationOverlay(
+            child: Builder(
+              builder: (ctx) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      InAppNotificationOverlay.show(
+                        ctx,
+                        title: 'Incoming Luv',
+                        body: '❤️ Sending warm hugs',
+                        isLoveSignal: true,
+                      );
+                    },
+                    child: const Text('Trigger Notification'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TopNotificationBanner), findsNothing);
+
+      await tester.tap(find.text('Trigger Notification'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TopNotificationBanner), findsOneWidget);
+      expect(find.text('Incoming Luv'), findsOneWidget);
+      expect(find.text('❤️ Sending warm hugs'), findsOneWidget);
     });
   });
 }

@@ -28,6 +28,9 @@ class Conversation {
 
   /// Human-friendly timestamp string (e.g. "10:42 PM", "Yesterday", "Mon")
   String get formattedTimestamp {
+    if (lastMessage == null && lastMessageAt == null) {
+      return '';
+    }
     final now = DateTime.now();
     final time = effectiveTimestamp;
 

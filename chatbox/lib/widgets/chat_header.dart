@@ -29,25 +29,28 @@ class ChatHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cleanPartnerName = partnerName.startsWith('@')
-        ? partnerName.substring(1)
-        : partnerName;
+    final trimmedName = partnerName.trim();
+    final cleanPartnerName = trimmedName.replaceFirst(RegExp(r'^@+'), '').trim();
     final initial = cleanPartnerName.isNotEmpty
         ? cleanPartnerName[0].toUpperCase()
         : '?';
 
     final canPop = Navigator.of(context).canPop();
+    final hasMoreOptions = onShareConversation != null ||
+        onOpenMemories != null ||
+        onOpenCoupleSpace != null ||
+        onSignOut != null;
 
     return SafeArea(
       bottom: false,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         child: Container(
           decoration: BoxDecoration(
             color: const Color(0xFF383838),
             borderRadius: BorderRadius.circular(24),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
               /// Leading Back Button if pushed on stack
@@ -57,7 +60,7 @@ class ChatHeader extends StatelessWidget {
                   tooltip: 'Back to Inbox',
                   onPressed: onBackPressed ?? () => Navigator.of(context).pop(),
                   constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.only(right: 10),
+                  padding: const EdgeInsets.only(right: 8),
                 ),
               ],
 
@@ -73,7 +76,7 @@ class ChatHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
 
               /// Partner Name Title & optional presence/typing subtitle
               Expanded(
@@ -88,23 +91,24 @@ class ChatHeader extends StatelessWidget {
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     if (isTyping)
-                      const Row(
-                        children: [
-                          Text(
-                            'typing...',
-                            style: TextStyle(
-                              color: Color(0xFFFF80AB),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
+                      const Text(
+                        'typing...',
+                        style: TextStyle(
+                          color: Color(0xFFFF80AB),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       )
                     else if (presenceText != null && presenceText!.isNotEmpty)
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           if (presenceText == 'online') ...[
                             Container(
@@ -117,13 +121,17 @@ class ChatHeader extends StatelessWidget {
                               ),
                             ),
                           ],
-                          Text(
-                            presenceText!,
-                            style: TextStyle(
-                              color: presenceText == 'online'
-                                  ? const Color(0xFF00E676)
-                                  : Colors.white54,
-                              fontSize: 11,
+                          Flexible(
+                            child: Text(
+                              presenceText!,
+                              style: TextStyle(
+                                color: presenceText == 'online'
+                                    ? const Color(0xFF00E676)
+                                    : Colors.white54,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -135,47 +143,23 @@ class ChatHeader extends StatelessWidget {
                           color: Colors.white54,
                           fontSize: 11,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                   ],
                 ),
               ),
 
-              /// Optional Share Conversation Action (Phase 17)
-              if (onShareConversation != null) ...[
-                IconButton(
-                  icon: const Icon(Icons.share_outlined, color: Colors.pinkAccent, size: 18),
-                  tooltip: 'Share with Partner ❤️',
-                  onPressed: onShareConversation,
-                  constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                ),
-              ],
-
-              /// Optional Memories Action (Phase 18)
-              if (onOpenMemories != null) ...[
-                IconButton(
-                  icon: const Icon(Icons.photo_library_outlined, color: Color(0xFF00E676), size: 18),
-                  tooltip: 'Shared Memories',
-                  onPressed: onOpenMemories,
-                  constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                ),
-              ],
-
-              /// Optional Couple Space Action (Phase 18)
-              if (onOpenCoupleSpace != null) ...[
-                IconButton(
-                  icon: const Icon(Icons.favorite_rounded, color: Color(0xFFFF4081), size: 18),
-                  tooltip: 'Couple Space ❤️',
-                  onPressed: onOpenCoupleSpace,
-                  constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                ),
-              ],
+              const SizedBox(width: 6),
 
               /// Send Luv Button
               TextButton(
                 onPressed: onSendLuv,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: const Text(
                   '💕 Send luv',
                   style: TextStyle(
@@ -186,15 +170,81 @@ class ChatHeader extends StatelessWidget {
                 ),
               ),
 
-              /// Optional Sign Out Action
-              if (onSignOut != null) ...[
+              /// Consolidated More Options Menu
+              if (hasMoreOptions) ...[
                 const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.logout, color: Colors.white70, size: 18),
-                  tooltip: 'Sign out',
-                  onPressed: onSignOut,
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.white70, size: 20),
+                  tooltip: 'More options',
+                  padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.all(6),
+                  color: const Color(0xFF282828),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: Color(0xFF444444), width: 0.8),
+                  ),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'couple':
+                        onOpenCoupleSpace?.call();
+                        break;
+                      case 'memories':
+                        onOpenMemories?.call();
+                        break;
+                      case 'share':
+                        onShareConversation?.call();
+                        break;
+                      case 'signout':
+                        onSignOut?.call();
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (onOpenCoupleSpace != null)
+                      const PopupMenuItem(
+                        value: 'couple',
+                        child: Row(
+                          children: [
+                            Icon(Icons.favorite_rounded, color: Color(0xFFFF4081), size: 18),
+                            SizedBox(width: 10),
+                            Text('Couple Space ❤️', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    if (onOpenMemories != null)
+                      const PopupMenuItem(
+                        value: 'memories',
+                        child: Row(
+                          children: [
+                            Icon(Icons.photo_library_outlined, color: Color(0xFF00E676), size: 18),
+                            SizedBox(width: 10),
+                            Text('Shared Memories', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    if (onShareConversation != null)
+                      const PopupMenuItem(
+                        value: 'share',
+                        child: Row(
+                          children: [
+                            Icon(Icons.share_outlined, color: Colors.pinkAccent, size: 18),
+                            SizedBox(width: 10),
+                            Text('Share Conversation', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    if (onSignOut != null)
+                      const PopupMenuItem(
+                        value: 'signout',
+                        child: Row(
+                          children: [
+                            Icon(Icons.logout, color: Colors.white70, size: 18),
+                            SizedBox(width: 10),
+                            Text('Sign out', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ],

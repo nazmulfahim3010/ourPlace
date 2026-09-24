@@ -9,6 +9,25 @@
       "client_info": {
         "mobilesdk_app_id": "1:345075037383:android:8dac2b3b5779c5dc9bbae2",
         "android_client_info": {
+          "package_name": "com.ourplace.nest"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCUW55pAkIE1KIN-55MECNOuvd5aRjZ2oA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:345075037383:android:8dac2b3b5779c5dc9bbae2",
+        "android_client_info": {
           "package_name": "com.example.chatbox"
         }
       },

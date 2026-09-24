@@ -1,9 +1,9 @@
-# ourPlace — Privacy-First Messaging Application
+# Nest — Privacy-First Messaging Application
 
 > **Tagline:** *"The phones own the conversation. The server only helps the phones communicate."*  
 > **Target Framework:** Flutter (Dart 3.11+)  
 > **Design Aesthetic:** Minimalist High-Contrast Dark Mode (`#000000` pure black & `#383838` dark charcoal)  
-> **Current Progress:** **Phase 18 Completed — All 18 Roadmap Phases Complete!** (165/165 automated tests passing, 0 analyzer issues)
+> **Current Progress:** **Phase 19 Completed — All Roadmap Phases Complete + Production Cloud Relay & Store Compliance Active!** (178/178 automated tests passing, 0 analyzer issues)
 
 ---
 
@@ -13,12 +13,12 @@ Click any document title or direct link below to navigate directly to that docum
 
 | Document | Description | Direct Clickable Link |
 | :--- | :--- | :--- |
-| **[📘 Master Project Documentation & Roadmap Tracker](./docts.md)** | Single source of truth: 18-phase roadmap, milestones, ADRs, schema history, and testing matrix | [Open `docts.md`](./docts.md) |
-| **[📐 System Architecture & Visual Technical Diagrams](./diagram.md)** | 14 Mermaid diagrams covering topology, state machines, E2EE, auto-lock, and couple flows | [Open `diagram.md`](./diagram.md) |
+| **[📘 Master Project Documentation & Roadmap Tracker](./docts.md)** | Single source of truth: 19-phase roadmap, milestones, ADRs, schema history, and testing matrix | [Open `docts.md`](./docts.md) |
+| **[📐 System Architecture & Visual Technical Diagrams](./diagram.md)** | 15 Mermaid diagrams covering topology, state machines, E2EE, auto-lock, couple flows, and top notification popups | [Open `diagram.md`](./diagram.md) |
 | **[📋 User Setup Guide & Manual Action Items](./myjob.md)** | Manual steps: Firebase setup, silent wakeups, Android APK release builds, and multi-device testing | [Open `myjob.md`](./myjob.md) |
 | **[📜 Master Development Rules & Specifications Prompt](./Private%20Couple%20Chat%20App%20%E2%80%94%20Master%20Development%20Prompt.md)** | Core vision, development rules, privacy principles, and constraints | [Open `Master Prompt`](./Private%20Couple%20Chat%20App%20%E2%80%94%20Master%20Development%20Prompt.md) |
 | **[🔗 Documentation Quick Redirect](./docs.md)** | Fast pointer to the primary project documentation | [Open `docs.md`](./docs.md) |
-| **[🧪 Complete Automated Test Suite](./chatbox/test/widget_test.dart)** | 165 automated tests verifying crypto, storage, relay, sync, notifications, media, love connection, conversation sharing, couple features, and UI | [Open `widget_test.dart`](./chatbox/test/widget_test.dart) |
+| **[🧪 Complete Automated Test Suite](./chatbox/test/widget_test.dart)** | 178 automated tests verifying crypto, storage, relay, sync, notifications, media, love connection, conversation sharing, couple features, and production security | [Open `widget_test.dart`](./chatbox/test/widget_test.dart) |
 
 ---
 
@@ -63,6 +63,7 @@ Jump directly to specific architectural diagrams inside [**`diagram.md`**](./dia
 - [**`private_media_viewer_screen.dart`**](./chatbox/lib/screens/media/private_media_viewer_screen.dart) — Fullscreen dark media viewer with pinch-to-zoom, audio player & E2EE audit
 
 ### 🧩 UI Design System & Reusable Widgets (`lib/widgets/`)
+- [**`top_notification_banner.dart`**](./chatbox/lib/widgets/top_notification_banner.dart) — High-contrast top notification popup and `InAppNotificationOverlay` popping down from the upper side of the screen with WCAG AAA legibility
 - [**`floating_hearts_overlay.dart`**](./chatbox/lib/widgets/floating_hearts_overlay.dart) — Physics-inspired rising particle animation overlay for "Send luv" micro-interactions (`❤️`, `💕`, `🔥`, `🥰`, `✨`)
 - [**`message_reaction_picker.dart`**](./chatbox/lib/widgets/message_reaction_picker.dart) — Floating dark emoji reaction picker triggered on message long-press
 - [**`conversation_tile.dart`**](./chatbox/lib/widgets/conversation_tile.dart) — Conversation tile with Love Connection badge (`❤️`) and unread counters

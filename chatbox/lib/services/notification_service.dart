@@ -1,5 +1,14 @@
 import 'dart:async';
+import 'package:chatbox/core/config/app_environment.dart';
 import 'package:chatbox/models/notification_settings.dart';
+import 'package:firebase_messaging/firebase_messaging.dart' hide NotificationSettings;
+import 'package:flutter/foundation.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Silent data-only push wake-up signal: the background message triggers
+  // local reconciliation when the user returns or via background sync.
+}
 
 /// Abstract contract for privacy-first push notifications and wake-up signals (Phase 14)
 abstract class NotificationService {
@@ -39,6 +48,12 @@ abstract class NotificationService {
 
   /// Stream of conversation IDs emitted when notifications are tapped.
   Stream<String> get onNotificationTapped;
+
+  /// Stream of local alerts emitted when notifications are displayed.
+  Stream<Map<String, dynamic>> get onNotificationDisplayed;
+
+  /// Simulates or dispatches a notification tap event.
+  void simulateNotificationTap(String conversationId);
 }
 
 /// Default implementation of [NotificationService] enforcing Discreet Mode and zero telemetry.
@@ -49,20 +64,52 @@ class DefaultNotificationService implements NotificationService {
   DefaultNotificationService._internal();
 
   NotificationSettings _settings = const NotificationSettings();
-  String? _deviceToken = 'mock_fcm_token_ourplace';
+  String? _deviceToken = 'mock_fcm_token_nest';
   String? _pendingRoute;
   final StreamController<String> _tappedController =
       StreamController<String>.broadcast();
+  final StreamController<Map<String, dynamic>> _displayedController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Log of displayed alerts (useful for automated testing and verification)
   final List<Map<String, dynamic>> displayedAlerts = [];
+
+  @override
+  Stream<Map<String, dynamic>> get onNotificationDisplayed =>
+      _displayedController.stream;
 
   @override
   NotificationSettings get settings => _settings;
 
   @override
   Future<void> initialize() async {
-    // Ready for FCM / local notifications integration
+    if (AppEnvironment.isProduction) {
+      try {
+        final messaging = FirebaseMessaging.instance;
+        await messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        final token = await messaging.getToken();
+        if (token != null) {
+          _deviceToken = token;
+        }
+        FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          if (message.data['type'] == 'wakeup') {
+            final sender = message.data['senderId'] as String? ?? 'Partner';
+            showLocalAlert(
+              title: 'New Message',
+              body: 'Encrypted message from $sender',
+              conversationId: sender,
+            );
+          }
+        });
+      } catch (e) {
+        debugPrint('DefaultNotificationService: initialize error: $e');
+      }
+    }
   }
 
   @override
@@ -101,16 +148,21 @@ class DefaultNotificationService implements NotificationService {
     if (!_settings.enabled) return;
 
     final discreet = isDiscreet ?? _settings.hidePreviewOnLockScreen;
-    final displayTitle = discreet ? 'ourPlace' : title;
+    final displayTitle = discreet ? 'Nest' : title;
     final displayBody = discreet ? 'New private message received' : body;
 
-    displayedAlerts.add({
+    final alertData = {
       'title': displayTitle,
       'body': displayBody,
       'conversationId': conversationId,
       'isDiscreet': discreet,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
-    });
+    };
+
+    displayedAlerts.add(alertData);
+    if (!_displayedController.isClosed) {
+      _displayedController.add(alertData);
+    }
   }
 
   @override
@@ -138,6 +190,7 @@ class DefaultNotificationService implements NotificationService {
   Stream<String> get onNotificationTapped => _tappedController.stream;
 
   /// Simulates a user tapping a notification banner
+  @override
   void simulateNotificationTap(String conversationId) {
     bufferPendingRoute(conversationId);
     _tappedController.add(conversationId);
@@ -152,6 +205,7 @@ class DefaultNotificationService implements NotificationService {
 
   void dispose() {
     _tappedController.close();
+    _displayedController.close();
   }
 }
 

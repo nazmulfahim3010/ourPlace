@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Touch-friendly numeric keypad adhering to ourPlace charcoal aesthetic
+/// Touch-friendly numeric keypad adhering to Nest charcoal aesthetic
 class NumericKeypad extends StatelessWidget {
   final ValueChanged<int> onDigit;
   final VoidCallback onBackspace;

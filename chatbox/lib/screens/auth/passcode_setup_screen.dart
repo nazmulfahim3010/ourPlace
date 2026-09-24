@@ -139,7 +139,7 @@ class _PasscodeSetupScreenState extends State<PasscodeSetupScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Unlock ourPlace securely using fingerprint or face authentication.',
+                  'Unlock Nest securely using fingerprint or face authentication.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppTheme.textSecondary,

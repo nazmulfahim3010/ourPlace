@@ -91,7 +91,7 @@ class DefaultRealtimeService implements RealtimeService {
     ChatService? chatService,
     SecureStorageService? storage,
   })  : _chatService = chatService ?? ChatService(),
-        _storage = storage ?? InMemorySecureStorageService();
+        _storage = storage ?? DefaultSecureStorageService();
 
   String _partnerKey(String currentUserId, String partnerId) =>
       '$currentUserId:$partnerId';

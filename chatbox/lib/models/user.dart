@@ -1,4 +1,4 @@
-/// User domain model representing an anonymous chat participant in ourPlace
+/// User domain model representing an anonymous chat participant in Nest
 class User {
   final String id;
   final String username;

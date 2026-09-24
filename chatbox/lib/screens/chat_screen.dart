@@ -15,6 +15,8 @@ import 'package:chatbox/widgets/message_bubble.dart';
 import 'package:chatbox/widgets/message_reaction_picker.dart';
 import 'package:chatbox/widgets/chat_input_field.dart';
 import 'package:chatbox/widgets/love_code_sheet.dart';
+import 'package:chatbox/core/theme/app_theme.dart';
+import 'package:chatbox/widgets/top_notification_banner.dart';
 import 'package:chatbox/screens/couple/couple_milestones_screen.dart';
 import 'package:chatbox/screens/memories/shared_memories_screen.dart';
 
@@ -25,6 +27,7 @@ class ChatScreen extends StatefulWidget {
   final User? currentUser;
   final ChatRepository? repository;
   final AuthRepository? authRepository;
+  final bool isLoveConnection;
 
   const ChatScreen({
     super.key,
@@ -33,6 +36,7 @@ class ChatScreen extends StatefulWidget {
     this.currentUser,
     this.repository,
     this.authRepository,
+    this.isLoveConnection = false,
   });
 
   @override
@@ -127,11 +131,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _luvBurstSubscription = _chatRepository.coupleFeaturesService.luvBurstStream.listen((sender) {
       if (mounted) {
         FloatingHeartsOverlay.burst(context);
+        InAppNotificationOverlay.show(
+          context,
+          title: 'Nest Love Alert',
+          body: '❤️ $sender sent you luv!',
+          isLoveSignal: true,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❤️ $sender sent you luv!'),
+            content: Text(
+              '❤️ $sender sent you luv!',
+              style: const TextStyle(
+                color: AppTheme.notificationTextPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             duration: const Duration(seconds: 2),
-            backgroundColor: const Color(0xFF2E2428),
+            backgroundColor: AppTheme.notificationSurface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(
+                color: AppTheme.notificationLovePink,
+                width: 1.2,
+              ),
+            ),
           ),
         );
       }
@@ -170,13 +193,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           await _chatRepository.getMessages(widget.partnerId);
 
       if (storedMessages.isEmpty) {
-        final seedMessages = _generateInitialSeedMessages();
-        await _chatRepository.seedInitialMessages(seedMessages);
-        if (mounted) {
-          setState(() {
-            _messages = seedMessages;
-            _isLoading = false;
-          });
+        if (widget.partnerId == AppConstants.defaultPartnerId) {
+          final seedMessages = _generateInitialSeedMessages();
+          await _chatRepository.seedInitialMessages(seedMessages);
+          if (mounted) {
+            setState(() {
+              _messages = seedMessages;
+              _isLoading = false;
+            });
+          }
+        } else {
+          if (mounted) {
+            setState(() {
+              _messages = [];
+              _isLoading = false;
+            });
+          }
         }
       } else {
         if (mounted) {
@@ -194,7 +226,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _messages = _generateInitialSeedMessages();
+          _messages = widget.partnerId == AppConstants.defaultPartnerId
+              ? _generateInitialSeedMessages()
+              : [];
           _isLoading = false;
         });
       }
@@ -318,9 +352,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         curve: Curves.easeOut,
       );
     }
-
-    // Save and dispatch through ChatRepository
-    await _chatRepository.sendMessage(newMessage);
 
     // Immediately clear typing state
     _chatRepository.realtimeService.sendTyping(
@@ -495,10 +526,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       currentUsername: _currentUsername,
     );
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('💕 Love sent!'),
-        duration: Duration(seconds: 2),
-        backgroundColor: Color(0xFF383838),
+      SnackBar(
+        content: const Text(
+          '💕 Love sent!',
+          style: TextStyle(
+            color: AppTheme.notificationTextPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        duration: const Duration(seconds: 2),
+        backgroundColor: AppTheme.notificationSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(
+            color: AppTheme.notificationLovePink,
+            width: 1.2,
+          ),
+        ),
       ),
     );
   }
@@ -595,6 +639,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final isLovePartner = widget.isLoveConnection ||
+        widget.partnerId == AppConstants.defaultPartnerId;
+
     return FloatingHeartsOverlay(
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -607,9 +654,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               isTyping: _isPartnerTyping,
               presenceText: _partnerPresence?.statusText,
               onSendLuv: _sendLuv,
-              onShareConversation: _handleShareConversation,
+              onShareConversation: isLovePartner ? _handleShareConversation : null,
               onOpenMemories: _openMemories,
-              onOpenCoupleSpace: _openCoupleSpace,
+              onOpenCoupleSpace: isLovePartner ? _openCoupleSpace : null,
               onSignOut: widget.authRepository != null
                   ? () async {
                       await widget.authRepository!.signOut();

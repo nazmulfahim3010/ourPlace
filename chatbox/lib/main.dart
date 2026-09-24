@@ -1,15 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:chatbox/core/config/app_environment.dart';
 import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/core/theme/app_theme.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
 import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/screens/auth/auth_gate.dart';
-
 import 'package:chatbox/services/app_lock_service.dart';
+import 'package:chatbox/services/notification_service.dart';
+import 'package:chatbox/widgets/top_notification_banner.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  AppEnvironment.setEnvironment(EnvironmentType.production);
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase initialization notice: $e');
+  }
+  final notificationService = DefaultNotificationService();
+  await notificationService.initialize();
+  runApp(MyApp(notificationService: notificationService));
 }
 
 class MyApp extends StatelessWidget {
@@ -17,6 +28,7 @@ class MyApp extends StatelessWidget {
   final AuthRepository? authRepository;
   final ChatRepository? chatRepository;
   final AppLockService? appLockService;
+  final NotificationService? notificationService;
   final Widget? home;
 
   const MyApp({
@@ -25,6 +37,7 @@ class MyApp extends StatelessWidget {
     this.authRepository,
     this.chatRepository,
     this.appLockService,
+    this.notificationService,
     this.home,
   });
 
@@ -33,6 +46,12 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: '${AppConstants.appName} - Private Chat',
       theme: AppTheme.darkTheme,
+      builder: (context, child) {
+        return InAppNotificationOverlay(
+          notificationService: notificationService,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: home ??
           AuthGate(
             authRepository: authRepository,

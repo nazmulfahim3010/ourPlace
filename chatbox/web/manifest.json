@@ -1,11 +1,11 @@
 {
-    "name": "chatbox",
-    "short_name": "chatbox",
+    "name": "Nest",
+    "short_name": "Nest",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0F0F12",
+    "theme_color": "#0F0F12",
+    "description": "Nest - Private & Secure Messaging for Couples.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

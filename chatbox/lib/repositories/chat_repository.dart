@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:chatbox/core/errors/app_exception.dart';
 import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/media_attachment.dart';
@@ -98,7 +99,7 @@ class LocalChatRepository implements ChatRepository {
         _chatService = chatService ?? ChatService(),
         _encryptionService = encryptionService,
         _notificationService = notificationService ?? DefaultNotificationService(),
-        _mediaRelayService = mediaRelayService ?? InMemoryMediaRelayService(),
+        _mediaRelayService = mediaRelayService ?? DefaultMediaRelayService(),
         _mediaStorageService = mediaStorageService ?? DefaultMediaStorageService(),
         _mediaEncryptionService = mediaEncryptionService ?? StandardMediaEncryptionService(),
         _loveConnectionService = loveConnectionService ??
@@ -127,7 +128,7 @@ class LocalChatRepository implements ChatRepository {
               chatService: chatService ?? ChatService(),
               encryptionService: encryptionService,
               notificationService: notificationService ?? DefaultNotificationService(),
-              mediaRelayService: mediaRelayService ?? InMemoryMediaRelayService(),
+              mediaRelayService: mediaRelayService ?? DefaultMediaRelayService(),
               mediaStorageService: mediaStorageService ?? DefaultMediaStorageService(),
               mediaEncryptionService: mediaEncryptionService ?? StandardMediaEncryptionService(),
               loveConnectionService: loveConnectionService,
@@ -208,22 +209,26 @@ class LocalChatRepository implements ChatRepository {
       final recipientAccount =
           await _database.getAccountByUsername(initial.recipientId);
       final recipientKey = recipientAccount?.publicIdentityKey;
-      if (recipientKey != null && recipientKey.isNotEmpty) {
-        final String payload;
-        if (initial.mediaAttachment != null) {
-          payload = jsonEncode({
-            'text': initial.text,
-            'mediaAttachment': initial.mediaAttachment!.toJson(),
-          });
-        } else {
-          payload = initial.text;
-        }
-        final ciphertext = await enc.encryptPayload(
-          payload,
-          recipientKey,
+      if (recipientKey == null || recipientKey.isEmpty) {
+        await _database.updateMessageStatus(message.id, MessageStatus.failed);
+        throw SecurityException(
+          'Cannot send message: Recipient public identity key is missing for ${initial.recipientId}. Complete key exchange before transmitting.',
         );
-        outboundMessage = initial.copyWith(text: ciphertext);
       }
+      final String payload;
+      if (initial.mediaAttachment != null) {
+        payload = jsonEncode({
+          'text': initial.text,
+          'mediaAttachment': initial.mediaAttachment!.toJson(),
+        });
+      } else {
+        payload = initial.text;
+      }
+      final ciphertext = await enc.encryptPayload(
+        payload,
+        recipientKey,
+      );
+      outboundMessage = initial.copyWith(text: ciphertext);
     }
 
     // 3. Dispatch to temporary relay (Phase 11 Ephemeral Queue)

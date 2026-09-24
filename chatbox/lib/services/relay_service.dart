@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:chatbox/core/config/app_environment.dart';
 import 'package:chatbox/models/ephemeral_relay_envelope.dart';
+import 'package:chatbox/services/firebase_relay_service.dart';
 
 /// Abstract service contract for the temporary Firebase communication relay (Phase 11).
 ///
@@ -182,7 +184,10 @@ class FirestoreRelayService implements RelayService {
   FirestoreRelayService({
     this.collectionPath = 'ephemeral_relays',
     RelayService? fallbackRelay,
-  }) : _fallbackRelay = fallbackRelay ?? InMemoryFirebaseRelayService();
+  }) : _fallbackRelay = fallbackRelay ??
+            (AppEnvironment.isProduction
+                ? FirebaseRelayService()
+                : InMemoryFirebaseRelayService());
 
   @override
   Future<void> enqueueMessage(EphemeralRelayEnvelope envelope) async {

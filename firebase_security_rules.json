@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "relays": {
+      "$recipientId": {
+        ".read": "auth != null && auth.uid == $recipientId",
+        "$messageId": {
+          ".write": "auth != null",
+          ".validate": "newData.hasChildren(['id', 'senderId', 'recipientId', 'encryptedPayload', 'iv', 'authTag'])"
+        }
+      }
+    },
+    "directory": {
+      ".read": "auth != null",
+      "$username": {
+        ".write": "auth != null && (!data.exists() || data.child('accountId').val() == auth.uid)"
+      }
+    }
+  }
+}

@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
+import '../core/constants/app_constants.dart';
+
 part 'app_database.g.dart';
 
 /// Table schema for storing chat messages locally
@@ -87,7 +89,7 @@ class LoveNotes extends Table {
 @DriftDatabase(tables: [Messages, UserAccounts, SecurityLogs, LoveConnections, LoveNotes])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? e])
-      : super(e ?? driftDatabase(name: 'ourplace_chat'));
+      : super(e ?? driftDatabase(name: AppConstants.databaseName));
 
   @override
   int get schemaVersion => 6;

@@ -48,7 +48,7 @@ abstract class MediaEncryptionService {
 
 /// Production implementation of [MediaEncryptionService] using AES-256-GCM and X25519 ECDH
 class StandardMediaEncryptionService implements MediaEncryptionService {
-  static final List<int> _wrapInfo = utf8.encode('ourPlace-media-key-wrap-v1');
+  static final List<int> _wrapInfo = utf8.encode('nest-media-key-wrap-v1');
 
   @override
   Future<EncryptedMediaPackage> encryptMedia({

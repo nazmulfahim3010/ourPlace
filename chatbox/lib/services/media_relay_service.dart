@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import 'package:chatbox/core/config/app_environment.dart';
+import 'package:chatbox/services/firebase_media_relay_service.dart';
 
 /// Abstract service contract for temporary ephemeral cloud media relay (Phase 15 — Media Messaging)
 abstract class MediaRelayService {
@@ -115,3 +117,46 @@ class InMemoryMediaRelayService implements MediaRelayService {
   int get totalBlobCount => _blobs.length;
   void clear() => _blobs.clear();
 }
+
+/// Factory relay service that selects [FirebaseMediaRelayService] in production
+/// and [InMemoryMediaRelayService] in test mode.
+class DefaultMediaRelayService implements MediaRelayService {
+  static final DefaultMediaRelayService _instance = DefaultMediaRelayService._internal();
+  factory DefaultMediaRelayService() => _instance;
+  DefaultMediaRelayService._internal();
+
+  MediaRelayService? _delegate;
+
+  MediaRelayService get delegate {
+    if (_delegate != null) return _delegate!;
+    if (AppEnvironment.isProduction) {
+      _delegate = FirebaseMediaRelayService();
+    } else {
+      _delegate = InMemoryMediaRelayService();
+    }
+    return _delegate!;
+  }
+
+  @override
+  Future<String> uploadEncryptedBlob(
+    String blobId,
+    List<int> ciphertextBytes, {
+    Duration ttl = const Duration(hours: 24),
+  }) =>
+      delegate.uploadEncryptedBlob(blobId, ciphertextBytes, ttl: ttl);
+
+  @override
+  Future<Uint8List> downloadEncryptedBlob(String blobIdOrUrl) =>
+      delegate.downloadEncryptedBlob(blobIdOrUrl);
+
+  @override
+  Future<bool> purgeEncryptedBlob(String blobIdOrUrl) =>
+      delegate.purgeEncryptedBlob(blobIdOrUrl);
+
+  @override
+  Future<int> purgeExpiredBlobs() => delegate.purgeExpiredBlobs();
+
+  @override
+  Future<bool> hasBlob(String blobIdOrUrl) => delegate.hasBlob(blobIdOrUrl);
+}
+

@@ -156,7 +156,9 @@ class LocalConversationRepository implements ConversationRepository {
   @override
   Future<void> markAsRead(String conversationId) async {
     _cachedConversations ??= _createInitialSeedConversations();
-    final index = _cachedConversations!.indexWhere((c) => c.id == conversationId);
+    final index = _cachedConversations!.indexWhere(
+      (c) => c.id == conversationId || c.partner.id == conversationId,
+    );
     if (index != -1) {
       _cachedConversations![index] =
           _cachedConversations![index].copyWith(unreadCount: 0);
@@ -205,7 +207,9 @@ class LocalConversationRepository implements ConversationRepository {
       id: 'conv_${DateTime.now().millisecondsSinceEpoch}',
       partner: partner,
       isLoveConnection: isLoveConnection,
-      lastMessageAt: DateTime.now(),
+      lastMessage: null,
+      lastMessageAt: null,
+      unreadCount: 0,
     );
 
     _cachedConversations!.insert(isLoveConnection ? 0 : 1, newConversation);

@@ -8,6 +8,7 @@ import 'package:chatbox/models/user.dart';
 import 'package:chatbox/models/user_account.dart';
 import 'package:chatbox/services/access_throttling_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/secure_storage_service.dart';
 
 /// Abstract service contract for anonymous identity authentication (Phase 6 & 9)
 abstract class AuthService {
@@ -42,6 +43,7 @@ class LocalAuthService implements AuthService {
     LocalDatabase? database,
     AccessThrottlingService? throttlingService,
     EncryptionService? encryptionService,
+    SecureStorageService? secureStorage,
     bool resetSession = false,
   }) {
     if (database != null) {
@@ -52,6 +54,9 @@ class LocalAuthService implements AuthService {
     }
     if (encryptionService != null) {
       _instance._encryptionService = encryptionService;
+    }
+    if (secureStorage != null) {
+      _instance._secureStorage = secureStorage;
     }
     if (resetSession) {
       _instance.resetDefaultSession();
@@ -75,23 +80,32 @@ class LocalAuthService implements AuthService {
 
   AccessThrottlingService _throttlingService = AccessThrottlingService();
   EncryptionService _encryptionService = StandardE2EEEncryptionService();
+  SecureStorageService _secureStorage = DefaultSecureStorageService();
 
   String? _lastRegisteredRecoveryKey;
 
   @override
   String? get lastRegisteredRecoveryKey => _lastRegisteredRecoveryKey;
 
-  User? _currentUser = User(
-    id: 'current_user',
-    username: '@alex',
-    displayName: 'Alex',
-    isCurrentUser: true,
-  );
+  User? _currentUser;
   final StreamController<User?> _authStateController =
       StreamController<User?>.broadcast();
 
   @override
-  Future<User?> getCurrentUser() async => _currentUser;
+  Future<User?> getCurrentUser() async {
+    if (_currentUser != null) return _currentUser;
+    final savedUsername = await _secureStorage.read('active_session_username');
+    if (savedUsername != null && savedUsername.isNotEmpty) {
+      final account = await _db.getAccountByUsername(savedUsername);
+      if (account != null) {
+        await _encryptionService.initializeUserKeys(account.accountId);
+        _currentUser = account.toUser(isCurrentUser: true);
+        _authStateController.add(_currentUser);
+        return _currentUser;
+      }
+    }
+    return null;
+  }
 
   @override
   Stream<User?> get authStateChanges async* {
@@ -175,6 +189,7 @@ class LocalAuthService implements AuthService {
 
     // 8. Establish authenticated session
     _currentUser = account.toUser(isCurrentUser: true);
+    await _secureStorage.write('active_session_username', normalized);
     _authStateController.add(_currentUser);
 
     return _currentUser!;
@@ -245,6 +260,7 @@ class LocalAuthService implements AuthService {
 
     // 5. Establish authenticated session
     _currentUser = account.toUser(isCurrentUser: true);
+    await _secureStorage.write('active_session_username', normalized);
     _authStateController.add(_currentUser);
 
     return _currentUser!;
@@ -307,6 +323,7 @@ class LocalAuthService implements AuthService {
 
   @override
   Future<void> signOut() async {
+    await _secureStorage.delete('active_session_username');
     if (_currentUser != null) {
       await _db.logSecurityEvent(
         'sign_out',

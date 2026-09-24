@@ -22,7 +22,12 @@ class DefaultSecureStorageService implements SecureStorageService {
   DefaultSecureStorageService({FlutterSecureStorage? storage, bool? isTestMode})
       : _storage = storage ??
             const FlutterSecureStorage(
-              aOptions: AndroidOptions(resetOnError: true),
+              aOptions: AndroidOptions(
+                resetOnError: false,
+              ),
+              iOptions: IOSOptions(
+                accessibility: KeychainAccessibility.first_unlock,
+              ),
             ),
         _isTestMode = isTestMode ??
             (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST'));
@@ -35,7 +40,8 @@ class DefaultSecureStorageService implements SecureStorageService {
     try {
       final val = await _storage.read(key: key);
       return val ?? _inMemoryFallback[key];
-    } catch (_) {
+    } catch (e) {
+      debugPrint('DefaultSecureStorageService: error reading $key: $e');
       return _inMemoryFallback[key];
     }
   }
@@ -46,7 +52,9 @@ class DefaultSecureStorageService implements SecureStorageService {
     if (_isTestMode) return;
     try {
       await _storage.write(key: key, value: value);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('DefaultSecureStorageService: error writing $key: $e');
+    }
   }
 
   @override

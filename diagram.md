@@ -1,7 +1,7 @@
-# ourPlace — Architectural & Technical Diagrams Specification
-> **Document Version:** 1.6.0  
-> **Last Updated:** 2026-09-19  
-> **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`ourPlace`)  
+# Nest — Architectural & Technical Diagrams Specification
+> **Document Version:** 1.7.0  
+> **Last Updated:** 2026-09-20  
+> **Target Application:** Privacy-First Anonymous Multi-User Messaging Application with Couple Subsystem (`Nest`)  
 > **Companion Document:** [`docts.md`](file:///e:/ourPlace/docts.md)
 
 ---
@@ -26,7 +26,7 @@
 
 ## 1. High-Level System Topology & Privacy Boundary
 
-The core philosophy of `ourPlace` is:
+The core philosophy of `Nest` is:
 > *"The phones own the conversation. The server only helps the phones communicate."*
 
 ```mermaid
@@ -76,7 +76,7 @@ flowchart TB
 
 ## 2. Three-Tier Credential Separation Model
 
-`ourPlace` enforces strict isolation between account authentication, local device security, and ephemeral love sharing:
+`Nest` enforces strict isolation between account authentication, local device security, and ephemeral love sharing:
 
 ```mermaid
 classDiagram
@@ -198,7 +198,7 @@ stateDiagram-v2
 
 ## 4. App Lifecycle & Background Auto-Lock Flow
 
-When the user leaves or backgrounds `ourPlace`, [`AuthGate`](file:///e:/ourPlace/chatbox/lib/screens/auth/auth_gate.dart) automatically locks the app to protect conversations from physical access:
+When the user leaves or backgrounds `Nest`, [`AuthGate`](file:///e:/ourPlace/chatbox/lib/screens/auth/auth_gate.dart) automatically locks the app to protect conversations from physical access:
 
 ```mermaid
 sequenceDiagram
@@ -219,7 +219,7 @@ sequenceDiagram
     AuthGate->>UI: Trigger Rebuild (Swap HomeScreen with AppLockScreen)
 
     Note over User,UI: Device is later reopened
-    User->>OS: Tap ourPlace App Icon
+    User->>OS: Tap Nest App Icon
     OS->>AuthGate: didChangeAppLifecycleState(AppLifecycleState.resumed)
     UI->>User: Render AppLockScreen (Conversations Hidden)
     
@@ -728,7 +728,7 @@ sequenceDiagram
 
 ## 13. Push Notification Silent Wake-up & Privacy Alerts Flow
 
-Push notifications in `ourPlace` adhere strictly to the zero-telemetry invariant. Outgoing push notifications via FCM/APNs never carry plaintext, sender identities, or sensitive metadata. Decryption happens strictly inside the recipient device sandbox, and lock screen presentation defaults to Discreet Mode.
+Push notifications in `Nest` adhere strictly to the zero-telemetry invariant. Outgoing push notifications via FCM/APNs never carry plaintext, sender identities, or sensitive metadata. Decryption happens strictly inside the recipient device sandbox, and lock screen presentation defaults to Discreet Mode.
 
 ### 13.1 Silent Background Wake-up & Inbound Decryption Sequence
 
@@ -749,7 +749,7 @@ sequenceDiagram
     Note over FCM: Zero Plaintext • Zero Sender Info • Pure Data Ping
 
     FCM-->>BobOS: Deliver silent background push payload
-    Note over BobOS: OS wakes up ourPlace in background
+    Note over BobOS: OS wakes up Nest in background
 
     BobOS->>BobSync: handleSilentWakeup(signal) -> processInboundEnvelopes()
     BobSync->>Relay: fetchPendingRelayEnvelopes("@bob")
@@ -762,7 +762,7 @@ sequenceDiagram
     BobSync->>BobNotif: showLocalAlert(title: "@alice", body: cleartext)
     alt Discreet Mode Enabled (Default)
         Note over BobNotif: Mask content & sender
-        BobNotif->>BobOS: Display Local Alert: "ourPlace • New private message received"
+        BobNotif->>BobOS: Display Local Alert: "Nest • New private message received"
     else Discreet Mode Disabled
         BobNotif->>BobOS: Display Local Alert: "@alice • <decrypted snippet>"
     end
@@ -793,6 +793,39 @@ sequenceDiagram
         AuthGate->>ChatView: Push ChatScreen(partner: "@alice")
     else App is already unlocked
         NotifService->>ChatView: Open ChatScreen(partner: "@alice") directly
+    end
+```
+
+### 13.3 In-App High-Visibility Top Notification Popup & Gesture Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Bob as Bob User (Active In-App)
+    participant Sync as Bob SyncService
+    participant NotifService as NotificationService
+    participant Overlay as InAppNotificationOverlay
+    participant Banner as TopNotificationBanner (Upper Screen)
+    participant ChatView as ChatScreen (@alice)
+
+    Sync->>NotifService: showLocalAlert("@alice", "Secret message 💕")
+    NotifService->>NotifService: Record to displayedAlerts (Testing Invariant)
+    NotifService-->>Overlay: onNotificationDisplayed(payload)
+    Overlay->>Banner: Mount with slide-down animation from upper screen edge
+    Note over Banner: High-Elevation Obsidian #1E1E26 & Pure White #FFFFFF
+    Note over Banner: High-contrast border #4D4D62 + Contextual Icon Pill
+    Banner-->>Bob: High-visibility presentation (>16:1 contrast ratio)
+
+    alt Bob taps Top Notification Banner
+        Bob->>Banner: Tap banner
+        Banner->>NotifService: simulateNotificationTap("@alice")
+        Banner->>Banner: Slide up & dismiss
+        NotifService-->>ChatView: Route directly to conversation
+    else Bob swipes up on banner
+        Bob->>Banner: Upward swipe gesture
+        Banner->>Banner: Slide up & dismiss immediately
+    else Auto-dismiss timeout (4s)
+        Banner->>Banner: Smooth reverse slide & unmount
     end
 ```
 

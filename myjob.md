@@ -1,4 +1,4 @@
-# ourPlace — User Manual Action Items & Setup Guide (`myjob.md`)
+# Nest — User Manual Action Items & Setup Guide (`myjob.md`)
 
 This guide contains all external, manual tasks you need to complete for the project as we progress through the phases. You can complete these at your own pace while the codebase development continues smoothly.
 
@@ -13,7 +13,8 @@ This guide contains all external, manual tasks you need to complete for the proj
 - [x] **Phase 15: Media Messaging (COMPLETED ✅ — 2026-09-19, Zero Manual Action Needed; In-Memory Sandbox & Ephemeral Cloud Blobs)**
 - [x] **Phase 16: Love Connection (COMPLETED ✅ — 2026-09-19, Zero Manual Action Needed; Mutually Accepted 1-to-1 Ephemeral Handshake)**
 - [x] **Phase 17: One-Time Love Code & Conversation Sharing (COMPLETED ✅ — 2026-09-19, Zero Manual Action Needed; Pure Client-Side E2EE Sharing)**
-- [x] **Phase 18: Couple-Specific Features & Production Release (COMPLETED ✅ — 2026-09-19, All 18 Roadmap Phases Complete; 165/165 tests passing)**
+- [x] **Phase 18: Couple-Specific Features & Micro-Interactions (COMPLETED ✅ — 2026-09-19, All 18 Roadmap Phases Complete; 175/175 tests passing)**
+- [x] **Phase 19: Production Readiness, Cloud Transport & Store Compliance (COMPLETED ✅ — 2026-09-24, 178/178 tests passing)**
 
 ---
 
@@ -37,7 +38,7 @@ All external setup for Phase 11 has been successfully completed:
 
 > [!NOTE]
 > **About the "Your security rules are defined as public" warning banner:**  
-> This is a standard Google informational warning (not an error!). Because `ourPlace` uses End-to-End Encryption (E2EE) with X25519 & AES-256-GCM, all message contents are already encrypted before reaching Firebase. The server only sees unreadable ciphertext, and messages are permanently purged upon receipt. You can safely click **Dismiss** on that banner.
+> This is a standard Google informational warning (not an error!). Because `Nest` uses End-to-End Encryption (E2EE) with X25519 & AES-256-GCM, all message contents are already encrypted before reaching Firebase. The server only sees unreadable ciphertext, and messages are permanently purged upon receipt. You can safely click **Dismiss** on that banner.
 
 ---
 
@@ -55,8 +56,9 @@ Zero manual configuration was needed from you! The client-side protocol was buil
 
 Zero manual configuration was needed from you! The privacy-first notification architecture was built and verified with 95/95 automated unit/widget tests:
 - **Zero-Knowledge Silent Wakeup:** Push notifications carry **zero plaintext, zero sender usernames, and zero sensitive metadata**. They act as pure data pings (`type: "wakeup"`) prompting the receiver's phone to wake up and decrypt locally.
-- **Discreet Mode by Default:** Lock screen alerts display generic text: `"ourPlace • New private message received"` to prevent shoulder-surfing.
+- **Discreet Mode by Default:** Lock screen alerts display generic text: `"Nest • New private message received"` to prevent shoulder-surfing.
 - **Security Enclave Integration:** If a user taps a notification while the app is locked, navigation is securely buffered until the 4-digit PIN or biometric unlock is verified on `AppLockScreen`.
+- **Upper-Screen High-Visibility Popup:** When any notification arrives or is tested, a high-contrast notification card slides down smoothly from the upper side of the screen with pristine WCAG AAA visibility (pure white headers, crystal-clear body, contextual icons, and discreet tags).
 - **Profile Controls:** Go to **Profile** ➔ **Notifications & Privacy (Phase 14)** to toggle Discreet Mode, adjust sounds/haptics, or tap **Test Private Notification** to preview alerts live.
 
 ---
@@ -113,3 +115,58 @@ Send this APK to both devices (Device A and Device B):
    - Long-press a message to add a reaction (`❤️`, `🔥`).
    - Tap "Memories 📸" to view exchanged photos and audio notes.
    - Tap "Couple Space ❤️" to view milestones and compose a sealed Love Note.
+
+---
+
+## 8. Phase 19: Production Security Rules & Store Deployment
+
+### 1. Deploy Strict Firebase Realtime Database Security Rules
+To replace the prototype `{ ".read": true, ".write": true }` rules with authenticated, production-grade rules:
+1. Open the [Firebase Console](https://console.firebase.google.com/) for project `ourplace-chat`.
+2. Navigate to **Realtime Database** ➔ **Rules** tab.
+3. Paste the contents of [`firebase_security_rules.json`](../firebase_security_rules.json):
+   ```json
+   {
+     "rules": {
+       "relays": {
+         "$recipientId": {
+           ".read": "auth != null && auth.uid == $recipientId",
+           "$messageId": {
+             ".write": "auth != null",
+             ".validate": "newData.hasChildren(['id', 'senderId', 'recipientId', 'encryptedPayload', 'iv', 'authTag'])"
+           }
+         }
+       },
+       "directory": {
+         ".read": "auth != null",
+         "$username": {
+           ".write": "auth != null && (!data.exists() || data.child('accountId').val() == auth.uid)"
+         }
+       }
+     }
+   }
+   ```
+4. Click **Publish**.
+
+### 2. Register `com.ourplace.nest` in Firebase Console
+The Android package identifier was migrated from `com.example.chatbox` to `com.ourplace.nest` for Google Play Store compliance:
+1. In Firebase Console ➔ **Project Settings** (gear icon).
+2. Click **Add app** ➔ **Android**.
+3. Set **Android package name:** `com.ourplace.nest`.
+4. App nickname: `Nest`.
+5. Download the updated `google-services.json` and replace `chatbox/android/app/google-services.json`.
+
+### 3. Production Release Keystore Signing
+To build an official release bundle (`.aab`) for Google Play Store:
+1. Generate an upload keystore:
+   ```powershell
+   keytool -genkey -v -keystore nest-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias nest
+   ```
+2. Copy `chatbox/android/key.properties.example` to `chatbox/android/key.properties`.
+3. Fill in your passwords and file path.
+4. Run:
+   ```powershell
+   flutter build appbundle --release
+   ```
+   The production `.aab` file will be generated in `chatbox/build/app/outputs/bundle/release/app-release.aab`.
+

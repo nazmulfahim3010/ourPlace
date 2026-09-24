@@ -12,7 +12,7 @@ abstract class AppLockService {
   Future<void> setPasscode(String passcode);
   Future<bool> verifyPasscode(String candidate);
   Future<bool> authenticateWithBiometrics({
-    String reason = 'Unlock ourPlace to access your private conversations',
+    String reason = 'Unlock Nest to access your private conversations',
   });
   Future<void> setBiometricsEnabled(bool enabled);
   Future<void> clearPasscode();
@@ -171,7 +171,7 @@ class DefaultAppLockService implements AppLockService {
 
   @override
   Future<bool> authenticateWithBiometrics({
-    String reason = 'Unlock ourPlace to access your private conversations',
+    String reason = 'Unlock Nest to access your private conversations',
   }) async {
     final isConfigured = await isPasscodeConfigured();
     if (!isConfigured) return false;

@@ -4,7 +4,7 @@ class NotificationSettings {
   final bool enabled;
 
   /// Discreet Mode: When true, lock screen notifications display generic text
-  /// ("ourPlace • New private message received") rather than message content.
+  /// ("Nest • New private message received") rather than message content.
   final bool hidePreviewOnLockScreen;
 
   /// When true, sender identity/username is hidden in notifications.

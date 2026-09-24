@@ -7,7 +7,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Chatbox</string>
+	<string>Nest</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Nest requires Face ID / Touch ID to secure your private messages.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nest requires microphone access to record encrypted voice notes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Nest requires camera access to take encrypted photos and videos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Nest requires photo library access to attach photos to encrypted messages.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
