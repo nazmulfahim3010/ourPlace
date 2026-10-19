@@ -17,6 +17,8 @@ import 'package:chatbox/services/media_storage_service.dart';
 import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/services/sync_service.dart';
+import 'package:chatbox/core/utils/hash_utils.dart';
+import 'package:chatbox/services/user_directory_service.dart';
 
 /// Abstract contract for chat messaging operations
 abstract class ChatRepository {
@@ -64,6 +66,10 @@ abstract class ChatRepository {
 
   // Phase 18 Couple-Specific Features additions
   CoupleFeaturesService get coupleFeaturesService;
+
+  // Active Relay Inbound Listener controls
+  void startRelayListener(String currentUserId);
+  void stopRelayListener();
 }
 
 /// Primary implementation coordinating local SQLite storage, E2EE, and chat transport
@@ -174,6 +180,57 @@ class LocalChatRepository implements ChatRepository {
   MediaEncryptionService get mediaEncryptionService => _mediaEncryptionService;
 
   @override
+  void startRelayListener(String currentUserId) {
+    _syncService.startRelayListener(currentUserId: currentUserId);
+  }
+
+  @override
+  void stopRelayListener() {
+    _syncService.stopRelayListener();
+  }
+
+  /// Resolves the X25519 public identity key for a target recipient.
+  /// Priority:
+  /// 1. Local user account (for multi-account simulation/test)
+  /// 2. Active Love Connection partner public key
+  /// 3. Global Firebase User Directory lookup
+  Future<String?> resolveRecipientPublicKey(String recipientUsername) async {
+    // 1. Check local device database
+    final recipientAccount =
+        await _database.getAccountByUsername(recipientUsername);
+    if (recipientAccount?.publicIdentityKey != null &&
+        recipientAccount!.publicIdentityKey!.isNotEmpty) {
+      return recipientAccount.publicIdentityKey;
+    }
+
+    // 2. Check active Love Connection
+    try {
+      final loveConn = await _loveConnectionService.getLoveConnection();
+      if (loveConn != null &&
+          loveConn.partnerPublicKey != null &&
+          loveConn.partnerPublicKey!.isNotEmpty) {
+        final normPartner = HashUtils.normalizeUsername(loveConn.partnerUsername);
+        final normRecipient = HashUtils.normalizeUsername(recipientUsername);
+        if (normPartner == normRecipient) {
+          return loveConn.partnerPublicKey;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Fallback to global user directory
+    try {
+      final profile =
+          await DefaultUserDirectoryService().lookupProfile(recipientUsername);
+      if (profile?.publicIdentityKey != null &&
+          profile!.publicIdentityKey.isNotEmpty) {
+        return profile.publicIdentityKey;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  @override
   Future<List<ChatMessage>> getMessages(String partnerId) {
     return _database.getMessagesForPartner(partnerId);
   }
@@ -206,9 +263,7 @@ class LocalChatRepository implements ChatRepository {
     ChatMessage outboundMessage = initial;
     final enc = _encryptionService;
     if (enc != null) {
-      final recipientAccount =
-          await _database.getAccountByUsername(initial.recipientId);
-      final recipientKey = recipientAccount?.publicIdentityKey;
+      final recipientKey = await resolveRecipientPublicKey(initial.recipientId);
       if (recipientKey == null || recipientKey.isEmpty) {
         await _database.updateMessageStatus(message.id, MessageStatus.failed);
         throw SecurityException(
@@ -242,6 +297,11 @@ class LocalChatRepository implements ChatRepository {
     } catch (_) {
       // 5. If dispatch fails or offline, update to failed for offline retry
       await _database.updateMessageStatus(message.id, MessageStatus.failed);
+    } finally {
+      try {
+        LocalConversationRepository.instance
+            .refreshConversations(currentUserId: message.senderId);
+      } catch (_) {}
     }
   }
 
@@ -288,7 +348,12 @@ class LocalChatRepository implements ChatRepository {
             await _database.getAccountByUsername(rawMessage.senderId);
         String senderKey = senderAccount?.publicIdentityKey ?? '';
 
-        // If local database has not stored sender key yet, extract from envelope
+        // If local database has not stored sender key yet, check LoveConnection or Directory
+        if (senderKey.isEmpty) {
+          senderKey = (await resolveRecipientPublicKey(rawMessage.senderId)) ?? '';
+        }
+
+        // If still empty, extract directly from ciphertext envelope metadata
         if (senderKey.isEmpty) {
           try {
             final envelope = EncryptedPayload.deserialize(rawMessage.text);

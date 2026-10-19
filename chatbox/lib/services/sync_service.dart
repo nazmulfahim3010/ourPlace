@@ -15,6 +15,9 @@ import 'package:chatbox/services/media_encryption_service.dart';
 import 'package:chatbox/services/media_relay_service.dart';
 import 'package:chatbox/services/media_storage_service.dart';
 import 'package:chatbox/services/notification_service.dart';
+import 'package:chatbox/core/utils/hash_utils.dart';
+import 'package:chatbox/services/user_directory_service.dart';
+import 'package:chatbox/repositories/conversation_repository.dart';
 
 /// Abstract service contract for message synchronization and offline queueing (Phase 12)
 abstract class SyncService {
@@ -52,6 +55,12 @@ abstract class SyncService {
 
   /// Mark all incoming messages from partner as read and dispatch read receipts
   Future<int> markConversationAsRead(String partnerId, {required String currentUserId});
+
+  /// Begin continuous reactive listening to incoming relay envelopes
+  void startRelayListener({required String currentUserId});
+
+  /// Stop reactive listening to incoming relay envelopes
+  void stopRelayListener();
 }
 
 /// Primary implementation of [SyncService] coordinating SQLite and the ephemeral relay
@@ -98,6 +107,61 @@ class DefaultSyncService implements SyncService {
   MediaRelayService? get mediaRelayService => _mediaRelayService;
   MediaStorageService? get mediaStorageService => _mediaStorageService;
 
+  StreamSubscription<List<EphemeralRelayEnvelope>>? _relaySubscription;
+  String? _listeningUserId;
+
+  @override
+  void startRelayListener({required String currentUserId}) {
+    if (_listeningUserId == currentUserId && _relaySubscription != null) {
+      return;
+    }
+    stopRelayListener();
+    _listeningUserId = currentUserId;
+    _relaySubscription = _chatService
+        .watchPendingRelayEnvelopes(currentUserId)
+        .listen((envelopes) async {
+      if (envelopes.isNotEmpty) {
+        await processInboundEnvelopes(currentUserId: currentUserId);
+      }
+    });
+  }
+
+  @override
+  void stopRelayListener() {
+    _relaySubscription?.cancel();
+    _relaySubscription = null;
+    _listeningUserId = null;
+  }
+
+  Future<String?> _resolveRecipientPublicKey(String username) async {
+    final account = await _database.getAccountByUsername(username);
+    if (account?.publicIdentityKey != null && account!.publicIdentityKey!.isNotEmpty) {
+      return account.publicIdentityKey;
+    }
+
+    try {
+      final loveConn = await _loveConnectionService?.getLoveConnection();
+      if (loveConn != null &&
+          loveConn.partnerPublicKey != null &&
+          loveConn.partnerPublicKey!.isNotEmpty) {
+        final normPartner = HashUtils.normalizeUsername(loveConn.partnerUsername);
+        final normRecipient = HashUtils.normalizeUsername(username);
+        if (normPartner == normRecipient) {
+          return loveConn.partnerPublicKey;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final profile = await DefaultUserDirectoryService().lookupProfile(username);
+      if (profile?.publicIdentityKey != null && profile!.publicIdentityKey.isNotEmpty) {
+        return profile.publicIdentityKey;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   @override
   bool get isOnline => _isOnline;
 
@@ -133,9 +197,7 @@ class DefaultSyncService implements SyncService {
       ChatMessage outbound = message;
       final enc = _encryptionService;
       if (enc != null) {
-        final recipientAccount =
-            await _database.getAccountByUsername(message.recipientId);
-        final recipientKey = recipientAccount?.publicIdentityKey;
+        final recipientKey = await _resolveRecipientPublicKey(message.recipientId);
         if (recipientKey != null && recipientKey.isNotEmpty) {
           final String payload;
           if (message.mediaAttachment != null) {
@@ -242,6 +304,9 @@ class DefaultSyncService implements SyncService {
                 await _database.getAccountByUsername(raw.senderId);
             String senderKey = senderAccount?.publicIdentityKey ?? '';
             if (senderKey.isEmpty) {
+              senderKey = (await _resolveRecipientPublicKey(raw.senderId)) ?? '';
+            }
+            if (senderKey.isEmpty) {
               try {
                 final ep = EncryptedPayload.deserialize(raw.text);
                 senderKey = ep.senderPublicKey;
@@ -316,6 +381,13 @@ class DefaultSyncService implements SyncService {
           senderId: currentUserId,
         );
       }
+    }
+
+    if (processedMessages.isNotEmpty) {
+      try {
+        LocalConversationRepository.instance
+            .refreshConversations(currentUserId: currentUserId);
+      } catch (_) {}
     }
 
     return processedMessages;

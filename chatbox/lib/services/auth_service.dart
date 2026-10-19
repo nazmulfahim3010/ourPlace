@@ -9,6 +9,8 @@ import 'package:chatbox/models/user_account.dart';
 import 'package:chatbox/services/access_throttling_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/secure_storage_service.dart';
+import 'package:chatbox/services/user_directory_service.dart';
+import 'package:flutter/foundation.dart';
 
 /// Abstract service contract for anonymous identity authentication (Phase 6 & 9)
 abstract class AuthService {
@@ -187,6 +189,20 @@ class LocalAuthService implements AuthService {
       severity: 'info',
     );
 
+    // 7b. Publish public identity key to remote directory (Trial & Discovery Bridge)
+    try {
+      await DefaultUserDirectoryService().publishProfile(
+        DirectoryProfile(
+          accountId: accountId,
+          username: normalized,
+          publicIdentityKey: publicIdentityKey,
+          lastSeen: DateTime.now().toUtc(),
+        ),
+      );
+    } catch (e) {
+      debugPrint('LocalAuthService: Directory publish notice: $e');
+    }
+
     // 8. Establish authenticated session
     _currentUser = account.toUser(isCurrentUser: true);
     await _secureStorage.write('active_session_username', normalized);
@@ -251,6 +267,19 @@ class LocalAuthService implements AuthService {
 
     // 4b. Load E2EE keys for authenticated session
     await _encryptionService.initializeUserKeys(account.accountId);
+
+    // 4c. Update remote directory presence & ensure public key is published
+    try {
+      final pubKey = await _encryptionService.getPublicIdentityKey();
+      await DefaultUserDirectoryService().publishProfile(
+        DirectoryProfile(
+          accountId: account.accountId,
+          username: normalized,
+          publicIdentityKey: pubKey,
+          lastSeen: DateTime.now().toUtc(),
+        ),
+      );
+    } catch (_) {}
 
     await _db.logSecurityEvent(
       'login_success',

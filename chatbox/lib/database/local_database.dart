@@ -1,5 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
 import 'package:chatbox/database/app_database.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
 import 'package:chatbox/models/love_connection.dart';
@@ -27,7 +30,13 @@ class LocalDatabase {
 
   /// Internal getter for the Drift database instance
   AppDatabase get db {
-    _db ??= AppDatabase();
+    if (_db == null) {
+      if (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST')) {
+        _db = AppDatabase(NativeDatabase.memory());
+      } else {
+        _db = AppDatabase();
+      }
+    }
     return _db!;
   }
 
@@ -152,6 +161,70 @@ class LocalDatabase {
 
     final rows = await query.get();
     return rows.map(_rowToMessage).toList();
+  }
+
+  /// Retrieve distinct usernames of all partners that have exchanged messages
+  Future<List<String>> getDistinctChatPartners({
+    String currentUserId = 'current_user',
+  }) async {
+    final query = db.select(db.messages)
+      ..where((tbl) =>
+          tbl.senderId.equals(currentUserId) |
+          tbl.recipientId.equals(currentUserId) |
+          tbl.senderId.equals('current_user') |
+          tbl.recipientId.equals('current_user'))
+      ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
+
+    final rows = await query.get();
+    final Set<String> partners = {};
+    for (final row in rows) {
+      if (row.senderId != currentUserId && row.senderId != 'current_user') {
+        partners.add(row.senderId);
+      }
+      if (row.recipientId != currentUserId && row.recipientId != 'current_user') {
+        partners.add(row.recipientId);
+      }
+    }
+    return partners.toList();
+  }
+
+  /// Retrieve the single latest message for a partner
+  Future<ChatMessage?> getLatestMessageForPartner(
+    String partnerId, {
+    String currentUserId = 'current_user',
+  }) async {
+    final query = db.select(db.messages)
+      ..where((tbl) =>
+          (tbl.senderId.equals(partnerId) &
+              (tbl.recipientId.equals(currentUserId) |
+                  tbl.recipientId.equals('current_user'))) |
+          ((tbl.senderId.equals(currentUserId) |
+                  tbl.senderId.equals('current_user')) &
+              tbl.recipientId.equals(partnerId)))
+      ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)])
+      ..limit(1);
+
+    final rows = await query.get();
+    if (rows.isNotEmpty) {
+      return _rowToMessage(rows.first);
+    }
+    return null;
+  }
+
+  /// Get the number of unread incoming messages from a partner
+  Future<int> getUnreadCountForPartner(
+    String partnerId, {
+    String currentUserId = 'current_user',
+  }) async {
+    final query = db.select(db.messages)
+      ..where((tbl) =>
+          tbl.senderId.equals(partnerId) &
+          (tbl.recipientId.equals(currentUserId) |
+              tbl.recipientId.equals('current_user')) &
+          tbl.status.equals(MessageStatus.read.name).not());
+
+    final rows = await query.get();
+    return rows.length;
   }
 
   /// Reactive stream of messages for a partner (updates UI automatically)

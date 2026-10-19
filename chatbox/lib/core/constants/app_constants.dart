@@ -13,6 +13,8 @@ class AppConstants {
   static const String defaultPartnerName = '@twilight';
   static const String currentUserId = 'current_user';
   static const String databaseName = 'nest_chat';
+  static const String firebaseDatabaseUrl =
+      'https://ourplace-chat-default-rtdb.asia-southeast1.firebasedatabase.app';
 
   // Persistence Keys
   static const String prefActiveUserId = 'nest_active_account_id';

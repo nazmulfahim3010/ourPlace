@@ -66,7 +66,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   int _recordingSeconds = 0;
   Timer? _recordingTimer;
 
-  String get _currentUserId => widget.currentUser?.id ?? AppConstants.currentUserId;
+  String get _currentUserId =>
+      widget.currentUser?.username ??
+      widget.currentUser?.id ??
+      AppConstants.currentUserId;
   String get _currentUsername => widget.currentUser?.username ?? 'You';
 
   @override
@@ -78,6 +81,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scrollController = ScrollController();
     _loadMessagesFromRepository();
     _initRealtimeSubscriptions();
+    final activeId = _currentUsername != 'You' ? _currentUsername : _currentUserId;
+    _chatRepository.startRelayListener(activeId);
+    _chatRepository.syncService.reconcile(currentUserId: activeId);
   }
 
   void _initRealtimeSubscriptions() {
@@ -169,6 +175,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _chatRepository.realtimeService.pause();
     } else if (state == AppLifecycleState.resumed) {
       _chatRepository.realtimeService.resume();
+      final activeId = _currentUsername != 'You' ? _currentUsername : _currentUserId;
+      _chatRepository.startRelayListener(activeId);
+      _chatRepository.syncService.reconcile(currentUserId: activeId);
     }
   }
 

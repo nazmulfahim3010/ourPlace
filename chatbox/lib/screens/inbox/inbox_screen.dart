@@ -8,6 +8,7 @@ import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/repositories/conversation_repository.dart';
 import 'package:chatbox/screens/chat_screen.dart';
 import 'package:chatbox/widgets/conversation_tile.dart';
+import 'package:chatbox/services/user_directory_service.dart';
 
 /// Primary Inbox Screen displaying Love Connection and multi-user conversations
 class InboxScreen extends StatefulWidget {
@@ -48,6 +49,11 @@ class _InboxScreenState extends State<InboxScreen> {
         widget.conversationRepository ?? LocalConversationRepository();
     _searchController.addListener(_onSearchChanged);
     _loadConversations();
+    final activeUser = widget.currentUser?.username ?? widget.currentUser?.id;
+    if (activeUser != null && activeUser.isNotEmpty) {
+      widget.chatRepository?.startRelayListener(activeUser);
+      widget.chatRepository?.syncService.reconcile(currentUserId: activeUser);
+    }
     _conversationsSub = _conversationRepo
         .watchConversations(currentUserId: widget.currentUser?.id)
         .listen((conversations) {
@@ -109,11 +115,14 @@ class _InboxScreenState extends State<InboxScreen> {
 
   void _openConversation(Conversation conversation) {
     _conversationRepo.markAsRead(conversation.id);
+    final partnerId = conversation.partner.username.isNotEmpty
+        ? conversation.partner.username
+        : conversation.partner.id;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => ChatScreen(
           partnerName: conversation.partner.displayName,
-          partnerId: conversation.partner.id,
+          partnerId: partnerId,
           currentUser: widget.currentUser,
           repository: widget.chatRepository,
           authRepository: widget.authRepository,
@@ -185,17 +194,30 @@ class _InboxScreenState extends State<InboxScreen> {
                 if (raw.isEmpty) return;
                 final clean = raw.replaceAll('@', '').trim();
                 if (clean.isEmpty) return;
+                final normalized = '@$clean';
+
+                // Look up profile if available in directory to resolve public key
+                String? publicKey;
+                try {
+                  final profile =
+                      await DefaultUserDirectoryService().lookupProfile(normalized);
+                  publicKey = profile?.publicIdentityKey;
+                } catch (_) {}
+
                 final displayName = clean.length > 1
                     ? clean[0].toUpperCase() + clean.substring(1)
                     : clean.toUpperCase();
                 final partnerUser = User(
                   id: 'user_$clean',
-                  username: '@$clean',
+                  username: normalized,
                   displayName: displayName,
+                  publicIdentityKey: publicKey,
                   isCurrentUser: false,
                 );
 
-                Navigator.of(ctx).pop();
+                if (ctx.mounted) {
+                  Navigator.of(ctx).pop();
+                }
                 final newConv = await _conversationRepo.startOrGetConversation(
                   partner: partnerUser,
                 );

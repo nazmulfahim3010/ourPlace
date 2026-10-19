@@ -16,12 +16,15 @@ abstract class ConversationRepository {
     bool isLoveConnection = false,
   });
   Future<void> demoteLoveConnection({String? partnerUsername});
+  Future<void> refreshConversations({String? currentUserId});
 }
 
 /// Local-first implementation backed by local storage and in-memory synchronization
 class LocalConversationRepository implements ConversationRepository {
   static final LocalConversationRepository _instance =
       LocalConversationRepository._internal();
+
+  static LocalConversationRepository get instance => _instance;
 
   factory LocalConversationRepository({LocalDatabase? database}) {
     if (database != null) {
@@ -39,6 +42,10 @@ class LocalConversationRepository implements ConversationRepository {
   List<Conversation>? _cachedConversations;
   final StreamController<List<Conversation>> _conversationsStreamController =
       StreamController<List<Conversation>>.broadcast();
+
+  void resetForTesting() {
+    _cachedConversations = null;
+  }
 
   List<Conversation> _createInitialSeedConversations() {
     final now = DateTime.now();
@@ -131,7 +138,69 @@ class LocalConversationRepository implements ConversationRepository {
   @override
   Future<List<Conversation>> getConversations({String? currentUserId}) async {
     _cachedConversations ??= _createInitialSeedConversations();
+    final effectiveUserId = currentUserId ?? AppConstants.currentUserId;
+
+    // Dynamically discover all chat partners who have exchanged messages in SQLite
+    try {
+      final partners = await database.getDistinctChatPartners(currentUserId: effectiveUserId);
+      for (final partnerUsername in partners) {
+        final normPartner = partnerUsername.trim().toLowerCase();
+        final cleanPartner = normPartner.replaceFirst(RegExp(r'^@+'), '');
+        final existingIdx = _cachedConversations!.indexWhere(
+          (c) => c.partner.username.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '') == cleanPartner,
+        );
+
+        final latestMsg = await database.getLatestMessageForPartner(
+          partnerUsername,
+          currentUserId: effectiveUserId,
+        );
+        final unreadCount = await database.getUnreadCountForPartner(
+          partnerUsername,
+          currentUserId: effectiveUserId,
+        );
+
+        if (existingIdx != -1) {
+          // Update existing conversation with real message data
+          if (latestMsg != null) {
+            _cachedConversations![existingIdx] =
+                _cachedConversations![existingIdx].copyWith(
+              lastMessage: latestMsg,
+              lastMessageAt: latestMsg.timestamp,
+              unreadCount: unreadCount,
+            );
+          }
+        } else {
+          // New partner discovered in SQLite messages: add conversation dynamically!
+          final clean = cleanPartner;
+          final displayName = clean.isNotEmpty
+              ? clean[0].toUpperCase() + clean.substring(1)
+              : clean;
+          final formattedUsername = '@$clean';
+          final newConv = Conversation(
+            id: 'conv_$clean',
+            partner: User(
+              id: 'user_$clean',
+              username: formattedUsername,
+              displayName: displayName,
+              isCurrentUser: false,
+            ),
+            lastMessage: latestMsg,
+            lastMessageAt: latestMsg?.timestamp,
+            unreadCount: unreadCount,
+            isLoveConnection: false,
+          );
+          _cachedConversations!.add(newConv);
+        }
+      }
+    } catch (_) {}
+
     return List.unmodifiable(_cachedConversations!);
+  }
+
+  @override
+  Future<void> refreshConversations({String? currentUserId}) async {
+    final list = await getConversations(currentUserId: currentUserId);
+    _conversationsStreamController.add(list);
   }
 
   @override

@@ -382,7 +382,7 @@ void main() {
     late ConversationRepository convRepo;
 
     setUp(() {
-      convRepo = LocalConversationRepository();
+      convRepo = LocalConversationRepository()..resetForTesting();
     });
 
     testWidgets('ConversationTile renders correctly for Love Connection and regular chats',
@@ -479,8 +479,7 @@ void main() {
 
       // Tap back button in ChatHeader
       await tester.tap(find.byTooltip('Back to Inbox'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
 
       // Returned to InboxScreen
       expect(find.byType(InboxScreen), findsOneWidget);
@@ -5498,6 +5497,9 @@ class MockConversationRepository implements ConversationRepository {
         .map((c) => c.isLoveConnection ? c.copyWith(isLoveConnection: false) : c)
         .toList();
   }
+
+  @override
+  Future<void> refreshConversations({String? currentUserId}) async {}
 }
 
 

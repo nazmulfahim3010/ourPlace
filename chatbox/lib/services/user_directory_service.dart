@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:chatbox/core/config/app_environment.dart';
+import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
@@ -120,7 +122,18 @@ class FirebaseUserDirectoryService implements UserDirectoryService {
   final FirebaseDatabase _database;
 
   FirebaseUserDirectoryService({FirebaseDatabase? database})
-      : _database = database ?? FirebaseDatabase.instance;
+      : _database = database ?? _defaultDatabase();
+
+  static FirebaseDatabase _defaultDatabase() {
+    try {
+      return FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: AppConstants.firebaseDatabaseUrl,
+      );
+    } catch (_) {
+      return FirebaseDatabase.instance;
+    }
+  }
 
   String _sanitizeKey(String username) {
     return HashUtils.normalizeUsername(username).replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');

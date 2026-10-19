@@ -6,7 +6,9 @@ import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/models/love_connection.dart';
 import 'package:chatbox/models/user.dart';
 import 'package:chatbox/repositories/conversation_repository.dart';
+import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/relay_service.dart';
+import 'package:chatbox/services/user_directory_service.dart';
 
 /// Abstract service interface managing the 1-to-1 Love Connection subsystem (Phase 16).
 ///
@@ -101,7 +103,7 @@ class DefaultLoveConnectionService implements LoveConnectionService {
       throw const LoveConnectionException('You cannot form a Love Connection with yourself.');
     }
 
-    // Lookup known users in local database or known conversations
+    // 1. Lookup known users in local database or known conversations
     final existingUser = await database.getAccountByUsername(clean);
     if (existingUser != null) {
       return User(
@@ -112,7 +114,21 @@ class DefaultLoveConnectionService implements LoveConnectionService {
       );
     }
 
-    // Default partner discovery for demonstration / pairing
+    // 2. Query remote UserDirectoryService (Firebase directory)
+    try {
+      final remoteProfile =
+          await DefaultUserDirectoryService().lookupProfile(clean);
+      if (remoteProfile != null) {
+        return User(
+          id: remoteProfile.accountId,
+          username: remoteProfile.username,
+          displayName: remoteProfile.username.replaceAll('@', ''),
+          publicIdentityKey: remoteProfile.publicIdentityKey,
+        );
+      }
+    } catch (_) {}
+
+    // 3. Default partner discovery for demonstration / pairing
     return User(
       id: 'user_${clean.replaceAll('@', '')}',
       username: clean,
@@ -147,12 +163,30 @@ class DefaultLoveConnectionService implements LoveConnectionService {
       );
     }
 
+    // Auto-resolve current public key if not explicitly supplied
+    var senderPubKey = currentPublicKey;
+    if (senderPubKey == null || senderPubKey.isEmpty) {
+      try {
+        senderPubKey =
+            await StandardE2EEEncryptionService.instance.getPublicIdentityKey();
+      } catch (_) {}
+    }
+
+    // Lookup partner public key from remote directory if available
+    String? partnerPubKey;
+    try {
+      final partnerProfile =
+          await DefaultUserDirectoryService().lookupProfile(normalizedPartner);
+      partnerPubKey = partnerProfile?.publicIdentityKey;
+    } catch (_) {}
+
     final connectionId =
         'love_${DateTime.now().millisecondsSinceEpoch}_${normalizedPartner.replaceAll('@', '')}';
     final connection = LoveConnection(
       id: connectionId,
       userId: currentUserId,
       partnerUsername: normalizedPartner,
+      partnerPublicKey: partnerPubKey,
       status: LoveConnectionStatus.requestSent,
       createdAt: DateTime.now(),
     );
@@ -166,7 +200,7 @@ class DefaultLoveConnectionService implements LoveConnectionService {
     final envelope = EphemeralRelayEnvelope.loveRequest(
       senderId: normalizedCurrent,
       recipientId: normalizedPartner,
-      senderPublicKey: currentPublicKey,
+      senderPublicKey: senderPubKey,
     );
     await relayService.enqueueMessage(envelope);
 
@@ -188,6 +222,14 @@ class DefaultLoveConnectionService implements LoveConnectionService {
       throw const LoveConnectionException(
         'You already have an active Love Connection with a partner.',
       );
+    }
+
+    var senderPubKey = currentPublicKey;
+    if (senderPubKey == null || senderPubKey.isEmpty) {
+      try {
+        senderPubKey =
+            await StandardE2EEEncryptionService.instance.getPublicIdentityKey();
+      } catch (_) {}
     }
 
     final now = DateTime.now();
@@ -212,7 +254,7 @@ class DefaultLoveConnectionService implements LoveConnectionService {
     final envelope = EphemeralRelayEnvelope.loveAccept(
       senderId: normalizedCurrent,
       recipientId: normalizedPartner,
-      senderPublicKey: currentPublicKey,
+      senderPublicKey: senderPubKey,
     );
     await relayService.enqueueMessage(envelope);
 
