@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:chatbox/database/local_database.dart';
-import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/models/love_note.dart';
 import 'package:chatbox/models/media_attachment.dart';
@@ -16,7 +15,7 @@ import 'package:chatbox/services/media_relay_service.dart';
 import 'package:chatbox/services/media_storage_service.dart';
 import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
-import 'package:chatbox/services/user_directory_service.dart';
+import 'package:chatbox/services/public_key_resolver.dart';
 import 'package:chatbox/repositories/conversation_repository.dart';
 import 'package:flutter/foundation.dart';
 
@@ -157,36 +156,8 @@ class DefaultSyncService implements SyncService {
     _listeningUserId = null;
   }
 
-  Future<String?> _resolveRecipientPublicKey(String username) async {
-    final normUsername = HashUtils.normalizeUsername(username);
-    final account = await _database.getAccountByUsername(username) ??
-        await _database.getAccountByUsername(normUsername);
-    if (account?.publicIdentityKey != null && account!.publicIdentityKey!.isNotEmpty) {
-      return account.publicIdentityKey;
-    }
-
-    try {
-      final loveConn = await _loveConnectionService?.getLoveConnection();
-      if (loveConn != null &&
-          loveConn.partnerPublicKey != null &&
-          loveConn.partnerPublicKey!.isNotEmpty) {
-        final normPartner = HashUtils.normalizeUsername(loveConn.partnerUsername);
-        if (normPartner == normUsername) {
-          return loveConn.partnerPublicKey;
-        }
-      }
-    } catch (_) {}
-
-    try {
-      final profile = await DefaultUserDirectoryService().lookupProfile(username) ??
-          await DefaultUserDirectoryService().lookupProfile(normUsername);
-      if (profile?.publicIdentityKey != null && profile!.publicIdentityKey.isNotEmpty) {
-        return profile.publicIdentityKey;
-      }
-    } catch (_) {}
-
-    return null;
-  }
+  Future<String?> _resolveRecipientPublicKey(String username) =>
+      PublicKeyResolver(database: _database).resolve(username);
 
   @override
   bool get isOnline => _isOnline;
@@ -224,19 +195,22 @@ class DefaultSyncService implements SyncService {
       final enc = _encryptionService;
       if (enc != null) {
         final recipientKey = await _resolveRecipientPublicKey(message.recipientId);
-        if (recipientKey != null && recipientKey.isNotEmpty) {
-          final String payload;
-          if (message.mediaAttachment != null) {
-            payload = jsonEncode({
-              'text': message.text,
-              'mediaAttachment': message.mediaAttachment!.toJson(),
-            });
-          } else {
-            payload = message.text;
-          }
-          final ciphertext = await enc.encryptPayload(payload, recipientKey);
-          outbound = message.copyWith(text: ciphertext);
+        if (recipientKey == null || recipientKey.isEmpty) {
+          // Fail closed: never put a message on the relay unencrypted
+          await _database.updateMessageStatus(message.id, MessageStatus.failed);
+          return false;
         }
+        final String payload;
+        if (message.mediaAttachment != null) {
+          payload = jsonEncode({
+            'text': message.text,
+            'mediaAttachment': message.mediaAttachment!.toJson(),
+          });
+        } else {
+          payload = message.text;
+        }
+        final ciphertext = await enc.encryptPayload(payload, recipientKey);
+        outbound = message.copyWith(text: ciphertext);
       }
 
       await _chatService.sendMessage(outbound);
@@ -383,39 +357,42 @@ class DefaultSyncService implements SyncService {
         await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
       } else if (envelope.isReactionSignal) {
         if (_coupleFeaturesService != null) {
-          try {
-            final data = jsonDecode(envelope.ciphertextPayload) as Map<String, dynamic>;
+          final cleartext =
+              await _decryptFromSender(envelope.senderId, envelope.ciphertextPayload);
+          if (cleartext != null) {
+            final data = jsonDecode(cleartext) as Map<String, dynamic>;
             await _coupleFeaturesService.handleInboundReaction(
               messageId: data['message_id'] as String,
-              senderUsername: data['sender_username'] as String? ?? envelope.senderId,
+              // Attribute the reaction to the authenticated envelope sender
+              senderUsername: HashUtils.normalizeUsername(envelope.senderId),
               emoji: data['emoji'] as String,
               isRemove: data['is_remove'] as bool? ?? false,
             );
-          } catch (_) {}
+          }
         }
         await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
       } else if (envelope.isLoveNoteSignal) {
         if (_coupleFeaturesService != null) {
-          try {
-            final data = jsonDecode(envelope.ciphertextPayload) as Map<String, dynamic>;
-            final note = LoveNote.fromJson(data);
-            await _coupleFeaturesService.handleInboundLoveNote(note);
-          } catch (_) {}
+          final cleartext =
+              await _decryptFromSender(envelope.senderId, envelope.ciphertextPayload);
+          if (cleartext != null) {
+            final note =
+                LoveNote.fromJson(jsonDecode(cleartext) as Map<String, dynamic>);
+            if (_sameUser(note.senderUsername, envelope.senderId)) {
+              await _coupleFeaturesService.handleInboundLoveNote(note);
+            }
+          }
         }
         await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
-      } else if (envelope.isDeliveryReceipt) {
-        // Handle delivery receipt
-        await _database.updateMessageStatusIfProgressing(
-          envelope.targetMessageId,
-          MessageStatus.delivered,
-        );
-        await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
-      } else if (envelope.isReadReceipt) {
-        // Handle read receipt
-        await _database.updateMessageStatusIfProgressing(
-          envelope.targetMessageId,
-          MessageStatus.read,
-        );
+      } else if (envelope.isDeliveryReceipt || envelope.isReadReceipt) {
+        // Only the original recipient of a message may acknowledge it
+        final target = await _database.getMessageById(envelope.targetMessageId);
+        if (target != null && _sameUser(target.recipientId, envelope.senderId)) {
+          await _database.updateMessageStatusIfProgressing(
+            envelope.targetMessageId,
+            envelope.isReadReceipt ? MessageStatus.read : MessageStatus.delivered,
+          );
+        }
         await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
       } else {
         // Standard incoming message
@@ -429,60 +406,13 @@ class DefaultSyncService implements SyncService {
         );
 
         ChatMessage decryptedMessage = raw;
-        final enc = _encryptionService;
-        if (enc != null) {
-          try {
-            final senderAccount =
-                await _database.getAccountByUsername(raw.senderId);
-            String senderKey = senderAccount?.publicIdentityKey ?? '';
-            if (senderKey.isEmpty) {
-              senderKey = (await _resolveRecipientPublicKey(raw.senderId)) ?? '';
-            }
-            if (senderKey.isEmpty) {
-              try {
-                final ep = EncryptedPayload.deserialize(raw.text);
-                senderKey = ep.senderPublicKey;
-              } catch (_) {}
-            }
-            final cleartext = await enc.decryptPayload(raw.text, senderKey);
-            try {
-              final decoded = jsonDecode(cleartext);
-              if (decoded is Map<String, dynamic> && decoded.containsKey('mediaAttachment')) {
-                final mediaMap = decoded['mediaAttachment'] as Map<String, dynamic>;
-                var att = MediaAttachment.fromJson(mediaMap);
-                final text = decoded['text'] as String? ?? '';
-
-                // If media blob is in relay, download and purge from cloud
-                final relay = _mediaRelayService;
-                final storage = _mediaStorageService;
-                if (att.remoteUrl != null && relay != null) {
-                  try {
-                    final blob = await relay.downloadEncryptedBlob(att.remoteUrl!);
-                    if (storage != null) {
-                      final localPath = await storage.saveToSandbox(
-                        fileName: att.fileName,
-                        bytes: blob,
-                        type: att.type,
-                      );
-                      att = att.copyWith(localPath: localPath);
-                    }
-                    await relay.purgeEncryptedBlob(att.remoteUrl!);
-                  } catch (_) {}
-                }
-
-                decryptedMessage = raw.copyWith(
-                  text: text,
-                  type: att.type,
-                  mediaAttachment: att,
-                );
-              } else {
-                decryptedMessage = raw.copyWith(text: cleartext);
-              }
-            } catch (_) {
-              decryptedMessage = raw.copyWith(text: cleartext);
-            }
-          } catch (_) {
-            // Decryption fallback
+        if (_encryptionService != null) {
+          final cleartext = await _decryptFromSender(raw.senderId, raw.text);
+          if (cleartext == null) {
+            // Never surface ciphertext to the user
+            decryptedMessage = raw.copyWith(text: undecryptableMessageText);
+          } else {
+            decryptedMessage = await _materializeDecrypted(raw, cleartext);
           }
         }
 
@@ -526,6 +456,77 @@ class DefaultSyncService implements SyncService {
     }
 
     return null;
+  }
+
+  /// Shown in place of a message whose ciphertext could not be authenticated.
+  static const String undecryptableMessageText =
+      '🔒 This message could not be decrypted.';
+
+  bool _sameUser(String a, String b) =>
+      HashUtils.normalizeUsername(a) == HashUtils.normalizeUsername(b);
+
+  /// Decrypt [payload] from [senderId] using only a trusted key for that
+  /// sender (never the key embedded in the envelope, which the writer of the
+  /// envelope controls). Returns null if no key is known or authentication fails.
+  Future<String?> _decryptFromSender(String senderId, String payload) async {
+    final enc = _encryptionService;
+    if (enc == null) return payload;
+    final senderKey = await _resolveRecipientPublicKey(senderId);
+    if (senderKey == null || senderKey.isEmpty) {
+      debugPrint('DefaultSyncService: no trusted key for $senderId; rejecting payload');
+      return null;
+    }
+    try {
+      return await enc.decryptPayload(payload, senderKey);
+    } catch (e) {
+      debugPrint('DefaultSyncService: decryption from $senderId failed: $e');
+      return null;
+    }
+  }
+
+  /// Build the stored message from decrypted [cleartext], fetching and
+  /// decrypting any media blob it references.
+  Future<ChatMessage> _materializeDecrypted(ChatMessage raw, String cleartext) async {
+    Map<String, dynamic>? decoded;
+    try {
+      final value = jsonDecode(cleartext);
+      if (value is Map<String, dynamic> && value.containsKey('mediaAttachment')) {
+        decoded = value;
+      }
+    } catch (_) {}
+    if (decoded == null) return raw.copyWith(text: cleartext);
+
+    var att = MediaAttachment.fromJson(decoded['mediaAttachment'] as Map<String, dynamic>);
+    final text = decoded['text'] as String? ?? '';
+
+    // If media blob is in relay, download, decrypt and purge from cloud
+    final relay = _mediaRelayService;
+    final storage = _mediaStorageService;
+    if (att.remoteUrl != null && relay != null) {
+      try {
+        var bytes = await relay.downloadEncryptedBlob(att.remoteUrl!);
+        final mediaCrypto = _mediaEncryptionService ?? StandardMediaEncryptionService();
+        if (mediaCrypto.isSealedForTransport(att)) {
+          bytes = await mediaCrypto.openFromTransport(
+            ciphertextBytes: bytes,
+            attachment: att,
+          );
+        }
+        if (storage != null) {
+          final localPath = await storage.saveToSandbox(
+            fileName: att.fileName,
+            bytes: bytes,
+            type: att.type,
+          );
+          att = att.copyWith(localPath: localPath);
+        }
+        await relay.purgeEncryptedBlob(att.remoteUrl!);
+      } catch (e) {
+        debugPrint('DefaultSyncService: media fetch notice: $e');
+      }
+    }
+
+    return raw.copyWith(text: text, type: att.type, mediaAttachment: att);
   }
 
   @override

@@ -44,11 +44,87 @@ abstract class MediaEncryptionService {
     required String senderPublicKey,
     required SimpleKeyPair localKeyPair,
   });
+
+  /// Encrypt raw media bytes with a fresh AES-256-GCM key for upload to the
+  /// media relay. The key, nonce and MAC are recorded on the returned
+  /// attachment, so that attachment must only ever travel inside an
+  /// E2EE-encrypted message payload.
+  Future<EncryptedMediaPackage> sealForTransport({
+    required List<int> rawBytes,
+    required MediaAttachment attachment,
+  });
+
+  /// Whether [attachment] carries a transport key produced by [sealForTransport].
+  bool isSealedForTransport(MediaAttachment attachment);
+
+  /// Decrypt a blob produced by [sealForTransport] using the key carried on
+  /// [attachment]. Throws [SecurityException] if the blob was tampered with.
+  Future<Uint8List> openFromTransport({
+    required List<int> ciphertextBytes,
+    required MediaAttachment attachment,
+  });
 }
 
 /// Production implementation of [MediaEncryptionService] using AES-256-GCM and X25519 ECDH
 class StandardMediaEncryptionService implements MediaEncryptionService {
   static final List<int> _wrapInfo = utf8.encode('nest-media-key-wrap-v1');
+
+  /// Marks an [MediaAttachment.encryptedMediaKey] holding a raw transport key
+  /// (protected by the surrounding E2EE message) rather than an ECDH-wrapped key.
+  static const String _transportKeyPrefix = 'transport-v1:';
+
+  @override
+  Future<EncryptedMediaPackage> sealForTransport({
+    required List<int> rawBytes,
+    required MediaAttachment attachment,
+  }) async {
+    final mediaKey = await CryptoKeyUtils.generateSymmetricKey();
+    final rawKeyBytes = await CryptoKeyUtils.extractSecretKeyBytes(mediaKey);
+    final secretBox = await CryptoKeyUtils.encryptAesGcmBytes(
+      bytes: rawBytes,
+      secretKey: mediaKey,
+    );
+
+    return EncryptedMediaPackage(
+      encryptedBytes: Uint8List.fromList(secretBox.cipherText),
+      attachment: attachment.copyWith(
+        fileSizeBytes: rawBytes.length,
+        encryptedMediaKey: '$_transportKeyPrefix${base64Encode(rawKeyBytes)}',
+        nonce: base64Encode(secretBox.nonce),
+        mac: base64Encode(secretBox.mac.bytes),
+      ),
+    );
+  }
+
+  @override
+  bool isSealedForTransport(MediaAttachment attachment) =>
+      attachment.encryptedMediaKey?.startsWith(_transportKeyPrefix) ?? false;
+
+  @override
+  Future<Uint8List> openFromTransport({
+    required List<int> ciphertextBytes,
+    required MediaAttachment attachment,
+  }) async {
+    if (!isSealedForTransport(attachment) ||
+        attachment.nonce == null ||
+        attachment.mac == null) {
+      throw const SecurityException(
+        'Incomplete media encryption metadata',
+        code: 'INVALID_MEDIA_METADATA',
+      );
+    }
+
+    final rawKey = base64Decode(
+      attachment.encryptedMediaKey!.substring(_transportKeyPrefix.length),
+    );
+    final decrypted = await CryptoKeyUtils.decryptAesGcmBytes(
+      ciphertext: ciphertextBytes,
+      nonce: base64Decode(attachment.nonce!),
+      mac: base64Decode(attachment.mac!),
+      secretKey: CryptoKeyUtils.secretKeyFromBytes(rawKey),
+    );
+    return Uint8List.fromList(decrypted);
+  }
 
   @override
   Future<EncryptedMediaPackage> encryptMedia({

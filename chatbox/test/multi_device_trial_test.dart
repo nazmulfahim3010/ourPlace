@@ -143,6 +143,15 @@ void main() {
         createdAt: DateTime.now(),
       ).serialize();
 
+      // @alex published their identity key on registration; the receiver
+      // authenticates the message with it (never with the envelope's key)
+      await userDirectory.publishProfile(DirectoryProfile(
+        accountId: 'acc_alex_123',
+        username: '@alex',
+        publicIdentityKey: alicePub,
+        lastSeen: DateTime.now(),
+      ));
+
       // Start reactive relay listener on @twilight's device
       syncService.startRelayListener(currentUserId: '@twilight');
 
@@ -296,6 +305,13 @@ void main() {
         createdAt: DateTime.now(),
       ).serialize();
 
+      await userDirectory.publishProfile(DirectoryProfile(
+        accountId: 'acc_frank_1',
+        username: '@frank',
+        publicIdentityKey: frankPub,
+        lastSeen: DateTime.now(),
+      ));
+
       await relayService.enqueueMessage(
         EphemeralRelayEnvelope(
           id: 'env_frank_001',
@@ -321,6 +337,56 @@ void main() {
       expect(frankConv, isNotNull);
       expect(frankConv.lastMessage?.text, equals('Hi Alice, this is Frank!'));
       expect(frankConv.unreadCount, equals(1));
+    });
+  });
+
+  group('Sender authentication', () {
+    test('a message whose sender key exists only inside the envelope is not trusted', () async {
+      final syncService = DefaultSyncService(
+        database: localDb,
+        chatService: chatService,
+        encryptionService: encryptionService,
+      );
+      await encryptionService.initializeUserKeys('acc_alice_1');
+      final alicePub = await encryptionService.getPublicIdentityKey();
+
+      // An attacker claims to be @partner but encrypts with their own key and
+      // embeds that key in the envelope
+      final attackerKeyPair = await CryptoKeyUtils.generateX25519KeyPair();
+      final attackerPub = await CryptoKeyUtils.encodePublicKey(attackerKeyPair);
+      final secret = await CryptoKeyUtils.computeSharedSecret(
+        localKeyPair: attackerKeyPair,
+        remotePublicKey: CryptoKeyUtils.decodePublicKey(alicePub),
+      );
+      final msgKey = await CryptoKeyUtils.deriveMessageKey(sharedSecret: secret);
+      final box = await CryptoKeyUtils.encryptAesGcm(
+        plaintext: 'Forged message',
+        secretKey: msgKey,
+      );
+      final payload = EncryptedPayload(
+        version: 1,
+        senderPublicKey: attackerPub,
+        nonce: CryptoKeyUtils.encodePublicKeyBytes(box.nonce),
+        ciphertext: CryptoKeyUtils.encodePublicKeyBytes(box.cipherText),
+        mac: CryptoKeyUtils.encodePublicKeyBytes(box.mac.bytes),
+        createdAt: DateTime.now(),
+      ).serialize();
+
+      await relayService.enqueueMessage(EphemeralRelayEnvelope(
+        id: 'env_forged_001',
+        senderId: '@partner',
+        recipientId: '@alice',
+        ciphertextPayload: payload,
+        timestamp: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      ));
+
+      await syncService.processInboundEnvelopes(currentUserId: '@alice');
+
+      final stored = await localDb.getMessagesForPartner('@partner', currentUserId: '@alice');
+      expect(stored.length, equals(1));
+      expect(stored.first.text, equals(DefaultSyncService.undecryptableMessageText));
+      expect(stored.first.text, isNot(contains('Forged')));
     });
   });
 }

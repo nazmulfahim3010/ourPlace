@@ -109,14 +109,7 @@ class LocalAuthService implements AuthService {
         // Ensure active public key is refreshed in the public directory
         try {
           final pubKey = await _encryptionService.getPublicIdentityKey();
-          DefaultUserDirectoryService().publishProfile(
-            DirectoryProfile(
-              accountId: account.accountId,
-              username: account.username,
-              publicIdentityKey: pubKey,
-              lastSeen: DateTime.now().toUtc(),
-            ),
-          ).ignore();
+          _publishOwnProfile(account, pubKey).ignore();
         } catch (_) {}
 
         return _currentUser;
@@ -139,7 +132,37 @@ class LocalAuthService implements AuthService {
     final validationError = HashUtils.validateUsername(username);
     if (validationError != null) return false;
     final taken = await _db.isUsernameTaken(username);
-    return !taken;
+    if (taken) return false;
+    final remote = await DefaultUserDirectoryService()
+        .lookupProfile(HashUtils.normalizeUsername(username));
+    return remote == null;
+  }
+
+  /// Publish this account's public key to the shared directory, unless the
+  /// directory entry for the username belongs to a different account. That
+  /// would mean the name was claimed elsewhere; overwriting it would let one
+  /// device silently replace another user's key.
+  Future<void> _publishOwnProfile(UserAccount account, String publicKey) async {
+    final username = HashUtils.normalizeUsername(account.username);
+    final existing = await DefaultUserDirectoryService().lookupProfile(username);
+    if (existing != null &&
+        existing.accountId.isNotEmpty &&
+        existing.accountId != account.accountId) {
+      await _db.logSecurityEvent(
+        'directory_conflict',
+        'Directory entry for $username belongs to another account; not overwriting',
+        severity: 'critical',
+      );
+      return;
+    }
+    await DefaultUserDirectoryService().publishProfile(
+      DirectoryProfile(
+        accountId: account.accountId,
+        username: username,
+        publicIdentityKey: publicKey,
+        lastSeen: DateTime.now().toUtc(),
+      ),
+    );
   }
 
   @override
@@ -170,6 +193,16 @@ class LocalAuthService implements AuthService {
     // 3. Check username uniqueness
     final isTaken = await _db.isUsernameTaken(normalized);
     if (isTaken) {
+      throw AuthException(
+        'Username $normalized is already taken',
+        code: 'USERNAME_TAKEN',
+      );
+    }
+
+    // 3b. Check the shared directory too: accounts are device-local, so the
+    //     local check alone lets a second device re-register a taken name
+    final remoteProfile = await DefaultUserDirectoryService().lookupProfile(normalized);
+    if (remoteProfile != null) {
       throw AuthException(
         'Username $normalized is already taken',
         code: 'USERNAME_TAKEN',
@@ -292,14 +325,7 @@ class LocalAuthService implements AuthService {
     // 4c. Update remote directory presence & ensure public key is published
     try {
       final pubKey = await _encryptionService.getPublicIdentityKey();
-      await DefaultUserDirectoryService().publishProfile(
-        DirectoryProfile(
-          accountId: account.accountId,
-          username: normalized,
-          publicIdentityKey: pubKey,
-          lastSeen: DateTime.now().toUtc(),
-        ),
-      );
+      await _publishOwnProfile(account, pubKey);
     } catch (_) {}
 
     await _db.logSecurityEvent(
@@ -382,7 +408,9 @@ class LocalAuthService implements AuthService {
         severity: 'info',
       );
     }
-    await _encryptionService.clearKeys();
+    // Keep the stored identity keys: deleting them would orphan every message
+    // already encrypted to this account's published public key.
+    await _encryptionService.lockSession();
     await DefaultAppLockService().clearPasscode();
     DefaultAppLockService().lockApp();
     LocalConversationRepository.instance.resetForTesting();

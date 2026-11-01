@@ -10,6 +10,7 @@ import 'package:chatbox/models/shared_conversation_bundle.dart';
 import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/firebase_relay_service.dart';
 import 'package:chatbox/services/love_connection_service.dart';
+import 'package:chatbox/services/public_key_resolver.dart';
 import 'package:chatbox/services/relay_service.dart';
 
 /// Abstract service contract for Phase 17 — One-Time Love Code & Conversation Sharing.
@@ -338,12 +339,18 @@ class DefaultConversationSharingService implements ConversationSharingService {
     String payload = bundle.toJsonString();
     final enc = _encryptionService;
     if (enc != null) {
-      final recipientAccount =
-          await _localDatabase.getAccountByUsername(requesterUsername);
-      final pubKey = recipientAccount?.publicIdentityKey;
-      if (pubKey != null && pubKey.isNotEmpty) {
-        payload = await enc.encryptPayload(payload, pubKey);
+      final pubKey = await PublicKeyResolver(database: _localDatabase)
+          .resolve(requesterUsername);
+      if (pubKey == null || pubKey.isEmpty) {
+        // Fail closed: the full history must never cross the relay in plaintext
+        await _sendReject(
+          recipientId: requesterUsername,
+          senderId: currentUserId,
+          reason: 'Partner encryption key unavailable. Please try again later.',
+        );
+        return;
       }
+      payload = await enc.encryptPayload(payload, pubKey);
     }
 
     // Dispatch bundle to partner over relay
@@ -364,16 +371,17 @@ class DefaultConversationSharingService implements ConversationSharingService {
       String jsonStr = envelope.ciphertextPayload;
       final enc = _encryptionService;
       if (enc != null) {
-        final senderAccount =
-            await _localDatabase.getAccountByUsername(envelope.senderId);
-        final pubKey = senderAccount?.publicIdentityKey;
-        if (pubKey != null && pubKey.isNotEmpty) {
-          try {
-            jsonStr = await enc.decryptPayload(jsonStr, pubKey);
-          } catch (_) {
-            // If already plaintext JSON or fallback
-          }
+        // Only accept a bundle authenticated with the partner's trusted key;
+        // plaintext or wrongly-keyed bundles are rejected.
+        final pubKey = await PublicKeyResolver(database: _localDatabase)
+            .resolve(envelope.senderId);
+        if (pubKey == null || pubKey.isEmpty) {
+          throw const SecurityException(
+            'Partner public identity key is unavailable',
+            code: 'MISSING_SENDER_KEY',
+          );
         }
+        jsonStr = await enc.decryptPayload(jsonStr, pubKey);
       }
 
       final bundle = SharedConversationBundle.fromJsonString(jsonStr);

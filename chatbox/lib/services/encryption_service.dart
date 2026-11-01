@@ -26,7 +26,14 @@ abstract class EncryptionService {
   /// Whether cryptographic keys have been generated and configured for the active session
   Future<bool> hasKeysConfigured();
 
-  /// Securely purge stored keys for the current session (used during sign-out)
+  /// Drop the in-memory key material for the active session (used during
+  /// sign-out). Stored keys are kept so the same identity is restored on the
+  /// next login and messages already queued for it remain decryptable.
+  Future<void> lockSession();
+
+  /// Permanently delete the stored identity keys for the active session.
+  /// Only for explicit account deletion / device wipe: after this, anything
+  /// encrypted to the old public key can never be decrypted again.
   Future<void> clearKeys();
 }
 
@@ -224,6 +231,13 @@ class StandardE2EEEncryptionService implements EncryptionService {
   }
 
   @override
+  Future<void> lockSession() async {
+    _cachedKeyPair = null;
+    _cachedPublicKeyBase64 = null;
+    _activeUserId = null;
+  }
+
+  @override
   Future<void> clearKeys() async {
     if (_activeUserId != null) {
       await _secureStorage.delete('$_privKeyPrefix$_activeUserId');
@@ -268,6 +282,9 @@ class NoOpEncryptionService implements EncryptionService {
 
   @override
   Future<bool> hasKeysConfigured() async => true;
+
+  @override
+  Future<void> lockSession() async {}
 
   @override
   Future<void> clearKeys() async {}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:drift/native.dart';
 
 import 'package:chatbox/core/errors/app_exception.dart';
@@ -356,6 +357,15 @@ void main() {
     });
 
     test('ChatRepository delegates message sending and retrieval', () async {
+      // Sending fails closed without a recipient key, so register one
+      final twilightKeyPair = await CryptoKeyUtils.generateX25519KeyPair();
+      await localDb.saveAccount(UserAccount.create(
+        accountId: 'acc_twilight',
+        username: '@twilight',
+        plaintextPassword: 'password123',
+        publicIdentityKey: await CryptoKeyUtils.encodePublicKey(twilightKeyPair),
+      ));
+
       final msg = ChatMessage(
         id: 'repo_001',
         senderId: 'current_user',
@@ -368,6 +378,7 @@ void main() {
 
       await chatRepository.sendMessage(msg);
       final messages = await chatRepository.getMessages('Twilight');
+
 
       expect(messages.length, 1);
       expect(messages.first.text, 'Hello via ChatRepository');
@@ -384,8 +395,19 @@ void main() {
   group('Inbox & Multi-Conversation UI Tests', () {
     late ConversationRepository convRepo;
 
-    setUp(() {
+    setUp(() async {
       convRepo = LocalConversationRepository()..resetForTesting();
+      // The repository no longer ships demo conversations; seed them here
+      await convRepo.startOrGetConversation(
+        partner: User(id: 'user_twilight', username: '@twilight', displayName: 'Twilight'),
+        isLoveConnection: true,
+      );
+      await convRepo.startOrGetConversation(
+        partner: User(id: 'user_sarah', username: '@sarah', displayName: 'Sarah'),
+      );
+      await convRepo.startOrGetConversation(
+        partner: User(id: 'user_rahim', username: '@rahim', displayName: 'Rahim'),
+      );
     });
 
     testWidgets('ConversationTile renders correctly for Love Connection and regular chats',
@@ -704,6 +726,35 @@ void main() {
     testWidgets('ChatScreen smoke test and message sending verification',
         (WidgetTester tester) async {
       final repo = LocalChatRepository(database: localDb);
+      // The app no longer seeds demo history; add one message today and one
+      // yesterday so the date dividers render
+      final now = DateTime.now();
+      await localDb.saveMessages([
+        ChatMessage(
+          id: 'seed_yesterday',
+          senderId: AppConstants.defaultPartnerId,
+          recipientId: AppConstants.currentUserId,
+          text: 'Good night!',
+          timestamp: now.subtract(const Duration(days: 1)),
+          status: MessageStatus.read,
+        ),
+        ChatMessage(
+          id: 'seed_today',
+          senderId: AppConstants.defaultPartnerId,
+          recipientId: AppConstants.currentUserId,
+          text: 'Good morning!',
+          timestamp: now,
+          status: MessageStatus.read,
+        ),
+      ]);
+      // The partner has a registered identity key, so sending succeeds
+      final partnerKeyPair = await CryptoKeyUtils.generateX25519KeyPair();
+      await localDb.saveAccount(UserAccount.create(
+        accountId: 'acc_partner',
+        username: '@${AppConstants.defaultPartnerId}',
+        plaintextPassword: 'password123',
+        publicIdentityKey: await CryptoKeyUtils.encodePublicKey(partnerKeyPair),
+      ));
       // Build our app with direct ChatScreen
       await tester.pumpWidget(
         MyApp(
@@ -752,6 +803,8 @@ void main() {
       // Let animations and timers finish
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpWidget(const SizedBox());
+      // The injected repository's relay poller outlives the screen by design
+      repo.stopRelayListener();
       await tester.pumpAndSettle();
     });
   });
@@ -4470,6 +4523,22 @@ void main() {
     });
 
     test('Full End-to-End Conversation Sharing Handshake & Replay Protection', () async {
+      // Twilight's device identity; its public key is pinned on Alex's
+      // Love Connection so the bundle can be encrypted for it
+      final twilightEnc = StandardE2EEEncryptionService(
+        secureStorage: InMemorySecureStorageService(),
+      );
+      await twilightEnc.initializeUserKeys('twilight_id');
+      final twilightPub = await twilightEnc.getPublicIdentityKey();
+      await localDb.saveLoveConnection(LoveConnection(
+        id: 'conn_test_1',
+        userId: 'alex_id',
+        partnerUsername: '@twilight',
+        partnerPublicKey: twilightPub,
+        status: LoveConnectionStatus.connected,
+        createdAt: DateTime.now(),
+      ));
+
       loveConnService.setMockConnection(LoveConnection(
         id: 'conn_test_1',
         userId: 'alex_id',
@@ -4512,8 +4581,14 @@ void main() {
       expect(pendingTwilight.length, equals(1));
       expect(pendingTwilight.first.envelopeType, equals('love_share_bundle'));
 
-      final bundle = SharedConversationBundle.fromJsonString(
+      // The history must cross the relay encrypted, readable only by Twilight
+      expect(
         pendingTwilight.first.ciphertextPayload,
+        isNot(contains('Confidential project details')),
+      );
+      final alexPub = await StandardE2EEEncryptionService.instance.getPublicIdentityKey();
+      final bundle = SharedConversationBundle.fromJsonString(
+        await twilightEnc.decryptPayload(pendingTwilight.first.ciphertextPayload, alexPub),
       );
       expect(bundle.conversationPartner, equals('@sarah'));
       expect(bundle.totalCount, equals(1));

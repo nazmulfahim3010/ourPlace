@@ -190,6 +190,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _luvBurstSubscription?.cancel();
     _recordingTimer?.cancel();
     _chatRepository.realtimeService.pause();
+    // A repository created by this screen (no shared one injected) owns its
+    // own relay poller; stop it so it does not outlive the screen.
+    if (widget.repository == null) {
+      _chatRepository.stopRelayListener();
+    }
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -231,8 +236,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Initial seed messages (empty for production/clean chats)
-  List<ChatMessage> _generateInitialSeedMessages() => const [];
 
   /// Send message: update UI, delegate persistence and dispatch to ChatRepository
   Future<void> _sendMessage() async {
@@ -482,7 +485,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _sendLuv() {
     FloatingHeartsOverlay.burst(context);
     _chatRepository.coupleFeaturesService.sendLuvBurst(
-      partnerUsername: widget.partnerName,
+      partnerUsername: widget.partnerId,
       currentUsername: _currentUsername,
     );
     ScaffoldMessenger.of(context).showSnackBar(
@@ -512,7 +515,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (emoji != null) {
       await _chatRepository.coupleFeaturesService.toggleReaction(
         messageId: message.id,
-        partnerUsername: widget.partnerName,
+        partnerUsername: widget.partnerId,
         currentUsername: _currentUsername,
         emoji: emoji,
       );
@@ -529,7 +532,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SharedMemoriesScreen(
-          partnerUsername: widget.partnerName,
+          partnerUsername: widget.partnerId,
           chatRepository: _chatRepository,
         ),
       ),
@@ -580,7 +583,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       await LoveCodeSheet.show(
         context,
-        conversationPartner: widget.partnerName,
+        conversationPartner: widget.partnerId,
         currentUserId: _currentUserId,
         currentUsername: _currentUsername,
         lovePartnerUsername: conn.partnerUsername,

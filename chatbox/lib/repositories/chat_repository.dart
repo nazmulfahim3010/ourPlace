@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:chatbox/core/errors/app_exception.dart';
 import 'package:chatbox/database/local_database.dart';
-import 'package:chatbox/models/encrypted_payload.dart';
 import 'package:chatbox/models/media_attachment.dart';
 import 'package:chatbox/models/message.dart';
 import 'package:chatbox/repositories/conversation_repository.dart';
@@ -17,8 +16,7 @@ import 'package:chatbox/services/media_storage_service.dart';
 import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/services/realtime_service.dart';
 import 'package:chatbox/services/sync_service.dart';
-import 'package:chatbox/core/utils/hash_utils.dart';
-import 'package:chatbox/services/user_directory_service.dart';
+import 'package:chatbox/services/public_key_resolver.dart';
 
 /// Abstract contract for chat messaging operations
 abstract class ChatRepository {
@@ -231,44 +229,8 @@ class LocalChatRepository implements ChatRepository {
   /// 1. Local user account (for multi-account simulation/test)
   /// 2. Active Love Connection partner public key
   /// 3. Global Firebase User Directory lookup
-  Future<String?> resolveRecipientPublicKey(String recipientUsername) async {
-    final normRecipient = HashUtils.normalizeUsername(recipientUsername);
-
-    // 1. Check local device database
-    final recipientAccount =
-        await _database.getAccountByUsername(recipientUsername) ??
-        await _database.getAccountByUsername(normRecipient);
-    if (recipientAccount?.publicIdentityKey != null &&
-        recipientAccount!.publicIdentityKey!.isNotEmpty) {
-      return recipientAccount.publicIdentityKey;
-    }
-
-    // 2. Check active Love Connection
-    try {
-      final loveConn = await _loveConnectionService.getLoveConnection();
-      if (loveConn != null &&
-          loveConn.partnerPublicKey != null &&
-          loveConn.partnerPublicKey!.isNotEmpty) {
-        final normPartner = HashUtils.normalizeUsername(loveConn.partnerUsername);
-        if (normPartner == normRecipient) {
-          return loveConn.partnerPublicKey;
-        }
-      }
-    } catch (_) {}
-
-    // 3. Fallback to global user directory
-    try {
-      final profile =
-          await DefaultUserDirectoryService().lookupProfile(recipientUsername) ??
-          await DefaultUserDirectoryService().lookupProfile(normRecipient);
-      if (profile?.publicIdentityKey != null &&
-          profile!.publicIdentityKey.isNotEmpty) {
-        return profile.publicIdentityKey;
-      }
-    } catch (_) {}
-
-    return null;
-  }
+  Future<String?> resolveRecipientPublicKey(String recipientUsername) =>
+      PublicKeyResolver(database: _database).resolve(recipientUsername);
 
   @override
   Future<List<ChatMessage>> getMessages(String partnerId, {String? currentUserId}) {
@@ -354,6 +316,16 @@ class LocalChatRepository implements ChatRepository {
       return sendMessage(message);
     }
 
+    // Fail before uploading anything if the recipient cannot be encrypted for
+    if (_encryptionService != null) {
+      final recipientKey = await resolveRecipientPublicKey(message.recipientId);
+      if (recipientKey == null || recipientKey.isEmpty) {
+        throw SecurityException(
+          'Recipient ${message.recipientId} has not registered on Nest yet. Ask them to create an account first.',
+        );
+      }
+    }
+
     // 1. Save plaintext media to local sandboxed storage
     final localPath = await _mediaStorageService.saveToSandbox(
       fileName: att.fileName,
@@ -361,12 +333,20 @@ class LocalChatRepository implements ChatRepository {
       type: att.type,
     );
 
-    // 2. Upload media blob to ephemeral relay
-    final blobId = 'blob_${message.id}_${DateTime.now().millisecondsSinceEpoch}';
-    final remoteUrl = await _mediaRelayService.uploadEncryptedBlob(blobId, mediaBytes);
+    // 2. Encrypt with a per-file key; the key travels only inside the
+    //    E2EE-encrypted message payload, never alongside the blob
+    final sealed = await _mediaEncryptionService.sealForTransport(
+      rawBytes: mediaBytes,
+      attachment: att,
+    );
 
-    // 3. Update attachment descriptor with localPath and remoteUrl
-    final resolvedAttachment = att.copyWith(
+    // 3. Upload only the ciphertext to the ephemeral relay
+    final blobId = 'blob_${message.id}_${DateTime.now().millisecondsSinceEpoch}';
+    final remoteUrl =
+        await _mediaRelayService.uploadEncryptedBlob(blobId, sealed.encryptedBytes);
+
+    // 4. Update attachment descriptor with localPath, remoteUrl and media key
+    final resolvedAttachment = sealed.attachment.copyWith(
       localPath: localPath,
       remoteUrl: remoteUrl,
     );
@@ -376,7 +356,7 @@ class LocalChatRepository implements ChatRepository {
       type: att.type,
     );
 
-    // 4. Dispatch through regular E2EE sendMessage flow
+    // 5. Dispatch through regular E2EE sendMessage flow
     await sendMessage(resolvedMessage);
   }
 
@@ -385,28 +365,21 @@ class LocalChatRepository implements ChatRepository {
     ChatMessage decryptedMessage = rawMessage;
     final enc = _encryptionService;
     if (enc != null) {
-      try {
-        final senderAccount =
-            await _database.getAccountByUsername(rawMessage.senderId);
-        String senderKey = senderAccount?.publicIdentityKey ?? '';
+      // Only a trusted key for the claimed sender may authenticate the
+      // message; the key embedded in the envelope is attacker-controlled.
+      final senderKey = await resolveRecipientPublicKey(rawMessage.senderId);
+      String? cleartext;
+      if (senderKey != null && senderKey.isNotEmpty) {
+        try {
+          cleartext = await enc.decryptPayload(rawMessage.text, senderKey);
+        } catch (_) {}
+      }
 
-        // If local database has not stored sender key yet, check LoveConnection or Directory
-        if (senderKey.isEmpty) {
-          senderKey = (await resolveRecipientPublicKey(rawMessage.senderId)) ?? '';
-        }
-
-        // If still empty, extract directly from ciphertext envelope metadata
-        if (senderKey.isEmpty) {
-          try {
-            final envelope = EncryptedPayload.deserialize(rawMessage.text);
-            senderKey = envelope.senderPublicKey;
-          } catch (_) {}
-        }
-
-        final cleartext = await enc.decryptPayload(
-          rawMessage.text,
-          senderKey,
-        );
+      if (cleartext == null) {
+        decryptedMessage =
+            rawMessage.copyWith(text: DefaultSyncService.undecryptableMessageText);
+      } else {
+        decryptedMessage = rawMessage.copyWith(text: cleartext);
         try {
           final decoded = jsonDecode(cleartext);
           if (decoded is Map<String, dynamic> && decoded.containsKey('mediaAttachment')) {
@@ -418,14 +391,8 @@ class LocalChatRepository implements ChatRepository {
               type: att.type,
               mediaAttachment: att,
             );
-          } else {
-            decryptedMessage = rawMessage.copyWith(text: cleartext);
           }
-        } catch (_) {
-          decryptedMessage = rawMessage.copyWith(text: cleartext);
-        }
-      } catch (_) {
-        // Fallback to raw text if decryption fails or message is unencrypted
+        } catch (_) {}
       }
     }
 
@@ -442,56 +409,15 @@ class LocalChatRepository implements ChatRepository {
   @override
   Stream<ChatMessage> listenToIncomingRelayMessages(
       String currentUserId) async* {
-    final seenIds = <String>{};
-
+    // Route through the sync service so every inbound path shares the same
+    // decryption, sender verification and de-duplication rules.
     await for (final envelopes
         in _chatService.watchPendingRelayEnvelopes(currentUserId)) {
-      for (final envelope in envelopes) {
-        if (!seenIds.contains(envelope.id)) {
-          seenIds.add(envelope.id);
-
-          if (envelope.isDeliveryReceipt) {
-            await _database.updateMessageStatusIfProgressing(
-              envelope.targetMessageId,
-              MessageStatus.delivered,
-            );
-            await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
-            continue;
-          }
-
-          if (envelope.isReadReceipt) {
-            await _database.updateMessageStatusIfProgressing(
-              envelope.targetMessageId,
-              MessageStatus.read,
-            );
-            await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
-            continue;
-          }
-
-          final raw = ChatMessage(
-            id: envelope.id,
-            senderId: envelope.senderId,
-            recipientId: envelope.recipientId,
-            text: envelope.ciphertextPayload,
-            timestamp: envelope.timestamp,
-            status: MessageStatus.delivered,
-          );
-
-          final decrypted = await processIncomingMessage(raw);
-
-          // Acknowledge and purge immediately
-          await _chatService.acknowledgeAndPurge(envelope.id,
-              recipientId: currentUserId);
-
-          // Emit delivery receipt
-          await _syncService.sendDeliveryReceipt(
-            messageId: envelope.id,
-            recipientId: envelope.senderId,
-            senderId: currentUserId,
-          );
-
-          yield decrypted;
-        }
+      if (envelopes.isEmpty) continue;
+      final processed =
+          await _syncService.processInboundEnvelopes(currentUserId: currentUserId);
+      for (final message in processed) {
+        yield message;
       }
     }
   }

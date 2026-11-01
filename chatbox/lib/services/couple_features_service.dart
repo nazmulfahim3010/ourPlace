@@ -4,7 +4,9 @@ import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/models/love_note.dart';
 import 'package:chatbox/models/message.dart';
+import 'package:chatbox/core/errors/app_exception.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/public_key_resolver.dart';
 import 'package:chatbox/services/relay_service.dart';
 
 /// Representation of couple milestone achievements
@@ -130,6 +132,27 @@ class DefaultCoupleFeaturesService implements CoupleFeaturesService {
 
   EncryptionService? get encryptionService => _encryptionService;
 
+  /// Encrypt [envelope]'s payload for [partnerUsername]. Fails closed: a
+  /// couple signal is never put on the relay in plaintext.
+  Future<EphemeralRelayEnvelope> _sealForPartner(
+    EphemeralRelayEnvelope envelope,
+    String partnerUsername,
+  ) async {
+    final enc = _encryptionService;
+    if (enc == null) return envelope;
+    final partnerKey =
+        await PublicKeyResolver(database: _localDatabase).resolve(partnerUsername);
+    if (partnerKey == null || partnerKey.isEmpty) {
+      throw SecurityException(
+        'Cannot encrypt for $partnerUsername: public identity key not found',
+        code: 'MISSING_RECIPIENT_KEY',
+      );
+    }
+    return envelope.withCiphertext(
+      await enc.encryptPayload(envelope.ciphertextPayload, partnerKey),
+    );
+  }
+
   @override
   Stream<String> get luvBurstStream => _luvBurstController.stream;
 
@@ -198,7 +221,9 @@ class DefaultCoupleFeaturesService implements CoupleFeaturesService {
       isRemove: isRemove,
     );
 
-    await _relayService.enqueueMessage(envelope);
+    await _relayService.enqueueMessage(
+      await _sealForPartner(envelope, partnerUsername),
+    );
   }
 
   @override
@@ -347,8 +372,6 @@ class DefaultCoupleFeaturesService implements CoupleFeaturesService {
     );
 
     // Save locally
-    await _localDatabase.saveLoveNote(note);
-
     // Encode note JSON
     final noteJson = jsonEncode(note.toJson());
 
@@ -367,7 +390,10 @@ class DefaultCoupleFeaturesService implements CoupleFeaturesService {
       noteId: noteId,
     );
 
-    await _relayService.enqueueMessage(envelope);
+    // Encrypt before saving so a note that cannot be sent is not kept locally
+    final sealed = await _sealForPartner(envelope, partnerUsername);
+    await _localDatabase.saveLoveNote(note);
+    await _relayService.enqueueMessage(sealed);
     return note;
   }
 

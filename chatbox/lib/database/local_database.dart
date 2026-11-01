@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:chatbox/database/app_database.dart';
+import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
 import 'package:chatbox/models/love_connection.dart';
 import 'package:chatbox/models/love_note.dart';
@@ -132,29 +133,38 @@ class LocalDatabase {
   }
 
 
-  Expression<bool> _partnerFilter(Messages tbl, String partnerId, String? currentUserId) {
-    final cleanPartner = partnerId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
-    final atPartner = '@$cleanPartner';
+  /// Lowercase handle without leading '@' (the canonical comparison form).
+  static String _cleanUser(String user) =>
+      user.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
 
-    final partnerMatchSender = tbl.senderId.equals(cleanPartner) | tbl.senderId.equals(atPartner);
-    final partnerMatchRecipient = tbl.recipientId.equals(cleanPartner) | tbl.recipientId.equals(atPartner);
+  /// Whether [column] refers to [user], ignoring case and a leading '@'.
+  Expression<bool> _isUser(Expression<String> column, String user) {
+    final clean = _cleanUser(user);
+    return column.lower().isIn([clean, '@$clean']);
+  }
 
-    if (currentUserId != null && currentUserId.isNotEmpty && currentUserId != 'current_user') {
-      final cleanCurrent = currentUserId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
-      final atCurrent = '@$cleanCurrent';
-
-      final currentMatchSender = tbl.senderId.equals(cleanCurrent) |
-          tbl.senderId.equals(atCurrent) |
-          tbl.senderId.equals('current_user');
-      final currentMatchRecipient = tbl.recipientId.equals(cleanCurrent) |
-          tbl.recipientId.equals(atCurrent) |
-          tbl.recipientId.equals('current_user');
-
-      return (partnerMatchSender & currentMatchRecipient) |
-          (currentMatchSender & partnerMatchRecipient);
+  /// Whether [column] refers to the current user. Legacy rows may store the
+  /// placeholder 'current_user' instead of the username.
+  Expression<bool> _isCurrentUser(Expression<String> column, String? currentUserId) {
+    final legacy = column.equals(AppConstants.currentUserId);
+    if (currentUserId == null ||
+        currentUserId.isEmpty ||
+        currentUserId == AppConstants.currentUserId) {
+      return legacy;
     }
+    return _isUser(column, currentUserId) | legacy;
+  }
 
-    return partnerMatchSender | partnerMatchRecipient;
+  Expression<bool> _partnerFilter(Messages tbl, String partnerId, String? currentUserId) {
+    if (currentUserId == null ||
+        currentUserId.isEmpty ||
+        currentUserId == AppConstants.currentUserId) {
+      return _isUser(tbl.senderId, partnerId) | _isUser(tbl.recipientId, partnerId);
+    }
+    return (_isUser(tbl.senderId, partnerId) &
+            _isCurrentUser(tbl.recipientId, currentUserId)) |
+        (_isCurrentUser(tbl.senderId, currentUserId) &
+            _isUser(tbl.recipientId, partnerId));
   }
 
   /// Retrieve all messages for a partner, newest first (matching reverse list)
@@ -188,32 +198,26 @@ class LocalDatabase {
 
   /// Retrieve distinct usernames of all partners that have exchanged messages
   Future<List<String>> getDistinctChatPartners({
-    String currentUserId = 'current_user',
+    String currentUserId = AppConstants.currentUserId,
   }) async {
-    final cleanCurrent = currentUserId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
-    final atCurrent = '@$cleanCurrent';
+    final cleanCurrent = _cleanUser(currentUserId);
 
     final query = db.select(db.messages)
       ..where((tbl) =>
-          tbl.senderId.equals(cleanCurrent) |
-          tbl.senderId.equals(atCurrent) |
-          tbl.recipientId.equals(cleanCurrent) |
-          tbl.recipientId.equals(atCurrent) |
-          tbl.senderId.equals('current_user') |
-          tbl.recipientId.equals('current_user'))
+          _isCurrentUser(tbl.senderId, currentUserId) |
+          _isCurrentUser(tbl.recipientId, currentUserId))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
 
     final rows = await query.get();
     final Set<String> partners = {};
     for (final row in rows) {
-      final sClean = row.senderId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
-      final rClean = row.recipientId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
-
-      if (sClean != cleanCurrent && sClean != 'current_user' && sClean.isNotEmpty) {
-        partners.add('@$sClean');
-      }
-      if (rClean != cleanCurrent && rClean != 'current_user' && rClean.isNotEmpty) {
-        partners.add('@$rClean');
+      for (final id in [row.senderId, row.recipientId]) {
+        final clean = _cleanUser(id);
+        if (clean.isNotEmpty &&
+            clean != cleanCurrent &&
+            clean != AppConstants.currentUserId) {
+          partners.add('@$clean');
+        }
       }
     }
     return partners.toList();
@@ -239,23 +243,15 @@ class LocalDatabase {
   /// Get the number of unread incoming messages from a partner
   Future<int> getUnreadCountForPartner(
     String partnerId, {
-    String currentUserId = 'current_user',
+    String currentUserId = AppConstants.currentUserId,
   }) async {
-    final cleanPartner = partnerId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
-    final atPartner = '@$cleanPartner';
-    final cleanCurrent = currentUserId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
-    final atCurrent = '@$cleanCurrent';
-
-    final query = db.select(db.messages)
-      ..where((tbl) =>
-          (tbl.senderId.equals(cleanPartner) | tbl.senderId.equals(atPartner)) &
-          (tbl.recipientId.equals(cleanCurrent) |
-              tbl.recipientId.equals(atCurrent) |
-              tbl.recipientId.equals('current_user')) &
-          tbl.status.equals(MessageStatus.read.name).not());
-
-    final rows = await query.get();
-    return rows.length;
+    final countExp = db.messages.id.count();
+    final query = db.selectOnly(db.messages)
+      ..addColumns([countExp])
+      ..where(_isUser(db.messages.senderId, partnerId) &
+          _isCurrentUser(db.messages.recipientId, currentUserId) &
+          db.messages.status.equals(MessageStatus.read.name).not());
+    return await query.map((row) => row.read(countExp)).getSingle() ?? 0;
   }
 
   /// Reactive stream of messages for a partner (updates UI automatically)
@@ -270,19 +266,17 @@ class LocalDatabase {
     return query.watch().map((rows) => rows.map(_rowToMessage).toList());
   }
 
-  /// Search messages by content
+  /// Search messages by content (case-insensitive substring match)
   Future<List<ChatMessage>> searchMessages({
     required String partnerId,
     required String query,
-    String currentUserId = 'current_user',
+    String currentUserId = AppConstants.currentUserId,
   }) async {
+    final needle = query.toLowerCase();
     final q = db.select(db.messages)
       ..where((tbl) =>
-          ((tbl.senderId.equals(partnerId) &
-                  tbl.recipientId.equals(currentUserId)) |
-              (tbl.senderId.equals(currentUserId) &
-                  tbl.recipientId.equals(partnerId))) &
-          tbl.messageText.contains(query))
+          _partnerFilter(tbl, partnerId, currentUserId) &
+          tbl.messageText.lower().contains(needle))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
 
     final rows = await q.get();
@@ -336,16 +330,15 @@ class LocalDatabase {
   /// Retrieve all unsent / failed messages pending offline transmission
   Future<List<ChatMessage>> getUnsentMessages({
     String? partnerId,
-    String currentUserId = 'current_user',
+    String currentUserId = AppConstants.currentUserId,
   }) async {
     final query = db.select(db.messages)
       ..where((tbl) {
-        final senderCheck = tbl.senderId.equals(currentUserId) |
-            tbl.senderId.equals('current_user');
+        final senderCheck = _isCurrentUser(tbl.senderId, currentUserId);
         final statusCheck = tbl.status.equals(MessageStatus.sending.name) |
             tbl.status.equals(MessageStatus.failed.name);
         if (partnerId != null && partnerId.isNotEmpty) {
-          return senderCheck & statusCheck & tbl.recipientId.equals(partnerId);
+          return senderCheck & statusCheck & _isUser(tbl.recipientId, partnerId);
         }
         return senderCheck & statusCheck;
       })
@@ -358,13 +351,12 @@ class LocalDatabase {
   /// Mark all unread incoming messages from partner as read (Phase 12)
   Future<int> markConversationAsRead(
     String partnerId, {
-    String currentUserId = 'current_user',
+    String currentUserId = AppConstants.currentUserId,
   }) async {
     final count = await (db.update(db.messages)
           ..where((tbl) =>
-              tbl.senderId.equals(partnerId) &
-              (tbl.recipientId.equals(currentUserId) |
-                  tbl.recipientId.equals('current_user')) &
+              _isUser(tbl.senderId, partnerId) &
+              _isCurrentUser(tbl.recipientId, currentUserId) &
               tbl.status.equals(MessageStatus.read.name).not()))
         .write(MessagesCompanion(status: Value(MessageStatus.read.name)));
     return count;
@@ -373,29 +365,22 @@ class LocalDatabase {
   /// Clear all messages for a partner
   Future<void> clearMessagesForPartner(
     String partnerId, {
-    String currentUserId = 'current_user',
+    String currentUserId = AppConstants.currentUserId,
   }) async {
     await (db.delete(db.messages)
-          ..where((tbl) =>
-              (tbl.senderId.equals(partnerId) &
-                  tbl.recipientId.equals(currentUserId)) |
-              (tbl.senderId.equals(currentUserId) &
-                  tbl.recipientId.equals(partnerId))))
+          ..where((tbl) => _partnerFilter(tbl, partnerId, currentUserId)))
         .go();
   }
 
   /// Get total message count for a partner
   Future<int> getMessageCountForPartner(
     String partnerId, {
-    String currentUserId = 'current_user',
+    String currentUserId = AppConstants.currentUserId,
   }) async {
     final countExp = db.messages.id.count();
     final query = db.selectOnly(db.messages)
       ..addColumns([countExp])
-      ..where((db.messages.senderId.equals(partnerId) &
-              db.messages.recipientId.equals(currentUserId)) |
-          (db.messages.senderId.equals(currentUserId) &
-              db.messages.recipientId.equals(partnerId)));
+      ..where(_partnerFilter(db.messages, partnerId, currentUserId));
 
     final result = await query.map((row) => row.read(countExp)).getSingle();
     return result ?? 0;
@@ -722,18 +707,13 @@ class LocalDatabase {
   }
 
   /// Query all media messages exchanged with a specific partner for the Shared Memory Gallery
-  Future<List<ChatMessage>> getSharedMediaMessages(String partnerUsername) async {
-    final clean = partnerUsername.startsWith('@')
-        ? partnerUsername.substring(1)
-        : partnerUsername;
+  Future<List<ChatMessage>> getSharedMediaMessages(
+    String partnerUsername, {
+    String? currentUserId,
+  }) async {
     final query = db.select(db.messages)
       ..where((tbl) =>
-          (tbl.senderId.equals(clean) |
-              tbl.senderId.equals('@$clean') |
-              tbl.recipientId.equals(clean) |
-              tbl.recipientId.equals('@$clean') |
-              tbl.senderId.equals('current_user') |
-              tbl.recipientId.equals('current_user')) &
+          _partnerFilter(tbl, partnerUsername, currentUserId) &
           tbl.mediaData.isNotNull())
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
     final rows = await query.get();

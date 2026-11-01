@@ -32,6 +32,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   late final AppLockService _appLockService;
   late final ChatRepository _chatRepository;
   StreamSubscription<bool>? _lockStateSub;
+  StreamSubscription<User?>? _signOutSub;
   bool? _isPasscodeConfigured;
 
   @override
@@ -47,6 +48,15 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
     _refreshPasscodeStatus();
     _authRepository.getCurrentUser();
+
+    // Whatever screen signs out, stop pulling and decrypting the previous
+    // user's relay queue and stop broadcasting their presence.
+    _signOutSub = _authRepository.authStateChanges.listen((user) {
+      if (user == null) {
+        _chatRepository.stopRelayListener();
+        _chatRepository.realtimeService.pause();
+      }
+    });
 
     _lockStateSub = _appLockService.lockStateChanges.listen((_) {
       if (mounted) setState(() {});
@@ -74,6 +84,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _lockStateSub?.cancel();
+    _signOutSub?.cancel();
+    if (widget.chatRepository == null) {
+      // Repository created by this widget: stop its relay poller with it
+      _chatRepository.stopRelayListener();
+    }
     super.dispose();
   }
 

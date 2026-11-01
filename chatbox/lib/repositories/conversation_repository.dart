@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/conversation.dart';
-import 'package:chatbox/models/message.dart';
 import 'package:chatbox/models/user.dart';
 
 /// Abstract contract for managing conversations in the Inbox

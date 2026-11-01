@@ -13,34 +13,34 @@ Severity legend: 🔴 Critical (security/data loss) · 🟠 High (feature broken
 | # | Severity | Area | Title |
 |---|----------|------|-------|
 | 1 | 🔴 | Firebase | Relay and directory are world-readable/writable; REST client sends no auth |
-| 2 | 🔴 | Identity | Anyone can claim any username and overwrite its public key (account takeover / MITM) |
-| 3 | 🔴 | Crypto | Sign-out deletes the E2EE private key, so earlier messages can't be decrypted after login |
-| 4 | 🔴 | Crypto | Outbound queue sends **plaintext** when recipient key isn't found |
-| 5 | 🔴 | Crypto | Media is uploaded to Firebase Storage **unencrypted** |
-| 6 | 🔴 | Crypto | Love notes are sent in plaintext |
-| 7 | 🔴 | Crypto | Shared conversation bundle (full chat history) is sent in plaintext |
-| 8 | 🔴 | Crypto | Sender authentication: trusts the public key inside the ciphertext envelope |
+| 2 | 🔴 | Identity | 🟨 Anyone can claim any username and overwrite its public key (account takeover / MITM) |
+| 3 | 🔴 | Crypto | ✅ ~~Sign-out deletes the E2EE private key, so earlier messages can't be decrypted after login~~ |
+| 4 | 🔴 | Crypto | ✅ ~~Outbound queue sends **plaintext** when recipient key isn't found~~ |
+| 5 | 🔴 | Crypto | ✅ ~~Media is uploaded to Firebase Storage **unencrypted**~~ |
+| 6 | 🔴 | Crypto | ✅ ~~Love notes are sent in plaintext~~ |
+| 7 | 🔴 | Crypto | ✅ ~~Shared conversation bundle (full chat history) is sent in plaintext~~ |
+| 8 | 🔴 | Crypto | 🟨 Sender authentication: trusts the public key inside the ciphertext envelope |
 | 9 | 🟠 | Sync | ✅ ~~Love requests, reactions, love notes, luv bursts and share bundles are silently dropped in production~~ |
 | 10 | 🟠 | Sync | ✅ ~~Typing/presence signals are saved as chat messages and trigger notifications~~ |
 | 11 | 🟠 | Sync | ✅ ~~`processInboundEnvelopes` runs concurrently, causing duplicate notifications/receipts and status regressions~~ |
 | 12 | 🟠 | Sync | ✅ ~~A single bad envelope stops the inbound queue (poison message)~~ |
-| 13 | 🟠 | Sync | Decryption failure stores the raw ciphertext as message text |
+| 13 | 🟠 | Sync | ✅ ~~Decryption failure stores the raw ciphertext as message text~~ |
 | 14 | 🟠 | Realtime | `watchTyping` / `watchPresence` leak Firebase listeners every time a chat opens |
 | 15 | 🟠 | Chat | Messages that arrive while the chat is open are never marked read |
 | 16 | 🟡 | DB | Re-saving an inbound message overwrites status, reactions and local media path |
-| 17 | 🟡 | DB | `getSharedMediaMessages` returns media from **all** conversations |
-| 18 | 🟡 | DB | Inconsistent username normalization across queries |
+| 17 | 🟡 | DB | ✅ ~~`getSharedMediaMessages` returns media from **all** conversations~~ |
+| 18 | 🟡 | DB | ✅ ~~Inconsistent username normalization across queries~~ |
 | 19 | 🟡 | Chat | Message IDs based only on milliseconds can collide |
 | 20 | 🟡 | Relay | `purgeExpiredMessages` reads the whole `/relays` tree (rules deny it, and it would leak privacy if allowed) |
 | 21 | 🟡 | Relay | Every write/delete is done twice (REST + SDK) |
 | 22 | 🟡 | Auth | Fast unsalted-iteration SHA-256 for passwords/passcodes; lockouts reset on restart |
-| 23 | 🟡 | Auth | Sign-out from chat/profile screens doesn't stop the relay listener |
+| 23 | 🟡 | Auth | ✅ ~~Sign-out from chat/profile screens doesn't stop the relay listener~~ |
 | 24 | 🟡 | Love | `acceptConnectionRequest` accepts with no pending request and overwrites an existing one |
 | 25 | 🟡 | Model | Missing/invalid `expires_at` makes envelope expire immediately |
-| 26 | 🟡 | Arch | Multiple `LocalChatRepository` instances, each with its own pollers |
-| 27 | 🟢 | CI | GitHub workflow can never pass (wrong directory, `dart` instead of `flutter`) |
+| 26 | 🟡 | Arch | 🟨 Multiple `LocalChatRepository` instances, each with its own pollers |
+| 27 | 🟢 | CI | ✅ ~~GitHub workflow can never pass (wrong directory, `dart` instead of `flutter`)~~ |
 | 28 | 🟢 | Repo | Release binaries (≈117 MB) and build outputs committed; new required file untracked |
-| 29 | 🟢 | Code | Lint warnings / dead code |
+| 29 | 🟢 | Code | 🟨 Lint warnings / dead code |
 
 ---
 
@@ -76,7 +76,7 @@ Severity legend: 🔴 Critical (security/data loss) · 🟠 High (feature broken
 
 ---
 
-### 2. Anyone can register an existing username and overwrite its public key
+### 2. Anyone can register an existing username and overwrite its public key — 🟨 PARTIALLY FIXED
 **Where:** `chatbox/lib/services/auth_service.dart:171` (uniqueness check), `:213` and `:112` (publish), `chatbox/lib/services/user_directory_service.dart:153-166`
 
 **Problem:** `isUsernameTaken` only checks the **local SQLite DB**. On a second device, `@alice` is "available". Registering it calls `publishProfile`, which does an unconditional `PUT directory/@alice`. That replaces Alice's `publicIdentityKey` with the attacker's. Senders then resolve the attacker's key from the directory (`chat_repository.dart:224-232`, `sync_service.dart:180-186`), so new messages to "Alice" are encrypted for the attacker. Combined with #1, the attacker can also read Alice's relay queue. This is a full impersonation/MITM.
@@ -88,7 +88,7 @@ Severity legend: 🔴 Critical (security/data loss) · 🟠 High (feature broken
 
 ---
 
-### 3. Sign-out deletes the E2EE private key
+### 3. Sign-out deletes the E2EE private key — ✅ FIXED
 **Where:** `chatbox/lib/services/auth_service.dart:385`, `chatbox/lib/services/encryption_service.dart:227-236`
 
 **Problem:** `signOut()` calls `_encryptionService.clearKeys()`, which deletes `e2ee_priv_key_<accountId>` from secure storage. On the next `login()`, `initializeUserKeys` finds no key and **generates a new keypair**. Then:
@@ -107,7 +107,7 @@ await _encryptionService.lockSession();   // instead of clearKeys()
 
 ---
 
-### 4. Offline/retry queue sends plaintext if the recipient key isn't found
+### 4. Offline/retry queue sends plaintext if the recipient key isn't found — ✅ FIXED
 **Where:** `chatbox/lib/services/sync_service.dart:216-249` (`_dispatchOutboundMessage`)
 
 **Problem:**
@@ -129,7 +129,7 @@ Better still, move encryption into one shared helper used by both `ChatRepositor
 
 ---
 
-### 5. Media blobs are uploaded unencrypted
+### 5. Media blobs are uploaded unencrypted — ✅ FIXED
 **Where:** `chatbox/lib/repositories/chat_repository.dart:315-345` (`sendMediaMessage`), `chatbox/lib/services/firebase_media_relay_service.dart:33-59`
 
 **Problem:** `uploadEncryptedBlob(blobId, mediaBytes)` is passed the **raw plaintext bytes**. `MediaEncryptionService.encryptMedia` exists (`media_encryption_service.dart:25`) but is never called anywhere. Photos, videos and voice notes sit in Firebase Storage in clear form behind a bearer `getDownloadURL()` link for 24 h. If the recipient never comes online, they stay there indefinitely (nothing enforces the `expiresAt` metadata).
@@ -142,7 +142,7 @@ Better still, move encryption into one shared helper used by both `ChatRepositor
 
 ---
 
-### 6. Love notes are sent in plaintext
+### 6. Love notes are sent in plaintext — ✅ FIXED
 **Where:** `chatbox/lib/services/couple_features_service.dart:352-370`, receiver `chatbox/lib/services/sync_service.dart:291-299`
 
 **Problem:** `jsonEncode(note.toJson())` (title, body, tag, openAt) is put straight into the `encryptedPayload` field, even though the parameter name says "encrypted". The receiver does `LoveNote.fromJson(jsonDecode(envelope.ciphertextPayload))`, which confirms it's plaintext end to end. The service even receives an `encryptionService` in its constructor (`chat_repository.dart:153`) and doesn't use it. Reactions (`message_reaction`) are also plaintext, which leaks message IDs and emoji.
@@ -151,7 +151,7 @@ Better still, move encryption into one shared helper used by both `ChatRepositor
 
 ---
 
-### 7. Shared conversation bundle is sent in plaintext
+### 7. Shared conversation bundle is sent in plaintext — ✅ FIXED
 **Where:** `chatbox/lib/services/conversation_sharing_service.dart:337-347`
 
 **Problem:**
@@ -166,7 +166,7 @@ Accounts exist only on the device where they were registered, so the partner's a
 
 ---
 
-### 8. Sender authentication trusts the key inside the envelope
+### 8. Sender authentication trusts the key inside the envelope — 🟨 PARTIALLY FIXED
 **Where:** `chatbox/lib/services/sync_service.dart:327-341`, `chatbox/lib/repositories/chat_repository.dart:362-368`, `chatbox/lib/services/encryption_service.dart:181-183`
 
 **Problem:** If the sender's key can't be resolved locally, the code falls back to `EncryptedPayload.senderPublicKey`, which the sender chose. With public write rules (#1), anyone can write an envelope with `sender_id: "@partner"`, encrypt with their **own** key, and embed their own public key. Decryption succeeds, and the app shows a forged message "from your partner". Receipts (`isDeliveryReceipt`/`isReadReceipt`, `sync_service.dart:300-313`) and love/luv signals aren't authenticated at all. Anyone can mark your messages as "read" or unlink your Love Connection.
@@ -265,7 +265,7 @@ Also keep a short-lived `Set<String>` of already-processed envelope IDs, and use
 
 ---
 
-### 13. Decryption failure stores ciphertext as the message text
+### 13. Decryption failure stores ciphertext as the message text — ✅ FIXED
 **Where:** `chatbox/lib/services/sync_service.dart:378-384`, `chatbox/lib/repositories/chat_repository.dart:391-396`
 
 **Problem:** On any decryption error, the code falls through to `saveMessage(raw)`. Then the raw `EncryptedPayload` JSON (`{"version":1,"senderPublicKey":...}`) is saved as the message text and shown in the bubble and in the notification. The envelope is also acked, so the message is permanently lost. This happens in practice after #3 (key rotation on sign-out).
@@ -301,14 +301,14 @@ Also keep a short-lived `Set<String>` of already-processed envelope IDs, and use
 
 **Solution:** Use `insert(..., mode: InsertMode.insertOrIgnore)` for inbound messages. For imports, use an upsert that only updates selected columns: `onConflict: DoUpdate((old) => MessagesCompanion(messageText: ...), target: [messages.id])`. Keep the higher status and merge reactions.
 
-### 17. `getSharedMediaMessages` returns media from every conversation
+### 17. `getSharedMediaMessages` returns media from every conversation — ✅ FIXED
 **Where:** `chatbox/lib/database/local_database.dart:725-744`
 
 **Problem:** The filter is `(sender==partner | recipient==partner | sender=='current_user' | recipient=='current_user') & mediaData != null`. These are ORs, not a pair. Any media you sent to *anyone* shows up in this partner's "Shared Memories", and so does any media the partner exchanged with others on a shared device.
 
 **Solution:** Reuse `_partnerFilter(tbl, partnerUsername, currentUserId)` and `& tbl.mediaData.isNotNull()`, and add a `currentUserId` parameter.
 
-### 18. Inconsistent username normalization
+### 18. Inconsistent username normalization — ✅ FIXED
 **Where:** `chatbox/lib/database/local_database.dart:274-290, 359-371, 374-385, 388-402, 337-356` vs. `_partnerFilter` at `:135-158`; `chatbox/lib/services/couple_features_service.dart:355-361`; `realtime_service.dart:126, 207`
 
 **Problem:** Some queries normalize IDs (`@bob` == `bob`, lowercase), but `searchMessages`, `markConversationAsRead`, `clearMessagesForPartner`, `getMessageCountForPartner` and `getUnsentMessages` use exact `equals`. Meanwhile, love notes are sent with IDs **without** `@` (`couple_features_service.dart:355-361`), and realtime matching uses `env.senderId == partnerId`. Any ID that arrives in the "other" form won't be marked read, can't be cleared, isn't counted, and isn't matched. Search also uses `contains`, which is a case-sensitive `LIKE` with no escaping of `%` and `_`.
@@ -343,7 +343,7 @@ Also keep a short-lived `Set<String>` of already-processed envelope IDs, and use
 
 **Solution:** Use a slow KDF: Argon2id (`package:cryptography` has `Argon2id`), or PBKDF2-HMAC-SHA256 with ≥ 210k iterations. Persist the failed-attempt count and lockout timestamp in secure storage. Compare digests in constant time.
 
-### 23. Sign-out from chat/profile doesn't stop the relay listener
+### 23. Sign-out from chat/profile doesn't stop the relay listener — ✅ FIXED
 **Where:** `chatbox/lib/screens/chat_screen.dart:622`, `chatbox/lib/screens/profile/profile_screen.dart:1082` (vs. `auth_gate.dart:131`, which does stop it)
 
 **Problem:** Only the lock-screen sign-out calls `stopRelayListener()`. After signing out elsewhere, the 3 s poller and the Firebase listener keep running for the old user. They keep pulling, decrypting (with keys that were just deleted, see #3), storing messages, and showing notifications while no one is logged in. Realtime presence heartbeats also keep running.
@@ -364,7 +364,7 @@ Also keep a short-lived `Set<String>` of already-processed envelope IDs, and use
 
 **Solution:** For `expires_at`, fall back to `timestamp + 48h` (or treat the envelope as invalid and log it). Handle `num` with `DateTime.fromMillisecondsSinceEpoch(val.toInt(), isUtc: true)`.
 
-### 26. Multiple `LocalChatRepository` instances, each with its own pollers
+### 26. Multiple `LocalChatRepository` instances, each with its own pollers — 🟨 PARTIALLY FIXED
 **Where:** `chatbox/lib/screens/chat_screen.dart:79`, `chatbox/lib/screens/profile/profile_screen.dart:1284`, `chatbox/lib/screens/auth/auth_gate.dart:44`
 
 **Problem:** Fallbacks like `widget.repository ?? LocalChatRepository()` create a new repository, which means a new `DefaultSyncService` with its own timers, a new `DefaultRealtimeService`, and so on. Each one calling `startRelayListener` adds another 3 s poller, which makes #11 worse.
@@ -375,7 +375,7 @@ Also keep a short-lived `Set<String>` of already-processed envelope IDs, and use
 
 ## 🟢 Low
 
-### 27. GitHub Actions workflow can never pass
+### 27. GitHub Actions workflow can never pass — ✅ FIXED
 **Where:** `.github/workflows/dart.yml`
 
 **Problem:** It runs `dart pub get`, `dart analyze` and `dart test` at the repo root. There's no `pubspec.yaml` there (the app is in `chatbox/`), and it's a Flutter project (it needs `flutter`, and tests use `flutter_test`).
@@ -403,7 +403,7 @@ steps:
 
 **Solution:** `git rm --cached Nest-release.* -r chatbox/android/build`, add `*.apk`, `*.aab` and `**/build/` to `.gitignore`, and `git add chatbox/lib/services/firebase_rest_client.dart` with the related changes. Consider `git filter-repo` to remove the binaries from history.
 
-### 29. Lint warnings / dead code
+### 29. Lint warnings / dead code — 🟨 PARTIALLY FIXED
 **Where:** `chatbox/lib/repositories/conversation_repository.dart:5` (unused import), `chatbox/lib/screens/chat_screen.dart:235` (`_generateInitialSeedMessages` unused). `chatbox/lib/chat_screen.dart` duplicates `lib/screens/chat_screen.dart`. `ChatService.fetchMessages/sendLuv/markMessagesAsRead/deleteMessage/editMessage` (`chat_service.dart:72-104`) are stubs with fake delays that return success while doing nothing (e.g. `deleteMessage` returns `true`).
 
 **Solution:** Remove the dead code and the duplicate file. Either implement the stubs or delete them so callers can't depend on fake success.
@@ -418,8 +418,25 @@ steps:
   - #12: each envelope is handled in its own try/catch; after 5 failed attempts it is dropped and purged. Notifications and delivery receipts can no longer fail an envelope that is already saved.
   - Tests: `chatbox/test/sync/inbound_processing_test.dart` (5 tests). The 9 failures in `test/widget_test.dart` were already failing before this change (fail-closed recipient key, DB/inbox expectations).
 
-## Suggested fix order
-1. **#9, #10, #11, #12** – a few lines each; they fix the most visible breakage (lost love requests, junk messages, duplicate notifications).
-2. **#3, #4, #5, #6, #7** – stop the plaintext leaks and the key loss.
-3. **#1, #2, #8** – server rules + username ownership + key pinning (these need a Firebase Auth ↔ username binding, so plan them together).
-4. Everything else.
+- **2026-11-01: security & correctness pass**
+  - #3: sign-out calls the new `EncryptionService.lockSession()`, which only clears in-memory keys. `clearKeys()` is kept for explicit account deletion.
+  - #4: the sync retry queue fails closed when no recipient key is found.
+  - #5: media is encrypted with a fresh AES-256-GCM key per file (`MediaEncryptionService.sealForTransport`). Only ciphertext is uploaded, and the key travels inside the E2EE message. The receiver decrypts and checks the tag before saving.
+  - #6: love notes and reactions are E2EE-encrypted on send and decrypted on receive. Reactions are attributed to the authenticated sender, and love notes whose author doesn't match the sender are dropped. A love note is saved locally only after it has been encrypted.
+  - #7: share bundles use the partner's trusted key and send a reject instead of plaintext when none is found. The receiver refuses bundles that aren't encrypted.
+  - #8 (partial): new `PublicKeyResolver` (local account → pinned Love Connection key → directory) is the only key source. The key embedded in an envelope is no longer trusted. Receipts are applied only when they come from the message's recipient. **Still open:** binding sender/recipient/message ID as AEAD associated data (needs a wire-format version bump), and the directory itself is still writable by anyone until #1 is done.
+  - #13: undecryptable messages are stored as "🔒 This message could not be decrypted." instead of raw ciphertext.
+  - #2 (partial): registration also checks the remote directory, and login/startup no longer overwrite a directory entry owned by another account (this is logged as a critical security event). **Still open:** server-side ownership (#1), and the check fails open while the directory is unreachable.
+  - #17, #18: every message query matches usernames through one case-insensitive, `@`-insensitive helper. Shared media is scoped to the actual conversation.
+  - #23: `AuthGate` stops the relay listener and presence on any sign-out.
+  - #26 (partial): `ChatScreen`/`AuthGate` stop the relay poller of a repository they created themselves. Injecting a single shared repository app-wide is still recommended.
+  - #27: CI now runs `flutter pub get / analyze / test` in `chatbox/`.
+  - #29 (partial): removed the unused import and dead seed method. The `ChatService` stubs and the duplicate `lib/chat_screen.dart` remain.
+  - **New bug found and fixed:** `ChatScreen` passed the partner's *display name* instead of their username to Send luv, reactions and Love Code sharing.
+  - Tests: all 192 pass (the 9 that were already failing are fixed; several asserted the old insecure behaviour, e.g. a plaintext share bundle). New tests cover envelope-key forgery rejection, receipt spoofing, and media seal/open/tamper. `flutter analyze` reports no issues.
+
+## Remaining work (suggested order)
+1. **#1** – Firebase Auth ↔ username binding, locked-down rules, auth token on REST calls. Finishes #2 and #8 server-side.
+2. **#8 (rest)** – AEAD associated data and a payload version bump; warn when a pinned partner key changes.
+3. **#14, #15, #16, #19, #20, #21, #22, #24, #25** – listener leaks, read receipts while the chat is open, upsert semantics, UUID message IDs, server-side TTL cleanup, single transport, slow KDF + persistent lockouts, love-request validation, envelope expiry parsing.
+4. **#28** – remove committed APK/AAB and build outputs.

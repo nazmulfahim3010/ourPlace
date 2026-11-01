@@ -467,6 +467,20 @@ class EphemeralRelayEnvelope {
   bool get isLoveSignal =>
       isLoveConnectionSignal || isLoveShareSignal || isCoupleFeatureSignal;
 
+  /// Copy of this envelope carrying [ciphertext] as its payload (used to
+  /// replace a plaintext signal body with its E2EE-encrypted form).
+  EphemeralRelayEnvelope withCiphertext(String ciphertext) {
+    return EphemeralRelayEnvelope(
+      id: id,
+      senderId: senderId,
+      recipientId: recipientId,
+      ciphertextPayload: ciphertext,
+      timestamp: timestamp,
+      expiresAt: expiresAt,
+      envelopeType: envelopeType,
+    );
+  }
+
   /// Target message ID for receipt envelopes
   String get targetMessageId => ciphertextPayload;
 
