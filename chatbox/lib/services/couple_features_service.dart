@@ -125,7 +125,8 @@ class DefaultCoupleFeaturesService implements CoupleFeaturesService {
     EncryptionService? encryptionService,
   })  : _localDatabase = localDatabase,
         _relayService = relayService,
-        _encryptionService = encryptionService;
+        _encryptionService =
+            encryptionService ?? StandardE2EEEncryptionService.instance;
 
   EncryptionService? get encryptionService => _encryptionService;
 

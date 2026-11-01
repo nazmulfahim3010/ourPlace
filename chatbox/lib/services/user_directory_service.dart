@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:chatbox/core/config/app_environment.dart';
 import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
+import 'package:chatbox/services/firebase_rest_client.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
@@ -117,12 +118,16 @@ class InMemoryUserDirectoryService implements UserDirectoryService {
   }
 }
 
-/// Production implementation backed by Firebase Realtime Database
+/// Production implementation backed by Firebase Realtime Database with REST fallback
 class FirebaseUserDirectoryService implements UserDirectoryService {
   final FirebaseDatabase _database;
+  final FirebaseRestDatabaseClient _restClient;
 
-  FirebaseUserDirectoryService({FirebaseDatabase? database})
-      : _database = database ?? _defaultDatabase();
+  FirebaseUserDirectoryService({
+    FirebaseDatabase? database,
+    FirebaseRestDatabaseClient? restClient,
+  })  : _database = database ?? _defaultDatabase(),
+        _restClient = restClient ?? FirebaseRestDatabaseClient();
 
   static FirebaseDatabase _defaultDatabase() {
     try {
@@ -146,29 +151,45 @@ class FirebaseUserDirectoryService implements UserDirectoryService {
 
   @override
   Future<void> publishProfile(DirectoryProfile profile) async {
+    final key = _sanitizeKey(profile.username);
+    final json = profile.toJson();
+
+    // 1. Write via REST
+    await _restClient.put('directory/$key', json);
+
+    // 2. Write via native SDK if available
     try {
-      await _dirRef(profile.username).set(profile.toJson());
+      await _dirRef(profile.username).set(json);
     } catch (e) {
-      debugPrint('FirebaseUserDirectoryService: publishProfile error: $e');
+      debugPrint('FirebaseUserDirectoryService (native set notice): $e');
     }
   }
 
   @override
   Future<DirectoryProfile?> lookupProfile(String username) async {
+    final key = _sanitizeKey(username);
+
+    // 1. Try native Firebase SDK
     try {
       final snapshot = await _dirRef(username).get();
-      if (!snapshot.exists || snapshot.value == null) {
-        return null;
+      if (snapshot.exists && snapshot.value != null && snapshot.value is Map) {
+        return DirectoryProfile.fromJson(Map<String, dynamic>.from(snapshot.value as Map));
       }
-      final raw = snapshot.value;
-      if (raw is Map) {
-        return DirectoryProfile.fromJson(Map<String, dynamic>.from(raw));
-      }
-      return null;
     } catch (e) {
-      debugPrint('FirebaseUserDirectoryService: lookupProfile error: $e');
-      return null;
+      debugPrint('FirebaseUserDirectoryService (native get notice): $e');
     }
+
+    // 2. Fallback to direct REST HTTP
+    try {
+      final data = await _restClient.get('directory/$key');
+      if (data is Map) {
+        return DirectoryProfile.fromJson(Map<String, dynamic>.from(data));
+      }
+    } catch (e) {
+      debugPrint('FirebaseUserDirectoryService REST lookup error: $e');
+    }
+
+    return null;
   }
 
   @override
@@ -176,25 +197,27 @@ class FirebaseUserDirectoryService implements UserDirectoryService {
     required String username,
     required String fcmToken,
   }) async {
+    final key = _sanitizeKey(username);
+    final payload = {
+      'fcmToken': fcmToken,
+      'lastSeen': DateTime.now().toUtc().toIso8601String(),
+    };
+    await _restClient.patch('directory/$key', payload);
     try {
-      await _dirRef(username).update({
-        'fcmToken': fcmToken,
-        'lastSeen': DateTime.now().toUtc().toIso8601String(),
-      });
-    } catch (e) {
-      debugPrint('FirebaseUserDirectoryService: updateFcmToken error: $e');
-    }
+      await _dirRef(username).update(payload);
+    } catch (_) {}
   }
 
   @override
   Future<void> updateLastSeen(String username) async {
+    final key = _sanitizeKey(username);
+    final payload = {
+      'lastSeen': DateTime.now().toUtc().toIso8601String(),
+    };
+    await _restClient.patch('directory/$key', payload);
     try {
-      await _dirRef(username).update({
-        'lastSeen': DateTime.now().toUtc().toIso8601String(),
-      });
-    } catch (e) {
-      debugPrint('FirebaseUserDirectoryService: updateLastSeen error: $e');
-    }
+      await _dirRef(username).update(payload);
+    } catch (_) {}
   }
 }
 

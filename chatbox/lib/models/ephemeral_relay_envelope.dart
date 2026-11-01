@@ -491,14 +491,24 @@ class EphemeralRelayEnvelope {
 
   /// Reconstruct an envelope from a JSON map
   factory EphemeralRelayEnvelope.fromJson(Map<String, dynamic> json) {
+    DateTime parseDateTime(dynamic val) {
+      if (val is int) {
+        return DateTime.fromMillisecondsSinceEpoch(val, isUtc: true);
+      }
+      if (val is String) {
+        return DateTime.tryParse(val) ?? DateTime.now().toUtc();
+      }
+      return DateTime.now().toUtc();
+    }
+
     return EphemeralRelayEnvelope(
-      id: json['id'] as String,
-      senderId: json['sender_id'] as String,
-      recipientId: json['recipient_id'] as String,
-      ciphertextPayload: json['ciphertext'] as String,
+      id: json['id'] as String? ?? '',
+      senderId: json['sender_id'] as String? ?? '',
+      recipientId: json['recipient_id'] as String? ?? '',
+      ciphertextPayload: json['ciphertext'] as String? ?? '',
       envelopeType: json['type'] as String? ?? 'message',
-      timestamp: DateTime.parse(json['timestamp'] as String),
-      expiresAt: DateTime.parse(json['expires_at'] as String),
+      timestamp: parseDateTime(json['timestamp']),
+      expiresAt: parseDateTime(json['expires_at']),
     );
   }
 

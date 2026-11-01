@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:chatbox/core/config/app_environment.dart';
 import 'package:chatbox/core/errors/app_exception.dart';
 import 'package:chatbox/core/utils/crypto_key_utils.dart';
 import 'package:chatbox/database/local_database.dart';
@@ -7,6 +8,7 @@ import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/models/love_code_session.dart';
 import 'package:chatbox/models/shared_conversation_bundle.dart';
 import 'package:chatbox/services/encryption_service.dart';
+import 'package:chatbox/services/firebase_relay_service.dart';
 import 'package:chatbox/services/love_connection_service.dart';
 import 'package:chatbox/services/relay_service.dart';
 
@@ -69,8 +71,12 @@ class DefaultConversationSharingService implements ConversationSharingService {
     EncryptionService? encryptionService,
     LocalDatabase? localDatabase,
     LoveConnectionService? loveConnectionService,
-  })  : _relayService = relayService ?? InMemoryFirebaseRelayService.instance,
-        _encryptionService = encryptionService,
+  })  : _relayService = relayService ??
+            (AppEnvironment.isProduction
+                ? FirebaseRelayService()
+                : InMemoryFirebaseRelayService.instance),
+        _encryptionService =
+            encryptionService ?? StandardE2EEEncryptionService.instance,
         _localDatabase = localDatabase ?? LocalDatabase(),
         _loveConnectionService =
             loveConnectionService ?? InMemoryLoveConnectionService();

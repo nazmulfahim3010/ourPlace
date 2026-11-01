@@ -1,12 +1,14 @@
 import 'package:chatbox/core/constants/app_constants.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
 import 'package:chatbox/models/ephemeral_relay_envelope.dart';
+import 'package:chatbox/services/firebase_rest_client.dart';
 import 'package:chatbox/services/relay_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
-/// Live production implementation of [RelayService] backed by Firebase Realtime Database.
+/// Live production implementation of [RelayService] backed by Firebase Realtime Database
+/// with direct REST HTTP fallback for cross-platform resilience.
 ///
 /// In strict accordance with zero-knowledge, ephemeral messaging principles:
 /// - Envelopes are stored only temporarily under `/relays/{recipientId}/{messageId}`.
@@ -15,9 +17,13 @@ import 'package:flutter/foundation.dart';
 /// - Envelopes exceeding 24h TTL are automatically discarded and purged.
 class FirebaseRelayService implements RelayService {
   final FirebaseDatabase _database;
+  final FirebaseRestDatabaseClient _restClient;
 
-  FirebaseRelayService({FirebaseDatabase? database})
-      : _database = database ?? _defaultDatabase();
+  FirebaseRelayService({
+    FirebaseDatabase? database,
+    FirebaseRestDatabaseClient? restClient,
+  })  : _database = database ?? _defaultDatabase(),
+        _restClient = restClient ?? FirebaseRestDatabaseClient();
 
   static FirebaseDatabase _defaultDatabase() {
     try {
@@ -48,80 +54,105 @@ class FirebaseRelayService implements RelayService {
   Future<void> enqueueMessage(EphemeralRelayEnvelope envelope) async {
     if (envelope.isExpired()) return;
 
+    final cleanRecipient = _sanitizeKey(envelope.recipientId);
+    final cleanMsgId = envelope.id.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+    final json = envelope.toJson();
+
+    // 1. Direct REST write
+    final restSuccess = await _restClient.put('relays/$cleanRecipient/$cleanMsgId', json);
+
+    // 2. Native SDK write
     try {
-      final json = envelope.toJson();
       await _messageRef(envelope.recipientId, envelope.id).set(json);
     } catch (e) {
-      debugPrint('FirebaseRelayService: enqueueMessage error: $e');
-      rethrow;
+      debugPrint('FirebaseRelayService native enqueue notice: $e');
+      if (!restSuccess) {
+        rethrow;
+      }
     }
   }
 
   @override
   Future<List<EphemeralRelayEnvelope>> fetchPendingMessages(String recipientId) async {
+    final cleanRecipient = _sanitizeKey(recipientId);
+    final now = DateTime.now().toUtc();
+    Map? rawMap;
+
+    // 1. Try native Firebase SDK
     try {
       final snapshot = await _recipientRef(recipientId).get();
-      if (!snapshot.exists || snapshot.value == null) {
-        return const [];
+      if (snapshot.exists && snapshot.value is Map) {
+        rawMap = snapshot.value as Map;
       }
-
-      final rawMap = snapshot.value;
-      if (rawMap is! Map) return const [];
-
-      final now = DateTime.now().toUtc();
-      final List<EphemeralRelayEnvelope> valid = [];
-
-      for (final entry in rawMap.entries) {
-        try {
-          if (entry.value is Map) {
-            final envelope = EphemeralRelayEnvelope.fromJson(
-              Map<String, dynamic>.from(entry.value as Map),
-            );
-            if (envelope.isExpired(now)) {
-              // Asynchronously purge expired message
-              _messageRef(recipientId, envelope.id).remove().ignore();
-            } else {
-              valid.add(envelope);
-            }
-          }
-        } catch (_) {}
-      }
-
-      valid.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return valid;
     } catch (e) {
-      debugPrint('FirebaseRelayService: fetchPendingMessages error: $e');
-      return const [];
+      debugPrint('FirebaseRelayService native fetch notice: $e');
     }
+
+    // 2. Fallback to direct REST HTTP
+    if (rawMap == null) {
+      try {
+        final data = await _restClient.get('relays/$cleanRecipient');
+        if (data is Map) {
+          rawMap = data;
+        }
+      } catch (e) {
+        debugPrint('FirebaseRelayService REST fetch error: $e');
+      }
+    }
+
+    if (rawMap == null) return const [];
+
+    final List<EphemeralRelayEnvelope> valid = [];
+    for (final entry in rawMap.entries) {
+      try {
+        if (entry.value is Map) {
+          final envelope = EphemeralRelayEnvelope.fromJson(
+            Map<String, dynamic>.from(entry.value as Map),
+          );
+          if (envelope.isExpired(now)) {
+            acknowledgeAndPurge(envelope.id, recipientId: recipientId).ignore();
+          } else {
+            valid.add(envelope);
+          }
+        }
+      } catch (_) {}
+    }
+
+    valid.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return valid;
   }
 
   @override
   Stream<List<EphemeralRelayEnvelope>> watchPendingMessages(String recipientId) {
-    return _recipientRef(recipientId).onValue.map((event) {
-      final raw = event.snapshot.value;
-      if (raw == null || raw is! Map) return <EphemeralRelayEnvelope>[];
+    try {
+      return _recipientRef(recipientId).onValue.map((event) {
+        final raw = event.snapshot.value;
+        if (raw == null || raw is! Map) return <EphemeralRelayEnvelope>[];
 
-      final now = DateTime.now().toUtc();
-      final List<EphemeralRelayEnvelope> valid = [];
+        final now = DateTime.now().toUtc();
+        final List<EphemeralRelayEnvelope> valid = [];
 
-      for (final entry in raw.entries) {
-        try {
-          if (entry.value is Map) {
-            final envelope = EphemeralRelayEnvelope.fromJson(
-              Map<String, dynamic>.from(entry.value as Map),
-            );
-            if (envelope.isExpired(now)) {
-              _messageRef(recipientId, envelope.id).remove().ignore();
-            } else {
-              valid.add(envelope);
+        for (final entry in raw.entries) {
+          try {
+            if (entry.value is Map) {
+              final envelope = EphemeralRelayEnvelope.fromJson(
+                Map<String, dynamic>.from(entry.value as Map),
+              );
+              if (envelope.isExpired(now)) {
+                _messageRef(recipientId, envelope.id).remove().ignore();
+              } else {
+                valid.add(envelope);
+              }
             }
-          }
-        } catch (_) {}
-      }
+          } catch (_) {}
+        }
 
-      valid.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return valid;
-    });
+        valid.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+        return valid;
+      }).handleError((_) => <EphemeralRelayEnvelope>[]);
+    } catch (_) {
+      return const Stream<List<EphemeralRelayEnvelope>>.empty();
+    }
   }
 
   @override
@@ -129,26 +160,38 @@ class FirebaseRelayService implements RelayService {
     String messageId, {
     required String recipientId,
   }) async {
+    final cleanRecipient = _sanitizeKey(recipientId);
+    final cleanMsgId = messageId.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+
+    // 1. REST delete
+    final restOk = await _restClient.delete('relays/$cleanRecipient/$cleanMsgId');
+
+    // 2. Native delete
     try {
       await _messageRef(recipientId, messageId).remove();
-      return true;
     } catch (e) {
-      debugPrint('FirebaseRelayService: acknowledgeAndPurge error: $e');
-      return false;
+      debugPrint('FirebaseRelayService native purge notice: $e');
     }
+
+    return restOk;
   }
 
   @override
   Future<int> getPendingQueueCount(String recipientId) async {
+    final cleanRecipient = _sanitizeKey(recipientId);
     try {
       final snapshot = await _recipientRef(recipientId).get();
-      if (!snapshot.exists || snapshot.value == null) return 0;
-      final raw = snapshot.value;
-      if (raw is Map) return raw.length;
-      return 0;
-    } catch (_) {
-      return 0;
-    }
+      if (snapshot.exists && snapshot.value is Map) {
+        return (snapshot.value as Map).length;
+      }
+    } catch (_) {}
+
+    try {
+      final data = await _restClient.get('relays/$cleanRecipient');
+      if (data is Map) return data.length;
+    } catch (_) {}
+
+    return 0;
   }
 
   @override

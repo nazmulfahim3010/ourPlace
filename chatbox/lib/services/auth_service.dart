@@ -7,9 +7,11 @@ import 'package:chatbox/database/local_database.dart';
 import 'package:chatbox/models/user.dart';
 import 'package:chatbox/models/user_account.dart';
 import 'package:chatbox/services/access_throttling_service.dart';
+import 'package:chatbox/services/app_lock_service.dart';
 import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/secure_storage_service.dart';
 import 'package:chatbox/services/user_directory_service.dart';
+import 'package:chatbox/repositories/conversation_repository.dart';
 import 'package:flutter/foundation.dart';
 
 /// Abstract service contract for anonymous identity authentication (Phase 6 & 9)
@@ -81,7 +83,7 @@ class LocalAuthService implements AuthService {
   LocalDatabase get _db => _database ?? LocalDatabase();
 
   AccessThrottlingService _throttlingService = AccessThrottlingService();
-  EncryptionService _encryptionService = StandardE2EEEncryptionService();
+  EncryptionService _encryptionService = StandardE2EEEncryptionService.instance;
   SecureStorageService _secureStorage = DefaultSecureStorageService();
 
   String? _lastRegisteredRecoveryKey;
@@ -103,6 +105,20 @@ class LocalAuthService implements AuthService {
         await _encryptionService.initializeUserKeys(account.accountId);
         _currentUser = account.toUser(isCurrentUser: true);
         _authStateController.add(_currentUser);
+
+        // Ensure active public key is refreshed in the public directory
+        try {
+          final pubKey = await _encryptionService.getPublicIdentityKey();
+          DefaultUserDirectoryService().publishProfile(
+            DirectoryProfile(
+              accountId: account.accountId,
+              username: account.username,
+              publicIdentityKey: pubKey,
+              lastSeen: DateTime.now().toUtc(),
+            ),
+          ).ignore();
+        } catch (_) {}
+
         return _currentUser;
       }
     }
@@ -111,6 +127,9 @@ class LocalAuthService implements AuthService {
 
   @override
   Stream<User?> get authStateChanges async* {
+    if (_currentUser == null) {
+      await getCurrentUser();
+    }
     yield _currentUser;
     yield* _authStateController.stream;
   }
@@ -206,6 +225,8 @@ class LocalAuthService implements AuthService {
     // 8. Establish authenticated session
     _currentUser = account.toUser(isCurrentUser: true);
     await _secureStorage.write('active_session_username', normalized);
+    await DefaultAppLockService().clearPasscode();
+    DefaultAppLockService().unlockApp();
     _authStateController.add(_currentUser);
 
     return _currentUser!;
@@ -290,6 +311,7 @@ class LocalAuthService implements AuthService {
     // 5. Establish authenticated session
     _currentUser = account.toUser(isCurrentUser: true);
     await _secureStorage.write('active_session_username', normalized);
+    DefaultAppLockService().unlockApp();
     _authStateController.add(_currentUser);
 
     return _currentUser!;
@@ -361,6 +383,9 @@ class LocalAuthService implements AuthService {
       );
     }
     await _encryptionService.clearKeys();
+    await DefaultAppLockService().clearPasscode();
+    DefaultAppLockService().lockApp();
+    LocalConversationRepository.instance.resetForTesting();
     _currentUser = null;
     _authStateController.add(null);
   }

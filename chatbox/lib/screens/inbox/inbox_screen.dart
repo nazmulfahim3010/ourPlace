@@ -42,6 +42,11 @@ class _InboxScreenState extends State<InboxScreen> {
   bool _isLoading = true;
   String _searchQuery = '';
 
+  String get _activeUsername =>
+      widget.currentUser?.username ??
+      widget.currentUser?.id ??
+      'current_user';
+
   @override
   void initState() {
     super.initState();
@@ -49,13 +54,13 @@ class _InboxScreenState extends State<InboxScreen> {
         widget.conversationRepository ?? LocalConversationRepository();
     _searchController.addListener(_onSearchChanged);
     _loadConversations();
-    final activeUser = widget.currentUser?.username ?? widget.currentUser?.id;
-    if (activeUser != null && activeUser.isNotEmpty) {
+    final activeUser = _activeUsername;
+    if (activeUser.isNotEmpty && activeUser != 'current_user') {
       widget.chatRepository?.startRelayListener(activeUser);
       widget.chatRepository?.syncService.reconcile(currentUserId: activeUser);
     }
     _conversationsSub = _conversationRepo
-        .watchConversations(currentUserId: widget.currentUser?.id)
+        .watchConversations(currentUserId: activeUser)
         .listen((conversations) {
       if (mounted) {
         setState(() {
@@ -102,7 +107,7 @@ class _InboxScreenState extends State<InboxScreen> {
 
   Future<void> _loadConversations() async {
     final conversations = await _conversationRepo.getConversations(
-      currentUserId: widget.currentUser?.id,
+      currentUserId: _activeUsername,
     );
     if (mounted) {
       setState(() {
@@ -274,7 +279,7 @@ class _InboxScreenState extends State<InboxScreen> {
                                   ..._filteredConversations.map(
                                     (conv) => ConversationTile(
                                       conversation: conv,
-                                      currentUserId: widget.currentUser?.id ?? 'current_user',
+                                      currentUserId: _activeUsername,
                                       onTap: () => _openConversation(conv),
                                     ),
                                   ),
@@ -290,7 +295,7 @@ class _InboxScreenState extends State<InboxScreen> {
                                     ...loveConversations.map(
                                       (conv) => ConversationTile(
                                         conversation: conv,
-                                        currentUserId: widget.currentUser?.id ?? 'current_user',
+                                        currentUserId: _activeUsername,
                                         onTap: () => _openConversation(conv),
                                       ),
                                     )
@@ -306,7 +311,7 @@ class _InboxScreenState extends State<InboxScreen> {
                                     ...otherConversations.map(
                                       (conv) => ConversationTile(
                                         conversation: conv,
-                                        currentUserId: widget.currentUser?.id ?? 'current_user',
+                                        currentUserId: _activeUsername,
                                         onTap: () => _openConversation(conv),
                                       ),
                                     ),
@@ -503,6 +508,48 @@ class _InboxScreenState extends State<InboxScreen> {
               style: const TextStyle(color: Colors.white54, fontSize: 13),
               textAlign: TextAlign.center,
             ),
+            if (_searchQuery.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final clean = _searchQuery.replaceAll('@', '').trim();
+                  if (clean.isEmpty) return;
+                  final normalized = '@$clean';
+                  String? publicKey;
+                  try {
+                    final profile =
+                        await DefaultUserDirectoryService().lookupProfile(normalized);
+                    publicKey = profile?.publicIdentityKey;
+                  } catch (_) {}
+                  final displayName = clean.length > 1
+                      ? clean[0].toUpperCase() + clean.substring(1)
+                      : clean.toUpperCase();
+                  final partnerUser = User(
+                    id: 'user_$clean',
+                    username: normalized,
+                    displayName: displayName,
+                    publicIdentityKey: publicKey,
+                    isCurrentUser: false,
+                  );
+                  _searchController.clear();
+                  final newConv = await _conversationRepo.startOrGetConversation(
+                    partner: partnerUser,
+                  );
+                  _openConversation(newConv);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                label: Text(
+                  'Chat with @${_searchQuery.replaceAll('@', '').trim()}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
           ],
         ),
       ),

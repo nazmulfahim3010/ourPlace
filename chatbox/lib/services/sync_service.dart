@@ -18,6 +18,7 @@ import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/core/utils/hash_utils.dart';
 import 'package:chatbox/services/user_directory_service.dart';
 import 'package:chatbox/repositories/conversation_repository.dart';
+import 'package:flutter/foundation.dart';
 
 /// Abstract service contract for message synchronization and offline queueing (Phase 12)
 abstract class SyncService {
@@ -91,7 +92,8 @@ class DefaultSyncService implements SyncService {
     CoupleFeaturesService? coupleFeaturesService,
   })  : _database = database ?? LocalDatabase(),
         _chatService = chatService ?? ChatService(),
-        _encryptionService = encryptionService,
+        _encryptionService =
+            encryptionService ?? StandardE2EEEncryptionService.instance,
         _notificationService = notificationService,
         _mediaRelayService = mediaRelayService,
         _mediaStorageService = mediaStorageService,
@@ -108,33 +110,57 @@ class DefaultSyncService implements SyncService {
   MediaStorageService? get mediaStorageService => _mediaStorageService;
 
   StreamSubscription<List<EphemeralRelayEnvelope>>? _relaySubscription;
+  Timer? _pollingTimer;
   String? _listeningUserId;
 
   @override
   void startRelayListener({required String currentUserId}) {
-    if (_listeningUserId == currentUserId && _relaySubscription != null) {
+    if (_listeningUserId == currentUserId &&
+        (_relaySubscription != null || _pollingTimer != null)) {
       return;
     }
     stopRelayListener();
     _listeningUserId = currentUserId;
-    _relaySubscription = _chatService
-        .watchPendingRelayEnvelopes(currentUserId)
-        .listen((envelopes) async {
-      if (envelopes.isNotEmpty) {
+
+    // 1. Reactive stream (on platforms where Firebase native socket is active)
+    try {
+      _relaySubscription = _chatService
+          .watchPendingRelayEnvelopes(currentUserId)
+          .listen((envelopes) async {
+        if (envelopes.isNotEmpty) {
+          await processInboundEnvelopes(currentUserId: currentUserId);
+        }
+      }, onError: (e) {
+        debugPrint('DefaultSyncService relay stream notice: $e');
+      });
+    } catch (e) {
+      debugPrint('DefaultSyncService stream init notice: $e');
+    }
+
+    // 2. Continuous 3-second polling timer for cross-platform and desktop reliability
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      try {
         await processInboundEnvelopes(currentUserId: currentUserId);
-      }
+      } catch (_) {}
     });
+
+    // 3. Initial sync
+    processInboundEnvelopes(currentUserId: currentUserId).ignore();
   }
 
   @override
   void stopRelayListener() {
     _relaySubscription?.cancel();
     _relaySubscription = null;
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
     _listeningUserId = null;
   }
 
   Future<String?> _resolveRecipientPublicKey(String username) async {
-    final account = await _database.getAccountByUsername(username);
+    final normUsername = HashUtils.normalizeUsername(username);
+    final account = await _database.getAccountByUsername(username) ??
+        await _database.getAccountByUsername(normUsername);
     if (account?.publicIdentityKey != null && account!.publicIdentityKey!.isNotEmpty) {
       return account.publicIdentityKey;
     }
@@ -145,15 +171,15 @@ class DefaultSyncService implements SyncService {
           loveConn.partnerPublicKey != null &&
           loveConn.partnerPublicKey!.isNotEmpty) {
         final normPartner = HashUtils.normalizeUsername(loveConn.partnerUsername);
-        final normRecipient = HashUtils.normalizeUsername(username);
-        if (normPartner == normRecipient) {
+        if (normPartner == normUsername) {
           return loveConn.partnerPublicKey;
         }
       }
     } catch (_) {}
 
     try {
-      final profile = await DefaultUserDirectoryService().lookupProfile(username);
+      final profile = await DefaultUserDirectoryService().lookupProfile(username) ??
+          await DefaultUserDirectoryService().lookupProfile(normUsername);
       if (profile?.publicIdentityKey != null && profile!.publicIdentityKey.isNotEmpty) {
         return profile.publicIdentityKey;
       }
@@ -222,14 +248,120 @@ class DefaultSyncService implements SyncService {
     }
   }
 
-  @override
-  Future<List<ChatMessage>> processInboundEnvelopes({required String currentUserId}) async {
-    if (!_isOnline) return const [];
+  /// Drain currently in progress; concurrent callers share it instead of
+  /// fetching (and handling) the same envelopes a second time.
+  Future<List<ChatMessage>>? _inboundInFlight;
+  String? _inboundInFlightUserId;
+  bool _inboundRerunRequested = false;
 
+  /// Envelope IDs already handled recently, guarding against stale snapshots
+  /// that still contain an envelope we have just acknowledged.
+  final Set<String> _recentlyHandledIds = <String>{};
+  final List<String> _recentlyHandledOrder = <String>[];
+  static const int _recentlyHandledCapacity = 500;
+
+  /// Consecutive processing failures per envelope ID (poison-message guard).
+  final Map<String, int> _inboundFailureCounts = <String, int>{};
+  static const int _maxInboundAttempts = 5;
+
+  @override
+  Future<List<ChatMessage>> processInboundEnvelopes({required String currentUserId}) {
+    if (!_isOnline) return Future.value(const []);
+
+    final inFlight = _inboundInFlight;
+    if (inFlight != null && _inboundInFlightUserId == currentUserId) {
+      // New envelopes may have landed after the running drain fetched its batch
+      _inboundRerunRequested = true;
+      return inFlight;
+    }
+
+    _inboundInFlightUserId = currentUserId;
+    final drain = _drainInboundEnvelopes(currentUserId: currentUserId);
+    _inboundInFlight = drain;
+    drain.whenComplete(() {
+      if (!identical(_inboundInFlight, drain)) return;
+      _inboundInFlight = null;
+      _inboundInFlightUserId = null;
+      if (_inboundRerunRequested) {
+        _inboundRerunRequested = false;
+        processInboundEnvelopes(currentUserId: currentUserId).ignore();
+      }
+    }).ignore();
+    return drain;
+  }
+
+  void _rememberHandled(String envelopeId) {
+    _inboundFailureCounts.remove(envelopeId);
+    if (_recentlyHandledIds.add(envelopeId)) {
+      _recentlyHandledOrder.add(envelopeId);
+      if (_recentlyHandledOrder.length > _recentlyHandledCapacity) {
+        _recentlyHandledIds.remove(_recentlyHandledOrder.removeAt(0));
+      }
+    }
+  }
+
+  Future<void> _retryPurge(String envelopeId, String currentUserId) async {
+    try {
+      await _chatService.acknowledgeAndPurge(envelopeId, recipientId: currentUserId);
+    } catch (_) {}
+  }
+
+  Future<List<ChatMessage>> _drainInboundEnvelopes({required String currentUserId}) async {
     final envelopes = await _chatService.fetchPendingRelayEnvelopes(currentUserId);
     final processedMessages = <ChatMessage>[];
 
     for (final envelope in envelopes) {
+      // Typing / presence signals are owned and purged by RealtimeService
+      if (envelope.isTypingSignal || envelope.isPresenceSignal) continue;
+
+      if (_recentlyHandledIds.contains(envelope.id)) {
+        // Already handled; a previous purge must have failed, so retry it
+        _retryPurge(envelope.id, currentUserId).ignore();
+        continue;
+      }
+
+      try {
+        final message = await _handleInboundEnvelope(
+          envelope,
+          currentUserId: currentUserId,
+        );
+        if (message != null) processedMessages.add(message);
+        _rememberHandled(envelope.id);
+      } catch (e) {
+        final attempts = (_inboundFailureCounts[envelope.id] ?? 0) + 1;
+        _inboundFailureCounts[envelope.id] = attempts;
+        debugPrint(
+          'DefaultSyncService: failed to process envelope ${envelope.id} '
+          '(${envelope.envelopeType}), attempt $attempts/$_maxInboundAttempts: $e',
+        );
+        if (attempts >= _maxInboundAttempts) {
+          // Drop the poison envelope so it cannot block the queue forever
+          _rememberHandled(envelope.id);
+          try {
+            await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (processedMessages.isNotEmpty) {
+      try {
+        LocalConversationRepository.instance
+            .refreshConversations(currentUserId: currentUserId);
+      } catch (_) {}
+    }
+
+    return processedMessages;
+  }
+
+  /// Handle a single inbound envelope. Returns the persisted chat message for
+  /// standard messages, or null for control signals. Throws on failure, in
+  /// which case the envelope is left in the relay for a later retry.
+  Future<ChatMessage?> _handleInboundEnvelope(
+    EphemeralRelayEnvelope envelope, {
+    required String currentUserId,
+  }) async {
+    {
       if (envelope.isLoveConnectionSignal) {
         if (_loveConnectionService != null) {
           await _loveConnectionService.processInboundLoveEnvelope(
@@ -356,41 +488,44 @@ class DefaultSyncService implements SyncService {
 
         // Persist cleartext locally (local device owns history)
         await _database.saveMessage(decryptedMessage);
-        processedMessages.add(decryptedMessage);
-
-        // Notify user locally using privacy-preserving settings (zero leak)
-        await _notificationService?.showLocalAlert(
-          title: decryptedMessage.senderId,
-          body: decryptedMessage.mediaAttachment != null
-              ? (decryptedMessage.mediaAttachment!.isImage
-                  ? '📷 Photo'
-                  : decryptedMessage.mediaAttachment!.isAudio
-                      ? '🎙️ Voice note'
-                      : '🎥 Video')
-              : decryptedMessage.text,
-          conversationId: decryptedMessage.senderId,
-        );
 
         // Acknowledge and purge ciphertext from remote relay
         await _chatService.acknowledgeAndPurge(envelope.id, recipientId: currentUserId);
 
+        // Notify user locally using privacy-preserving settings (zero leak).
+        // The message is already stored, so a notification failure must not
+        // cause the envelope to be reprocessed.
+        try {
+          await _notificationService?.showLocalAlert(
+            title: decryptedMessage.senderId,
+            body: decryptedMessage.mediaAttachment != null
+                ? (decryptedMessage.mediaAttachment!.isImage
+                    ? '📷 Photo'
+                    : decryptedMessage.mediaAttachment!.isAudio
+                        ? '🎙️ Voice note'
+                        : '🎥 Video')
+                : decryptedMessage.text,
+            conversationId: decryptedMessage.senderId,
+          );
+        } catch (e) {
+          debugPrint('DefaultSyncService: local alert notice: $e');
+        }
+
         // Dispatch ephemeral delivery receipt back to original sender
-        await sendDeliveryReceipt(
+        // (best effort: a receipt failure must not block ingestion)
+        sendDeliveryReceipt(
           messageId: envelope.id,
           recipientId: envelope.senderId,
           senderId: currentUserId,
-        );
+        ).catchError((Object e) {
+          debugPrint('DefaultSyncService: delivery receipt notice: $e');
+        }).ignore();
+
+        return decryptedMessage;
       }
     }
 
-    if (processedMessages.isNotEmpty) {
-      try {
-        LocalConversationRepository.instance
-            .refreshConversations(currentUserId: currentUserId);
-      } catch (_) {}
-    }
-
-    return processedMessages;
+    return null;
   }
 
   @override

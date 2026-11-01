@@ -244,14 +244,12 @@ void main() {
       convRepo = LocalConversationRepository();
     });
 
-    test('getConversations loads seed conversations with Love Connection', () async {
+    test('new user inbox starts blank without mock seed conversations', () async {
       final conversations = await convRepo.getConversations();
-      expect(conversations.length, greaterThanOrEqualTo(4));
+      expect(conversations.isEmpty, isTrue);
 
       final love = await convRepo.getLoveConnectionConversation();
-      expect(love, isNotNull);
-      expect(love!.isLoveConnection, isTrue);
-      expect(love.partner.username, '@twilight');
+      expect(love, isNull);
     });
 
     test('startOrGetConversation retrieves existing or creates new conversation', () async {
@@ -270,12 +268,17 @@ void main() {
     });
 
     test('markAsRead resets unread count for conversation', () async {
-      final love = await convRepo.getLoveConnectionConversation();
-      expect(love, isNotNull);
-
-      await convRepo.markAsRead(love!.id);
-      final updated = await convRepo.getLoveConnectionConversation();
-      expect(updated!.unreadCount, 0);
+      final newUser = User(
+        id: 'user_bob',
+        username: '@bob',
+        displayName: 'Bob',
+        isCurrentUser: false,
+      );
+      final created = await convRepo.startOrGetConversation(partner: newUser);
+      await convRepo.markAsRead(created.id);
+      final all = await convRepo.getConversations();
+      final updated = all.firstWhere((c) => c.id == created.id);
+      expect(updated.unreadCount, 0);
     });
   });
 

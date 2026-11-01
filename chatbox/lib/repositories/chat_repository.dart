@@ -22,13 +22,14 @@ import 'package:chatbox/services/user_directory_service.dart';
 
 /// Abstract contract for chat messaging operations
 abstract class ChatRepository {
-  Future<List<ChatMessage>> getMessages(String partnerId);
+  Future<List<ChatMessage>> getMessages(String partnerId, {String? currentUserId});
   Future<List<ChatMessage>> getMessagesPaginated(
     String partnerId, {
     required int offset,
     required int limit,
+    String? currentUserId,
   });
-  Stream<List<ChatMessage>> watchMessages(String partnerId);
+  Stream<List<ChatMessage>> watchMessages(String partnerId, {String? currentUserId});
   Future<void> sendMessage(ChatMessage message);
   Future<ChatMessage> processIncomingMessage(ChatMessage rawMessage);
   Future<List<ChatMessage>> syncPendingRelayMessages(String currentUserId);
@@ -87,7 +88,9 @@ class LocalChatRepository implements ChatRepository {
   final ConversationSharingService _conversationSharingService;
   final CoupleFeaturesService _coupleFeaturesService;
 
-  LocalChatRepository({
+  /// Resolves every dependency exactly once so the sync service, the repository
+  /// and the sharing service all operate on the same service instances.
+  factory LocalChatRepository({
     LocalDatabase? database,
     ChatService? chatService,
     EncryptionService? encryptionService,
@@ -101,56 +104,90 @@ class LocalChatRepository implements ChatRepository {
     ConversationSharingService? conversationSharingService,
     CoupleFeaturesService? coupleFeaturesService,
     ConversationRepository? conversationRepository,
-  })  : _database = database ?? LocalDatabase(),
-        _chatService = chatService ?? ChatService(),
+  }) {
+    final db = database ?? LocalDatabase();
+    final chat = chatService ?? ChatService();
+    final enc = encryptionService ?? StandardE2EEEncryptionService.instance;
+    final notifications = notificationService ?? DefaultNotificationService();
+    final mediaRelay = mediaRelayService ?? DefaultMediaRelayService();
+    final mediaStorage = mediaStorageService ?? DefaultMediaStorageService();
+    final mediaEncryption = mediaEncryptionService ?? StandardMediaEncryptionService();
+    final love = loveConnectionService ??
+        DefaultLoveConnectionService(
+          database: db,
+          relayService: chat.relayService,
+          conversationRepository: conversationRepository ??
+              LocalConversationRepository(database: database),
+        );
+    final sharing = conversationSharingService ??
+        DefaultConversationSharingService(
+          relayService: chat.relayService,
+          encryptionService: enc,
+          localDatabase: db,
+          loveConnectionService: love,
+        );
+    final couple = coupleFeaturesService ??
+        DefaultCoupleFeaturesService(
+          localDatabase: db,
+          relayService: chat.relayService,
+          encryptionService: enc,
+        );
+    final sync = syncService ??
+        DefaultSyncService(
+          database: db,
+          chatService: chat,
+          encryptionService: enc,
+          notificationService: notifications,
+          mediaRelayService: mediaRelay,
+          mediaStorageService: mediaStorage,
+          mediaEncryptionService: mediaEncryption,
+          loveConnectionService: love,
+          conversationSharingService: sharing,
+          coupleFeaturesService: couple,
+        );
+    final realtime = realtimeService ?? DefaultRealtimeService(chatService: chat);
+
+    return LocalChatRepository._(
+      database: db,
+      chatService: chat,
+      encryptionService: enc,
+      syncService: sync,
+      realtimeService: realtime,
+      notificationService: notifications,
+      mediaRelayService: mediaRelay,
+      mediaStorageService: mediaStorage,
+      mediaEncryptionService: mediaEncryption,
+      loveConnectionService: love,
+      conversationSharingService: sharing,
+      coupleFeaturesService: couple,
+    );
+  }
+
+  LocalChatRepository._({
+    required LocalDatabase database,
+    required ChatService chatService,
+    required EncryptionService? encryptionService,
+    required SyncService syncService,
+    required RealtimeService realtimeService,
+    required NotificationService notificationService,
+    required MediaRelayService mediaRelayService,
+    required MediaStorageService mediaStorageService,
+    required MediaEncryptionService mediaEncryptionService,
+    required LoveConnectionService loveConnectionService,
+    required ConversationSharingService conversationSharingService,
+    required CoupleFeaturesService coupleFeaturesService,
+  })  : _database = database,
+        _chatService = chatService,
         _encryptionService = encryptionService,
-        _notificationService = notificationService ?? DefaultNotificationService(),
-        _mediaRelayService = mediaRelayService ?? DefaultMediaRelayService(),
-        _mediaStorageService = mediaStorageService ?? DefaultMediaStorageService(),
-        _mediaEncryptionService = mediaEncryptionService ?? StandardMediaEncryptionService(),
-        _loveConnectionService = loveConnectionService ??
-            DefaultLoveConnectionService(
-              database: database ?? LocalDatabase(),
-              relayService: (chatService ?? ChatService()).relayService,
-              conversationRepository: conversationRepository ??
-                  LocalConversationRepository(database: database),
-            ),
-        _conversationSharingService = conversationSharingService ??
-            DefaultConversationSharingService(
-              relayService: (chatService ?? ChatService()).relayService,
-              encryptionService: encryptionService,
-              localDatabase: database ?? LocalDatabase(),
-              loveConnectionService: loveConnectionService ??
-                  DefaultLoveConnectionService(
-                    database: database ?? LocalDatabase(),
-                    relayService: (chatService ?? ChatService()).relayService,
-                    conversationRepository: conversationRepository ??
-                        LocalConversationRepository(database: database),
-                  ),
-            ),
-        _syncService = syncService ??
-            DefaultSyncService(
-              database: database ?? LocalDatabase(),
-              chatService: chatService ?? ChatService(),
-              encryptionService: encryptionService,
-              notificationService: notificationService ?? DefaultNotificationService(),
-              mediaRelayService: mediaRelayService ?? DefaultMediaRelayService(),
-              mediaStorageService: mediaStorageService ?? DefaultMediaStorageService(),
-              mediaEncryptionService: mediaEncryptionService ?? StandardMediaEncryptionService(),
-              loveConnectionService: loveConnectionService,
-              conversationSharingService: conversationSharingService,
-              coupleFeaturesService: coupleFeaturesService,
-            ),
-        _realtimeService = realtimeService ??
-            DefaultRealtimeService(
-              chatService: chatService ?? ChatService(),
-            ),
-        _coupleFeaturesService = coupleFeaturesService ??
-            DefaultCoupleFeaturesService(
-              localDatabase: database ?? LocalDatabase(),
-              relayService: (chatService ?? ChatService()).relayService,
-              encryptionService: encryptionService,
-            );
+        _syncService = syncService,
+        _realtimeService = realtimeService,
+        _notificationService = notificationService,
+        _mediaRelayService = mediaRelayService,
+        _mediaStorageService = mediaStorageService,
+        _mediaEncryptionService = mediaEncryptionService,
+        _loveConnectionService = loveConnectionService,
+        _conversationSharingService = conversationSharingService,
+        _coupleFeaturesService = coupleFeaturesService;
 
   @override
   CoupleFeaturesService get coupleFeaturesService => _coupleFeaturesService;
@@ -195,9 +232,12 @@ class LocalChatRepository implements ChatRepository {
   /// 2. Active Love Connection partner public key
   /// 3. Global Firebase User Directory lookup
   Future<String?> resolveRecipientPublicKey(String recipientUsername) async {
+    final normRecipient = HashUtils.normalizeUsername(recipientUsername);
+
     // 1. Check local device database
     final recipientAccount =
-        await _database.getAccountByUsername(recipientUsername);
+        await _database.getAccountByUsername(recipientUsername) ??
+        await _database.getAccountByUsername(normRecipient);
     if (recipientAccount?.publicIdentityKey != null &&
         recipientAccount!.publicIdentityKey!.isNotEmpty) {
       return recipientAccount.publicIdentityKey;
@@ -210,7 +250,6 @@ class LocalChatRepository implements ChatRepository {
           loveConn.partnerPublicKey != null &&
           loveConn.partnerPublicKey!.isNotEmpty) {
         final normPartner = HashUtils.normalizeUsername(loveConn.partnerUsername);
-        final normRecipient = HashUtils.normalizeUsername(recipientUsername);
         if (normPartner == normRecipient) {
           return loveConn.partnerPublicKey;
         }
@@ -220,7 +259,8 @@ class LocalChatRepository implements ChatRepository {
     // 3. Fallback to global user directory
     try {
       final profile =
-          await DefaultUserDirectoryService().lookupProfile(recipientUsername);
+          await DefaultUserDirectoryService().lookupProfile(recipientUsername) ??
+          await DefaultUserDirectoryService().lookupProfile(normRecipient);
       if (profile?.publicIdentityKey != null &&
           profile!.publicIdentityKey.isNotEmpty) {
         return profile.publicIdentityKey;
@@ -231,8 +271,8 @@ class LocalChatRepository implements ChatRepository {
   }
 
   @override
-  Future<List<ChatMessage>> getMessages(String partnerId) {
-    return _database.getMessagesForPartner(partnerId);
+  Future<List<ChatMessage>> getMessages(String partnerId, {String? currentUserId}) {
+    return _database.getMessagesForPartner(partnerId, currentUserId: currentUserId);
   }
 
   @override
@@ -240,17 +280,19 @@ class LocalChatRepository implements ChatRepository {
     String partnerId, {
     required int offset,
     required int limit,
+    String? currentUserId,
   }) {
     return _database.getMessagesForPartnerPaginated(
       partnerId,
       offset: offset,
       limit: limit,
+      currentUserId: currentUserId,
     );
   }
 
   @override
-  Stream<List<ChatMessage>> watchMessages(String partnerId) {
-    return _database.watchMessagesForPartner(partnerId);
+  Stream<List<ChatMessage>> watchMessages(String partnerId, {String? currentUserId}) {
+    return _database.watchMessagesForPartner(partnerId, currentUserId: currentUserId);
   }
 
   @override
@@ -267,7 +309,7 @@ class LocalChatRepository implements ChatRepository {
       if (recipientKey == null || recipientKey.isEmpty) {
         await _database.updateMessageStatus(message.id, MessageStatus.failed);
         throw SecurityException(
-          'Cannot send message: Recipient public identity key is missing for ${initial.recipientId}. Complete key exchange before transmitting.',
+          'Recipient ${initial.recipientId} has not registered on Nest yet. Ask them to create an account first.',
         );
       }
       final String payload;

@@ -46,6 +46,12 @@ class LocalDatabase {
     final _ = db;
   }
 
+  /// Close database connection
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
+
   // ==================== MESSAGE CONVERSIONS & CRUD ====================
 
   /// Convert a Drift database Message row to domain ChatMessage
@@ -126,17 +132,38 @@ class LocalDatabase {
   }
 
 
+  Expression<bool> _partnerFilter(Messages tbl, String partnerId, String? currentUserId) {
+    final cleanPartner = partnerId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+    final atPartner = '@$cleanPartner';
+
+    final partnerMatchSender = tbl.senderId.equals(cleanPartner) | tbl.senderId.equals(atPartner);
+    final partnerMatchRecipient = tbl.recipientId.equals(cleanPartner) | tbl.recipientId.equals(atPartner);
+
+    if (currentUserId != null && currentUserId.isNotEmpty && currentUserId != 'current_user') {
+      final cleanCurrent = currentUserId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+      final atCurrent = '@$cleanCurrent';
+
+      final currentMatchSender = tbl.senderId.equals(cleanCurrent) |
+          tbl.senderId.equals(atCurrent) |
+          tbl.senderId.equals('current_user');
+      final currentMatchRecipient = tbl.recipientId.equals(cleanCurrent) |
+          tbl.recipientId.equals(atCurrent) |
+          tbl.recipientId.equals('current_user');
+
+      return (partnerMatchSender & currentMatchRecipient) |
+          (currentMatchSender & partnerMatchRecipient);
+    }
+
+    return partnerMatchSender | partnerMatchRecipient;
+  }
+
   /// Retrieve all messages for a partner, newest first (matching reverse list)
   Future<List<ChatMessage>> getMessagesForPartner(
     String partnerId, {
-    String currentUserId = 'current_user',
+    String? currentUserId,
   }) async {
     final query = db.select(db.messages)
-      ..where((tbl) =>
-          (tbl.senderId.equals(partnerId) &
-              tbl.recipientId.equals(currentUserId)) |
-          (tbl.senderId.equals(currentUserId) &
-              tbl.recipientId.equals(partnerId)))
+      ..where((tbl) => _partnerFilter(tbl, partnerId, currentUserId))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
 
     final rows = await query.get();
@@ -146,16 +173,12 @@ class LocalDatabase {
   /// Retrieve messages with pagination
   Future<List<ChatMessage>> getMessagesForPartnerPaginated(
     String partnerId, {
-    String currentUserId = 'current_user',
+    String? currentUserId,
     required int offset,
     required int limit,
   }) async {
     final query = db.select(db.messages)
-      ..where((tbl) =>
-          (tbl.senderId.equals(partnerId) &
-              tbl.recipientId.equals(currentUserId)) |
-          (tbl.senderId.equals(currentUserId) &
-              tbl.recipientId.equals(partnerId)))
+      ..where((tbl) => _partnerFilter(tbl, partnerId, currentUserId))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)])
       ..limit(limit, offset: offset);
 
@@ -167,10 +190,15 @@ class LocalDatabase {
   Future<List<String>> getDistinctChatPartners({
     String currentUserId = 'current_user',
   }) async {
+    final cleanCurrent = currentUserId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+    final atCurrent = '@$cleanCurrent';
+
     final query = db.select(db.messages)
       ..where((tbl) =>
-          tbl.senderId.equals(currentUserId) |
-          tbl.recipientId.equals(currentUserId) |
+          tbl.senderId.equals(cleanCurrent) |
+          tbl.senderId.equals(atCurrent) |
+          tbl.recipientId.equals(cleanCurrent) |
+          tbl.recipientId.equals(atCurrent) |
           tbl.senderId.equals('current_user') |
           tbl.recipientId.equals('current_user'))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
@@ -178,11 +206,14 @@ class LocalDatabase {
     final rows = await query.get();
     final Set<String> partners = {};
     for (final row in rows) {
-      if (row.senderId != currentUserId && row.senderId != 'current_user') {
-        partners.add(row.senderId);
+      final sClean = row.senderId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+      final rClean = row.recipientId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+
+      if (sClean != cleanCurrent && sClean != 'current_user' && sClean.isNotEmpty) {
+        partners.add('@$sClean');
       }
-      if (row.recipientId != currentUserId && row.recipientId != 'current_user') {
-        partners.add(row.recipientId);
+      if (rClean != cleanCurrent && rClean != 'current_user' && rClean.isNotEmpty) {
+        partners.add('@$rClean');
       }
     }
     return partners.toList();
@@ -194,13 +225,7 @@ class LocalDatabase {
     String currentUserId = 'current_user',
   }) async {
     final query = db.select(db.messages)
-      ..where((tbl) =>
-          (tbl.senderId.equals(partnerId) &
-              (tbl.recipientId.equals(currentUserId) |
-                  tbl.recipientId.equals('current_user'))) |
-          ((tbl.senderId.equals(currentUserId) |
-                  tbl.senderId.equals('current_user')) &
-              tbl.recipientId.equals(partnerId)))
+      ..where((tbl) => _partnerFilter(tbl, partnerId, currentUserId))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)])
       ..limit(1);
 
@@ -216,10 +241,16 @@ class LocalDatabase {
     String partnerId, {
     String currentUserId = 'current_user',
   }) async {
+    final cleanPartner = partnerId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+    final atPartner = '@$cleanPartner';
+    final cleanCurrent = currentUserId.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+    final atCurrent = '@$cleanCurrent';
+
     final query = db.select(db.messages)
       ..where((tbl) =>
-          tbl.senderId.equals(partnerId) &
-          (tbl.recipientId.equals(currentUserId) |
+          (tbl.senderId.equals(cleanPartner) | tbl.senderId.equals(atPartner)) &
+          (tbl.recipientId.equals(cleanCurrent) |
+              tbl.recipientId.equals(atCurrent) |
               tbl.recipientId.equals('current_user')) &
           tbl.status.equals(MessageStatus.read.name).not());
 
@@ -230,14 +261,10 @@ class LocalDatabase {
   /// Reactive stream of messages for a partner (updates UI automatically)
   Stream<List<ChatMessage>> watchMessagesForPartner(
     String partnerId, {
-    String currentUserId = 'current_user',
+    String? currentUserId,
   }) {
     final query = db.select(db.messages)
-      ..where((tbl) =>
-          (tbl.senderId.equals(partnerId) &
-              tbl.recipientId.equals(currentUserId)) |
-          (tbl.senderId.equals(currentUserId) &
-              tbl.recipientId.equals(partnerId)))
+      ..where((tbl) => _partnerFilter(tbl, partnerId, currentUserId))
       ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)]);
 
     return query.watch().map((rows) => rows.map(_rowToMessage).toList());
@@ -794,12 +821,6 @@ class LocalDatabase {
   /// Check if database is initialized
   Future<bool> isInitialized() async {
     return _db != null;
-  }
-
-  /// Close the database
-  Future<void> close() async {
-    await _db?.close();
-    _db = null;
   }
 }
 

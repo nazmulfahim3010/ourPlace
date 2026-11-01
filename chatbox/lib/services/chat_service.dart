@@ -1,5 +1,7 @@
+import 'package:chatbox/core/config/app_environment.dart';
 import 'package:chatbox/models/ephemeral_relay_envelope.dart';
 import 'package:chatbox/models/message.dart';
+import 'package:chatbox/services/firebase_relay_service.dart';
 import 'package:chatbox/services/relay_service.dart';
 
 /// Service class coordinating chat operations and ephemeral transport relays (Phase 11)
@@ -8,12 +10,19 @@ class ChatService {
 
   static ChatService? _defaultInstance;
 
-  /// Shared application instance backed by [InMemoryFirebaseRelayService]
+  static RelayService _createDefaultRelayService() {
+    if (AppEnvironment.isProduction) {
+      return FirebaseRelayService();
+    }
+    return InMemoryFirebaseRelayService.instance;
+  }
+
+  /// Shared application instance
   static ChatService get instance => _defaultInstance ??= ChatService();
 
   /// Default constructor allowing injection of custom [RelayService] (for tests/environments)
   ChatService({RelayService? relayService})
-      : _relayService = relayService ?? InMemoryFirebaseRelayService.instance;
+      : _relayService = relayService ?? _createDefaultRelayService();
 
   /// Factory constructor returning the singleton instance for backward compatibility
   factory ChatService.singleton() => instance;

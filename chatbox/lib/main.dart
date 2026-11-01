@@ -8,6 +8,7 @@ import 'package:chatbox/repositories/auth_repository.dart';
 import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/screens/auth/auth_gate.dart';
 import 'package:chatbox/services/app_lock_service.dart';
+import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/services/notification_service.dart';
 import 'package:chatbox/widgets/top_notification_banner.dart';
 
@@ -15,7 +16,15 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   AppEnvironment.setEnvironment(EnvironmentType.production);
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: 'AIzaSyCUW55pAkIE1KIN-55MECNOuvd5aRjZ2oA',
+        appId: '1:345075037383:android:8dac2b3b5779c5dc9bbae2',
+        messagingSenderId: '345075037383',
+        projectId: 'ourplace-chat',
+        databaseURL: AppConstants.firebaseDatabaseUrl,
+      ),
+    );
     try {
       await FirebaseAuth.instance.signInAnonymously();
     } catch (authError) {
@@ -26,7 +35,16 @@ void main() async {
   }
   final notificationService = DefaultNotificationService();
   await notificationService.initialize();
-  runApp(MyApp(notificationService: notificationService));
+  final authRepository = DefaultAuthRepository();
+  final chatRepository = LocalChatRepository(
+    encryptionService: StandardE2EEEncryptionService.instance,
+    notificationService: notificationService,
+  );
+  runApp(MyApp(
+    authRepository: authRepository,
+    chatRepository: chatRepository,
+    notificationService: notificationService,
+  ));
 }
 
 class MyApp extends StatelessWidget {

@@ -89,9 +89,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _initRealtimeSubscriptions() {
     // 1. Reactive messages stream from local SQLite
     _messageSubscription = _chatRepository
-        .watchMessages(widget.partnerId)
+        .watchMessages(widget.partnerId, currentUserId: _currentUserId)
         .listen((updatedList) {
-      if (mounted && updatedList.isNotEmpty) {
+      if (mounted) {
         setState(() {
           _messages = updatedList;
         });
@@ -199,25 +199,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _loadMessagesFromRepository() async {
     try {
       final storedMessages =
-          await _chatRepository.getMessages(widget.partnerId);
+          await _chatRepository.getMessages(widget.partnerId, currentUserId: _currentUserId);
 
       if (storedMessages.isEmpty) {
-        if (widget.partnerId == AppConstants.defaultPartnerId) {
-          final seedMessages = _generateInitialSeedMessages();
-          await _chatRepository.seedInitialMessages(seedMessages);
-          if (mounted) {
-            setState(() {
-              _messages = seedMessages;
-              _isLoading = false;
-            });
-          }
-        } else {
-          if (mounted) {
-            setState(() {
-              _messages = [];
-              _isLoading = false;
-            });
-          }
+        if (mounted) {
+          setState(() {
+            _messages = [];
+            _isLoading = false;
+          });
         }
       } else {
         if (mounted) {
@@ -235,77 +224,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _messages = widget.partnerId == AppConstants.defaultPartnerId
-              ? _generateInitialSeedMessages()
-              : [];
+          _messages = [];
           _isLoading = false;
         });
       }
     }
   }
 
-  /// Initial seed messages to populate on first run
-  List<ChatMessage> _generateInitialSeedMessages() {
-    final now = DateTime.now();
-    final yesterday = now.subtract(const Duration(days: 1));
-
-    return [
-      ChatMessage(
-        id: 'seed_005',
-        senderId: widget.partnerId,
-        recipientId: _currentUserId,
-        text: "Let's get dinner together soon! 🍕",
-        timestamp: now.subtract(const Duration(minutes: 1, seconds: 30)),
-        type: MessageType.text,
-        status: MessageStatus.read,
-      ),
-      ChatMessage(
-        id: 'seed_004',
-        senderId: widget.partnerId,
-        recipientId: _currentUserId,
-        text: "Pretty good! Can't wait to celebrate with you 🎉",
-        timestamp: now.subtract(const Duration(minutes: 2)),
-        type: MessageType.text,
-        status: MessageStatus.read,
-      ),
-      ChatMessage(
-        id: 'seed_003',
-        senderId: _currentUserId,
-        recipientId: widget.partnerId,
-        text: 'How about yours?',
-        timestamp: now.subtract(const Duration(minutes: 3, seconds: 30)),
-        type: MessageType.text,
-        status: MessageStatus.read,
-      ),
-      ChatMessage(
-        id: 'seed_002',
-        senderId: _currentUserId,
-        recipientId: widget.partnerId,
-        text: 'It was great! Just finished the project.',
-        timestamp: now.subtract(const Duration(minutes: 4)),
-        type: MessageType.text,
-        status: MessageStatus.read,
-      ),
-      ChatMessage(
-        id: 'seed_001',
-        senderId: widget.partnerId,
-        recipientId: _currentUserId,
-        text: 'Hey! How was your day? 😊',
-        timestamp: now.subtract(const Duration(minutes: 5)),
-        type: MessageType.text,
-        status: MessageStatus.read,
-      ),
-      ChatMessage(
-        id: 'seed_000',
-        senderId: widget.partnerId,
-        recipientId: _currentUserId,
-        text: 'Good night, sleep well! ❤️',
-        timestamp: yesterday,
-        type: MessageType.text,
-        status: MessageStatus.read,
-      ),
-    ];
-  }
+  /// Initial seed messages (empty for production/clean chats)
+  List<ChatMessage> _generateInitialSeedMessages() => const [];
 
   /// Send message: update UI, delegate persistence and dispatch to ChatRepository
   Future<void> _sendMessage() async {
@@ -345,10 +272,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     // Save and dispatch through ChatRepository
-    if (att != null && attBytes != null) {
-      await _chatRepository.sendMediaMessage(newMessage, attBytes);
-    } else {
-      await _chatRepository.sendMessage(newMessage);
+    try {
+      if (att != null && attBytes != null) {
+        await _chatRepository.sendMediaMessage(newMessage, attBytes);
+      } else {
+        await _chatRepository.sendMessage(newMessage);
+      }
+    } catch (e) {
+      if (mounted) {
+        final index = _messages.indexWhere((m) => m.id == newMessage.id);
+        if (index != -1) {
+          setState(() {
+            _messages[index] = _messages[index].copyWithStatus(MessageStatus.failed);
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.toString().contains('Recipient public identity key is missing')
+                  ? 'Key exchange needed: ${widget.partnerId} must register on their device before chatting.'
+                  : 'Failed to send message: ${e.toString().replaceAll("Exception: ", "")}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            backgroundColor: const Color(0xFFC0392B),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
     }
 
     _messageController.clear();

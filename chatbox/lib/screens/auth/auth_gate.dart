@@ -4,6 +4,7 @@ import 'package:chatbox/models/user.dart';
 import 'package:chatbox/repositories/auth_repository.dart';
 import 'package:chatbox/repositories/chat_repository.dart';
 import 'package:chatbox/services/app_lock_service.dart';
+import 'package:chatbox/services/encryption_service.dart';
 import 'package:chatbox/screens/auth/app_lock_screen.dart';
 import 'package:chatbox/screens/auth/auth_screen.dart';
 import 'package:chatbox/screens/auth/passcode_setup_screen.dart';
@@ -29,6 +30,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   late final AuthRepository _authRepository;
   late final AppLockService _appLockService;
+  late final ChatRepository _chatRepository;
   StreamSubscription<bool>? _lockStateSub;
   bool? _isPasscodeConfigured;
 
@@ -38,8 +40,13 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _authRepository = widget.authRepository ?? DefaultAuthRepository();
     _appLockService = widget.appLockService ?? DefaultAppLockService();
+    _chatRepository = widget.chatRepository ??
+        LocalChatRepository(
+          encryptionService: StandardE2EEEncryptionService.instance,
+        );
 
     _refreshPasscodeStatus();
+    _authRepository.getCurrentUser();
 
     _lockStateSub = _appLockService.lockStateChanges.listen((_) {
       if (mounted) setState(() {});
@@ -121,6 +128,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
             appLockService: _appLockService,
             onUnlocked: () => setState(() {}),
             onSignOutRequested: () async {
+              _chatRepository.stopRelayListener();
               _appLockService.lockApp();
               await _authRepository.signOut();
             },
@@ -131,7 +139,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         return HomeScreen(
           currentUser: user,
           authRepository: _authRepository,
-          chatRepository: widget.chatRepository,
+          chatRepository: _chatRepository,
           appLockService: _appLockService,
         );
       },

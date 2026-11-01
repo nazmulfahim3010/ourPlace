@@ -47,97 +47,21 @@ class LocalConversationRepository implements ConversationRepository {
     _cachedConversations = null;
   }
 
-  List<Conversation> _createInitialSeedConversations() {
-    final now = DateTime.now();
+  void _sortConversations() {
+    if (_cachedConversations == null) return;
+    _cachedConversations!.sort((a, b) {
+      if (a.isLoveConnection && !b.isLoveConnection) return -1;
+      if (!a.isLoveConnection && b.isLoveConnection) return 1;
 
-    return [
-      Conversation(
-        id: 'conv_love_01',
-        partner: User(
-          id: AppConstants.defaultPartnerId,
-          username: '@twilight',
-          displayName: 'Twilight',
-          loveConnectionId: 'love_conn_01',
-          isCurrentUser: false,
-        ),
-        lastMessage: ChatMessage(
-          id: 'msg_love_01',
-          senderId: AppConstants.defaultPartnerId,
-          recipientId: AppConstants.currentUserId,
-          text: "Can't wait to see you tonight ❤️",
-          timestamp: now.subtract(const Duration(minutes: 2)),
-          status: MessageStatus.delivered,
-        ),
-        unreadCount: 1,
-        isLoveConnection: true,
-        lastMessageAt: now.subtract(const Duration(minutes: 2)),
-      ),
-      Conversation(
-        id: 'conv_sarah_02',
-        partner: User(
-          id: 'user_sarah_02',
-          username: '@sarah',
-          displayName: 'Sarah',
-          isCurrentUser: false,
-        ),
-        lastMessage: ChatMessage(
-          id: 'msg_sarah_02',
-          senderId: 'user_sarah_02',
-          recipientId: AppConstants.currentUserId,
-          text: "Okay, I'll send it over soon",
-          timestamp: now.subtract(const Duration(minutes: 38)),
-          status: MessageStatus.read,
-        ),
-        unreadCount: 0,
-        isLoveConnection: false,
-        lastMessageAt: now.subtract(const Duration(minutes: 38)),
-      ),
-      Conversation(
-        id: 'conv_rahim_03',
-        partner: User(
-          id: 'user_rahim_03',
-          username: '@rahim',
-          displayName: 'Rahim',
-          isCurrentUser: false,
-        ),
-        lastMessage: ChatMessage(
-          id: 'msg_rahim_03',
-          senderId: 'user_rahim_03',
-          recipientId: AppConstants.currentUserId,
-          text: 'Thanks for your help earlier!',
-          timestamp: now.subtract(const Duration(hours: 1, minutes: 20)),
-          status: MessageStatus.read,
-        ),
-        unreadCount: 0,
-        isLoveConnection: false,
-        lastMessageAt: now.subtract(const Duration(hours: 1, minutes: 20)),
-      ),
-      Conversation(
-        id: 'conv_elena_04',
-        partner: User(
-          id: 'user_elena_04',
-          username: '@elena',
-          displayName: 'Elena',
-          isCurrentUser: false,
-        ),
-        lastMessage: ChatMessage(
-          id: 'msg_elena_04',
-          senderId: 'user_elena_04',
-          recipientId: AppConstants.currentUserId,
-          text: "Let's catch up this weekend!",
-          timestamp: now.subtract(const Duration(days: 1)),
-          status: MessageStatus.delivered,
-        ),
-        unreadCount: 2,
-        isLoveConnection: false,
-        lastMessageAt: now.subtract(const Duration(days: 1)),
-      ),
-    ];
+      final aTime = a.lastMessageAt ?? a.lastMessage?.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = b.lastMessageAt ?? b.lastMessage?.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.compareTo(aTime);
+    });
   }
 
   @override
   Future<List<Conversation>> getConversations({String? currentUserId}) async {
-    _cachedConversations ??= _createInitialSeedConversations();
+    _cachedConversations ??= [];
     final effectiveUserId = currentUserId ?? AppConstants.currentUserId;
 
     // Dynamically discover all chat partners who have exchanged messages in SQLite
@@ -146,6 +70,7 @@ class LocalConversationRepository implements ConversationRepository {
       for (final partnerUsername in partners) {
         final normPartner = partnerUsername.trim().toLowerCase();
         final cleanPartner = normPartner.replaceFirst(RegExp(r'^@+'), '');
+        final formattedUsername = '@$cleanPartner';
         final existingIdx = _cachedConversations!.indexWhere(
           (c) => c.partner.username.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '') == cleanPartner,
         );
@@ -161,21 +86,18 @@ class LocalConversationRepository implements ConversationRepository {
 
         if (existingIdx != -1) {
           // Update existing conversation with real message data
-          if (latestMsg != null) {
-            _cachedConversations![existingIdx] =
-                _cachedConversations![existingIdx].copyWith(
-              lastMessage: latestMsg,
-              lastMessageAt: latestMsg.timestamp,
-              unreadCount: unreadCount,
-            );
-          }
+          _cachedConversations![existingIdx] =
+              _cachedConversations![existingIdx].copyWith(
+            lastMessage: latestMsg ?? _cachedConversations![existingIdx].lastMessage,
+            lastMessageAt: latestMsg?.timestamp ?? _cachedConversations![existingIdx].lastMessageAt,
+            unreadCount: unreadCount,
+          );
         } else {
           // New partner discovered in SQLite messages: add conversation dynamically!
           final clean = cleanPartner;
           final displayName = clean.isNotEmpty
               ? clean[0].toUpperCase() + clean.substring(1)
               : clean;
-          final formattedUsername = '@$clean';
           final newConv = Conversation(
             id: 'conv_$clean',
             partner: User(
@@ -194,6 +116,7 @@ class LocalConversationRepository implements ConversationRepository {
       }
     } catch (_) {}
 
+    _sortConversations();
     return List.unmodifiable(_cachedConversations!);
   }
 
@@ -224,7 +147,7 @@ class LocalConversationRepository implements ConversationRepository {
 
   @override
   Future<void> markAsRead(String conversationId) async {
-    _cachedConversations ??= _createInitialSeedConversations();
+    _cachedConversations ??= [];
     final index = _cachedConversations!.indexWhere(
       (c) => c.id == conversationId || c.partner.id == conversationId,
     );
@@ -237,7 +160,7 @@ class LocalConversationRepository implements ConversationRepository {
 
   @override
   Future<void> demoteLoveConnection({String? partnerUsername}) async {
-    _cachedConversations ??= _createInitialSeedConversations();
+    _cachedConversations ??= [];
     for (int i = 0; i < _cachedConversations!.length; i++) {
       if (_cachedConversations![i].isLoveConnection) {
         if (partnerUsername == null ||
@@ -246,6 +169,7 @@ class LocalConversationRepository implements ConversationRepository {
         }
       }
     }
+    _sortConversations();
     _conversationsStreamController.add(List.unmodifiable(_cachedConversations!));
   }
 
@@ -254,34 +178,40 @@ class LocalConversationRepository implements ConversationRepository {
     required User partner,
     bool isLoveConnection = false,
   }) async {
-    _cachedConversations ??= _createInitialSeedConversations();
-    final existingIndex = _cachedConversations!
-        .indexWhere((c) => c.partner.username.toLowerCase() == partner.username.toLowerCase());
+    _cachedConversations ??= [];
+    final cleanPartner = partner.username.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+    final existingIndex = _cachedConversations!.indexWhere(
+      (c) => c.partner.username.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '') == cleanPartner,
+    );
 
     if (existingIndex != -1) {
-      if (isLoveConnection && !_cachedConversations![existingIndex].isLoveConnection) {
-        final updated = _cachedConversations![existingIndex].copyWith(
+      var existing = _cachedConversations![existingIndex];
+      if (isLoveConnection && !existing.isLoveConnection) {
+        existing = existing.copyWith(
           isLoveConnection: true,
           partner: partner,
         );
-        _cachedConversations!.removeAt(existingIndex);
-        _cachedConversations!.insert(0, updated);
-        _conversationsStreamController.add(List.unmodifiable(_cachedConversations!));
-        return updated;
+      } else {
+        existing = existing.copyWith(partner: partner);
       }
-      return _cachedConversations![existingIndex];
+      _cachedConversations!.removeAt(existingIndex);
+      _cachedConversations!.insert(0, existing);
+      _sortConversations();
+      _conversationsStreamController.add(List.unmodifiable(_cachedConversations!));
+      return existing;
     }
 
     final newConversation = Conversation(
-      id: 'conv_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'conv_$cleanPartner',
       partner: partner,
       isLoveConnection: isLoveConnection,
       lastMessage: null,
-      lastMessageAt: null,
+      lastMessageAt: DateTime.now(),
       unreadCount: 0,
     );
 
-    _cachedConversations!.insert(isLoveConnection ? 0 : 1, newConversation);
+    _cachedConversations!.insert(0, newConversation);
+    _sortConversations();
     _conversationsStreamController.add(List.unmodifiable(_cachedConversations!));
     return newConversation;
   }
